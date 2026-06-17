@@ -1,7 +1,6 @@
 {
   "buildCommand": "npm run build || true",
   "outputDirectory": "public",
-  "public": true,
   "headers": [
     {
       "source": "/audio/(.*)",
