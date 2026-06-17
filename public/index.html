@@ -179,6 +179,64 @@ let score = 0, lives = 3, gameOver = false, won = false;
 let currentLevel = 1;
 let cameraX = 0;
 
+// Audio system for background music with crossfading
+const audioManager = {
+  current: null,      // Current audio element
+  next: null,         // Next audio element
+  fadeTimer: 0,
+  fadeDuration: 60,   // 60 frames = ~1 second at 60fps
+  
+  tracks: {
+    1: 'audio/Retirement.mp3',
+    2: 'audio/Flurries.mp3'
+  },
+  
+  play(level) {
+    if (!soundOn || !this.tracks[level]) return;
+    if (this.current && this.current.level === level) return; // Already playing
+    
+    if (this.current) {
+      // Queue next track for crossfade
+      this.next = { level, src: this.tracks[level], audio: null };
+      this.fadeTimer = 0;
+    } else {
+      // First track - play immediately
+      const audio = new Audio(this.tracks[level]);
+      audio.loop = true;
+      audio.volume = soundOn ? 1 : 0;
+      audio.play().catch(() => {});
+      this.current = { level, audio };
+    }
+  },
+  
+  update() {
+    if (!this.next) return;
+    if (!this.current) { 
+      this.play(this.next.level); 
+      return;
+    }
+    
+    this.fadeTimer++;
+    const progress = Math.min(1, this.fadeTimer / this.fadeDuration);
+    const easeProgress = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
+    
+    this.current.audio.volume = (1 - easeProgress) * (soundOn ? 1 : 0);
+    
+    if (!this.next.audio) {
+      this.next.audio = new Audio(this.next.src);
+      this.next.audio.loop = true;
+      this.next.audio.play().catch(() => {});
+    }
+    this.next.audio.volume = easeProgress * (soundOn ? 1 : 0);
+    
+    if (progress >= 1) {
+      this.current.audio.pause();
+      this.current = this.next;
+      this.next = null;
+    }
+  }
+};
+
 // Screen shake
 let shakeX = 0, shakeY = 0, shakeIntensity = 0;
 
@@ -334,7 +392,16 @@ const SFX2 = {
 };
 // Helper: use SFX2 in L2, SFX in L1
 function sfx(name){ (currentLevel===2 && SFX2[name] ? SFX2[name] : SFX[name])(); }
-function toggleSound(){ soundOn=!soundOn; document.getElementById('snd').innerHTML='&#128266; Sound: '+(soundOn?'on':'off'); }
+function toggleSound(){ 
+  soundOn = !soundOn; 
+  document.getElementById('snd').innerHTML = '&#128266; Sound: ' + (soundOn ? 'on' : 'off');
+  if (audioManager.current) {
+    audioManager.current.audio.volume = soundOn ? 1 : 0;
+  }
+  if (audioManager.next && audioManager.next.audio) {
+    audioManager.next.audio.volume = soundOn ? 1 : 0;
+  }
+}
 
 function closeLevelPopup(){
   const popup = document.getElementById('level-popup');
@@ -1860,10 +1927,16 @@ function restart(resetLevel){
     buildEnemies(); buildRocks(); buildBoss();
   }
   buildBottles();
+  
+  // Play level-specific music with crossfade
+  audioManager.play(currentLevel);
 }
 function loop(){
   if(currentLevel===2) updateLevel2();
   else update();
+  
+  // Update audio crossfading
+  audioManager.update();
   
   // Update and draw particles
   particles = particles.filter(p => p.life > 0);
