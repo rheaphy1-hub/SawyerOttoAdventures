@@ -988,7 +988,7 @@ function update(){
   if (!victoryActive && s.x+s.w>FLAG.x && s.x<FLAG.x+20 && s.y+s.h>FLAG.y){
     if (!boss || !boss.alive){ 
       victoryActive = true;
-      victoryTimer = 180;
+      victoryTimer = 300; // Longer victory screen - 5 seconds at 60fps
       SFX.win();
     }
   }
