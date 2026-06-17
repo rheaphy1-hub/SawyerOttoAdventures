@@ -187,24 +187,47 @@ const audioManager = {
   fadeDuration: 60,   // 60 frames = ~1 second at 60fps
   
   tracks: {
-    1: 'audio/Retirement.mp3',
-    2: 'audio/Flurries.mp3'
+    1: './audio/Retirement.mp3',
+    2: './audio/Flurries.mp3'
   },
   
   play(level) {
-    if (!soundOn || !this.tracks[level]) return;
-    if (this.current && this.current.level === level) return; // Already playing
+    if (!this.tracks[level]) {
+      console.warn(`Audio track ${level} not found`);
+      return;
+    }
+    
+    if (this.current && this.current.level === level) {
+      console.log(`Track ${level} already playing`);
+      return; // Already playing
+    }
+    
+    console.log(`[AUDIO] Playing track ${level}:`, this.tracks[level]);
     
     if (this.current) {
       // Queue next track for crossfade
+      console.log(`[AUDIO] Queueing crossfade to track ${level}`);
       this.next = { level, src: this.tracks[level], audio: null };
       this.fadeTimer = 0;
     } else {
       // First track - play immediately
+      console.log(`[AUDIO] Starting first track: level ${level}`);
       const audio = new Audio(this.tracks[level]);
       audio.loop = true;
-      audio.volume = soundOn ? 1 : 0;
-      audio.play().catch(() => {});
+      audio.volume = 0.8; // Start at reasonable volume
+      
+      audio.addEventListener('canplay', () => {
+        console.log(`[AUDIO] Track ${level} loaded, playing...`);
+      });
+      
+      audio.addEventListener('error', (e) => {
+        console.error(`[AUDIO] Error loading track ${level}:`, e);
+      });
+      
+      audio.play()
+        .then(() => console.log(`[AUDIO] Track ${level} play() succeeded`))
+        .catch(err => console.warn(`[AUDIO] Track ${level} play() caught:`, err.message));
+      
       this.current = { level, audio };
     }
   },
@@ -220,17 +243,28 @@ const audioManager = {
     const progress = Math.min(1, this.fadeTimer / this.fadeDuration);
     const easeProgress = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
     
-    this.current.audio.volume = (1 - easeProgress) * (soundOn ? 1 : 0);
+    this.current.audio.volume = (1 - easeProgress) * 0.8;
     
     if (!this.next.audio) {
+      console.log(`[AUDIO] Creating next track element for level ${this.next.level}`);
       this.next.audio = new Audio(this.next.src);
       this.next.audio.loop = true;
-      this.next.audio.play().catch(() => {});
+      
+      this.next.audio.addEventListener('canplay', () => {
+        console.log(`[AUDIO] Next track loaded, fading in...`);
+      });
+      
+      this.next.audio.play()
+        .then(() => console.log(`[AUDIO] Next track play() succeeded`))
+        .catch(err => console.warn(`[AUDIO] Next track play() caught:`, err.message));
     }
-    this.next.audio.volume = easeProgress * (soundOn ? 1 : 0);
+    
+    this.next.audio.volume = easeProgress * 0.8;
     
     if (progress >= 1) {
+      console.log(`[AUDIO] Crossfade complete, switching to level ${this.next.level}`);
       this.current.audio.pause();
+      this.current.audio.currentTime = 0;
       this.current = this.next;
       this.next = null;
     }
@@ -395,11 +429,15 @@ function sfx(name){ (currentLevel===2 && SFX2[name] ? SFX2[name] : SFX[name])();
 function toggleSound(){ 
   soundOn = !soundOn; 
   document.getElementById('snd').innerHTML = '&#128266; Sound: ' + (soundOn ? 'on' : 'off');
+  
+  console.log(`[SOUND] Toggled to: ${soundOn ? 'ON' : 'OFF'}`);
+  
+  const vol = soundOn ? 0.8 : 0;
   if (audioManager.current) {
-    audioManager.current.audio.volume = soundOn ? 1 : 0;
+    audioManager.current.audio.volume = vol;
   }
   if (audioManager.next && audioManager.next.audio) {
-    audioManager.next.audio.volume = soundOn ? 1 : 0;
+    audioManager.next.audio.volume = vol;
   }
 }
 
@@ -1929,6 +1967,7 @@ function restart(resetLevel){
   buildBottles();
   
   // Play level-specific music with crossfade
+  console.log(`[GAME] Restart called, playing audio for level ${currentLevel}`);
   audioManager.play(currentLevel);
 }
 function loop(){
