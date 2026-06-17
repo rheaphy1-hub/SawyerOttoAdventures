@@ -1,4 +1,29 @@
 {
-  "version": 2,
-  "buildCommand": "echo 'No build needed'"
+  "buildCommand": "npm run build || true",
+  "outputDirectory": ".",
+  "public": true,
+  "headers": [
+    {
+      "source": "/public/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600"
+        }
+      ]
+    },
+    {
+      "source": "/audio/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
+        }
+      ]
+    }
+  ]
 }
