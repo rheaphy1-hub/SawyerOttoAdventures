@@ -214,7 +214,7 @@ const audioManager = {
       console.log(`[AUDIO] Starting first track: level ${level}`);
       const audio = new Audio(this.tracks[level]);
       audio.loop = true;
-      audio.volume = 0.8; // Start at reasonable volume
+      audio.volume = 0.4; // Quieter in-game volume
       
       audio.addEventListener('canplay', () => {
         console.log(`[AUDIO] Track ${level} loaded, playing...`);
@@ -232,6 +232,20 @@ const audioManager = {
     }
   },
   
+  stop() {
+    if (this.current && this.current.audio) {
+      this.current.audio.pause();
+      this.current.audio.currentTime = 0;
+    }
+    if (this.next && this.next.audio) {
+      this.next.audio.pause();
+      this.next.audio.currentTime = 0;
+    }
+    this.current = null;
+    this.next = null;
+    this.fadeTimer = 0;
+  },
+  
   update() {
     if (!this.next) return;
     if (!this.current) { 
@@ -243,7 +257,7 @@ const audioManager = {
     const progress = Math.min(1, this.fadeTimer / this.fadeDuration);
     const easeProgress = progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress;
     
-    this.current.audio.volume = (1 - easeProgress) * 0.8;
+    this.current.audio.volume = (1 - easeProgress) * 0.4;
     
     if (!this.next.audio) {
       console.log(`[AUDIO] Creating next track element for level ${this.next.level}`);
@@ -259,7 +273,7 @@ const audioManager = {
         .catch(err => console.warn(`[AUDIO] Next track play() caught:`, err.message));
     }
     
-    this.next.audio.volume = easeProgress * 0.8;
+    this.next.audio.volume = easeProgress * 0.4;
     
     if (progress >= 1) {
       console.log(`[AUDIO] Crossfade complete, switching to level ${this.next.level}`);
@@ -993,6 +1007,8 @@ function update(){
       buildYeti();
       buildIcicles();
       showLevelPopup('FROZEN PEAKS', 'Level 2 — brave the blizzard and defeat the Yeti!');
+      // Crossfade to level 2 music
+      audioManager.play(2);
     }
     // Lock Sawyer in place during victory
     s.vx = 0;
@@ -1958,6 +1974,10 @@ function restart(resetLevel){
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0;
   currentLevel=lvl;
+  
+  // Stop and reset audio
+  audioManager.stop();
+  
   buildPlayers();
   if(currentLevel===2){
     buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles();
