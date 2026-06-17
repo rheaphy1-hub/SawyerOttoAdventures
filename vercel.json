@@ -2,13 +2,5 @@
   "version": 2,
   "framework": null,
   "buildCommand": "",
-  "outputDirectory": ".",
-  "cleanUrls": true,
-  "trailingSlash": false,
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
-  ]
+  "outputDirectory": "public"
 }
