@@ -2126,9 +2126,6 @@ function drawBoss(){
     ctx.save(); ctx.globalAlpha=healthBarAlpha; ctx.font='600 10px system-ui,sans-serif'; ctx.fillStyle='#FAEEDA'; ctx.textAlign='center';
     ctx.fillText('🐍 RATTLER REX', W/2, bys+bh+13); ctx.restore();
     ctx.globalAlpha = 1;
-    
-    ctx.font='600 11px system-ui,sans-serif'; ctx.fillStyle='#FAECE7'; ctx.textAlign='center';
-    ctx.fillText('Rattler Rex', W/2, bys+bh+13);
   }
 }
 
@@ -2360,133 +2357,81 @@ function drawBg(){
 function drawBike(worldX, wheelSpin, isL2){
   const bx = worldX - cameraX;
   if(bx + 130 < -20 || bx > W + 20) return;
-  const GY = FLOOR;
-  const ws = wheelSpin || 0;
-
-  const frameCol  = isL2 ? '#4A7EC8' : '#C84820';
-  const frameHi   = isL2 ? '#7AAAE0' : '#E8600A';
-  const tireCol   = '#1A1A18';
-  const spokeCol  = 'rgba(200,200,200,0.6)';
-  const hubCol    = '#888';
-  const metalCol  = '#5F5E5A';
-  const metalHi   = '#9A9890';
-  const basketCol = '#C8973A';
-  const basketShadow = '#8B6020';
-
+  const GY=FLOOR, ws=wheelSpin||0;
+  const frameCol=isL2?'#3F72C4':'#D24A28', frameHi=isL2?'#7FB0EE':'#F2772E';
+  const tire='#16161A', rim='#CFCFD6', spoke='rgba(225,225,235,0.7)', hub='#A0A0A6';
+  const steel='#6A6A66';
+  const wick='#D6A23E', wickShad='#A6781F', wickRim='#7E5A18';
   ctx.save();
+  const WR=18, rearWX=bx+22, frontWX=bx+82, wheelY=GY-WR;
+  const BBx=bx+46, BBy=GY-24;                 // bottom bracket (crank)
+  const seatX=bx+41, seatY=GY-60;             // saddle
+  const headX=bx+73, headTopY=GY-58, headBotY=GY-40;
 
-  function drawWheel(cx, cy, r){
-    ctx.strokeStyle=tireCol; ctx.lineWidth=5;
-    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
-    ctx.strokeStyle='#333'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.arc(cx,cy,r-2,0,Math.PI*2); ctx.stroke();
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate(ws);
-    ctx.strokeStyle=spokeCol; ctx.lineWidth=1.2;
-    for(let i=0;i<8;i++){
-      const a=i*Math.PI/4;
-      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*12,Math.sin(a)*12); ctx.stroke();
-    }
-    ctx.fillStyle=hubCol; ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='#ccc'; ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2); ctx.fill();
+  // ground shadow
+  ctx.fillStyle='rgba(0,0,0,0.16)'; ctx.beginPath(); ctx.ellipse(bx+52,GY+2,46,5,0,0,7); ctx.fill();
+
+  function wheel(cx){
+    ctx.strokeStyle=tire; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(cx,wheelY,WR,0,7); ctx.stroke();
+    ctx.strokeStyle=rim; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(cx,wheelY,WR-3,0,7); ctx.stroke();
+    ctx.save(); ctx.translate(cx,wheelY); ctx.rotate(ws);
+    ctx.strokeStyle=spoke; ctx.lineWidth=1;
+    for(let i=0;i<10;i++){ const ang=i*Math.PI/5; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(ang)*(WR-4),Math.sin(ang)*(WR-4)); ctx.stroke(); }
+    ctx.fillStyle=hub; ctx.beginPath(); ctx.arc(0,0,3.5,0,7); ctx.fill();
     ctx.restore();
   }
 
-  const WR = 17;
-  const rearWX = bx+22, frontWX = bx+82, wheelY = GY-WR;
-
-  // Ground shadow
-  ctx.fillStyle='rgba(0,0,0,0.15)';
-  ctx.beginPath(); ctx.ellipse(bx+52, GY+2, 44, 5, 0, 0, Math.PI*2); ctx.fill();
-
-  // ── DIAMOND FRAME ──
+  // frame — clean diamond
   ctx.strokeStyle=frameCol; ctx.lineWidth=5; ctx.lineCap='round'; ctx.lineJoin='round';
-  // Chain stay: rear axle → bottom bracket
-  ctx.beginPath(); ctx.moveTo(rearWX, wheelY); ctx.lineTo(bx+46, GY-26); ctx.stroke();
-  // Seat stay: rear axle → seat tube top
-  ctx.beginPath(); ctx.moveTo(rearWX, wheelY); ctx.lineTo(bx+40, GY-54); ctx.stroke();
-  // Seat tube: bottom bracket → seat top
-  ctx.beginPath(); ctx.moveTo(bx+46, GY-26); ctx.lineTo(bx+40, GY-58); ctx.stroke();
-  // Down tube: head tube → bottom bracket
-  ctx.beginPath(); ctx.moveTo(frontWX-5, GY-54); ctx.lineTo(bx+46, GY-26); ctx.stroke();
-  // Top tube: seat tube top → head tube
-  ctx.beginPath(); ctx.moveTo(bx+40, GY-58); ctx.lineTo(frontWX-5, GY-54); ctx.stroke();
-  // Fork: head tube → front axle
-  ctx.beginPath(); ctx.moveTo(frontWX-4, GY-54); ctx.lineTo(frontWX, wheelY); ctx.stroke();
-  // Head tube
-  ctx.lineWidth=7;
-  ctx.beginPath(); ctx.moveTo(frontWX-6, GY-56); ctx.lineTo(frontWX-2, GY-40); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(rearWX,wheelY); ctx.lineTo(BBx,BBy);      // chain stay
+  ctx.lineTo(seatX,seatY);                             // seat tube
+  ctx.lineTo(rearWX,wheelY);                           // seat stay
+  ctx.moveTo(seatX,seatY); ctx.lineTo(headX,headTopY); // top tube
+  ctx.lineTo(BBx,BBy);                                 // down tube
+  ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(headX,headTopY); ctx.lineTo(headX+3,headBotY); ctx.stroke();   // head tube
+  ctx.beginPath(); ctx.moveTo(headX+3,headBotY); ctx.lineTo(frontWX,wheelY); ctx.stroke();   // fork
+  ctx.strokeStyle=frameHi; ctx.lineWidth=1.8;
+  ctx.beginPath(); ctx.moveTo(seatX,seatY-1); ctx.lineTo(headX,headTopY-1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(BBx,BBy-1); ctx.lineTo(headX,headTopY-1); ctx.stroke();
 
-  // Frame highlight lines
-  ctx.strokeStyle=frameHi; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(rearWX+2, wheelY-2); ctx.lineTo(bx+46, GY-26); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(bx+40, GY-57); ctx.lineTo(frontWX-6, GY-53); ctx.stroke();
+  wheel(rearWX); wheel(frontWX);
 
-  // ── WHEELS ──
-  drawWheel(rearWX, wheelY, WR);
-  drawWheel(frontWX, wheelY, WR);
-
-  // ── HANDLEBARS ──
-  ctx.strokeStyle=metalCol; ctx.lineWidth=4; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(frontWX-4, GY-56); ctx.lineTo(frontWX-6, GY-66); ctx.stroke();
-  ctx.strokeStyle=metalHi; ctx.lineWidth=3;
-  ctx.beginPath(); ctx.moveTo(frontWX-16, GY-64); ctx.lineTo(frontWX+4, GY-66); ctx.stroke();
-  ctx.strokeStyle=tireCol; ctx.lineWidth=4;
-  ctx.beginPath(); ctx.moveTo(frontWX-16, GY-63); ctx.lineTo(frontWX-13, GY-64); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(frontWX+2, GY-66); ctx.lineTo(frontWX+4, GY-67); ctx.stroke();
-
-  // ── SEAT ──
-  ctx.fillStyle=tireCol;
-  ctx.beginPath(); ctx.roundRect(bx+33, GY-63, 18, 6, 3); ctx.fill();
-  ctx.fillStyle='#333';
-  ctx.beginPath(); ctx.roundRect(bx+34, GY-63, 16, 4, 2); ctx.fill();
-  ctx.strokeStyle=metalCol; ctx.lineWidth=3;
-  ctx.beginPath(); ctx.moveTo(bx+42, GY-57); ctx.lineTo(bx+42, GY-60); ctx.stroke();
-
-  // ── PEDAL CRANK ──
-  ctx.save(); ctx.translate(bx+46, GY-26); ctx.rotate(ws*1.4);
-  ctx.strokeStyle=metalCol; ctx.lineWidth=3; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(-8,0); ctx.lineTo(8,0); ctx.stroke();
-  ctx.fillStyle=tireCol; ctx.beginPath(); ctx.arc(-8,0,3,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle=tireCol; ctx.beginPath(); ctx.arc(8,0,3,0,Math.PI*2); ctx.fill();
+  // crank + pedals + chain
+  ctx.strokeStyle='#4A4A48'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(BBx,BBy); ctx.lineTo(rearWX,wheelY); ctx.stroke();
+  ctx.fillStyle='#3A3A38'; ctx.beginPath(); ctx.arc(BBx,BBy,5,0,7); ctx.fill();
+  ctx.save(); ctx.translate(BBx,BBy); ctx.rotate(ws*1.5);
+  ctx.strokeStyle=steel; ctx.lineWidth=3; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(-9,0); ctx.lineTo(9,0); ctx.stroke();
+  ctx.fillStyle='#2A2A28'; ctx.fillRect(-12,-2,4,4); ctx.fillRect(8,-2,4,4);
   ctx.restore();
 
-  // ── FRONT BASKET ──
-  // Mounted on fork/handlebars ahead of front wheel
-  const baskX = frontWX - 34, baskY = GY - 64, baskW = 32, baskH = 22;
-  // Basket body
-  ctx.fillStyle=basketCol;
-  ctx.beginPath(); ctx.roundRect(baskX, baskY, baskW, baskH, 3); ctx.fill();
-  // Woven texture: horizontal slats
-  ctx.strokeStyle=basketShadow; ctx.lineWidth=1;
-  for(let r=1; r<4; r++){
-    ctx.beginPath(); ctx.moveTo(baskX+2, baskY+r*(baskH/4));
-    ctx.lineTo(baskX+baskW-2, baskY+r*(baskH/4)); ctx.stroke();
-  }
-  // Woven texture: vertical slats
-  for(let c=1; c<6; c++){
-    ctx.beginPath(); ctx.moveTo(baskX+c*(baskW/6), baskY+2);
-    ctx.lineTo(baskX+c*(baskW/6), baskY+baskH-2); ctx.stroke();
-  }
-  // Basket rim
-  ctx.strokeStyle='#A07830'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.roundRect(baskX, baskY, baskW, baskH, 3); ctx.stroke();
-  // Basket rim highlight
-  ctx.fillStyle='rgba(255,220,150,0.3)';
-  ctx.beginPath(); ctx.roundRect(baskX+2, baskY+2, baskW-4, 4, 1); ctx.fill();
-  // Basket mounting arm (connects to fork)
-  ctx.strokeStyle=metalCol; ctx.lineWidth=2.5;
-  ctx.beginPath(); ctx.moveTo(baskX+baskW, baskY+baskH/2); ctx.lineTo(frontWX-4, GY-52); ctx.stroke();
+  // seat post + saddle
+  ctx.strokeStyle=steel; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(seatX,seatY); ctx.lineTo(seatX+1,seatY+8); ctx.stroke();
+  ctx.fillStyle='#2A2A28';
+  ctx.beginPath(); ctx.moveTo(seatX-9,seatY); ctx.quadraticCurveTo(seatX-12,seatY-3,seatX-4,seatY-3); ctx.lineTo(seatX+9,seatY-3); ctx.quadraticCurveTo(seatX+12,seatY-2,seatX+6,seatY+1); ctx.closePath(); ctx.fill();
 
-  // ── HEADLIGHT ──
-  ctx.fillStyle='rgba(255,240,160,0.95)';
-  ctx.beginPath(); ctx.ellipse(frontWX+4, GY-48, 5, 4, -0.2, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle=metalCol; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.ellipse(frontWX+4, GY-48, 5, 4, -0.2, 0, Math.PI*2); ctx.stroke();
+  // handlebars
+  ctx.strokeStyle=steel; ctx.lineWidth=3.5; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(headX+3,headBotY); ctx.lineTo(headX-1,GY-70); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(headX-12,GY-68); ctx.lineTo(headX+6,GY-71); ctx.stroke();
+  ctx.strokeStyle=tire; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(headX-12,GY-68); ctx.lineTo(headX-15,GY-67); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(headX+4,GY-71); ctx.lineTo(headX+7,GY-72); ctx.stroke();
+
+  // FRONT WICKER BASKET (on the handlebars)
+  const bL=bx+48, bR=bx+80, bTopY=GY-66, bBotY=GY-44;
+  ctx.strokeStyle=steel; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(bR-2,bTopY+2); ctx.lineTo(headX-2,GY-68); ctx.stroke();
+  ctx.fillStyle=wick;
+  ctx.beginPath(); ctx.moveTo(bL,bTopY); ctx.lineTo(bR,bTopY); ctx.lineTo(bR-4,bBotY); ctx.lineTo(bL+4,bBotY); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle=wickShad; ctx.lineWidth=1;
+  for(let r=1;r<4;r++){ const y=bTopY+r*(bBotY-bTopY)/4; ctx.beginPath(); ctx.moveTo(bL+1,y); ctx.lineTo(bR-1,y); ctx.stroke(); }
+  for(let c=1;c<7;c++){ const f=c/7, xt=bL+f*(bR-bL), xb=(bL+4)+f*((bR-4)-(bL+4)); ctx.beginPath(); ctx.moveTo(xt,bTopY+1); ctx.lineTo(xb,bBotY-1); ctx.stroke(); }
+  ctx.strokeStyle=wickRim; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(bL-1,bTopY); ctx.lineTo(bR+1,bTopY); ctx.stroke();
+  ctx.fillStyle='rgba(255,225,160,0.35)'; ctx.fillRect(bL+1,bTopY+1.5,bR-bL-2,2);
 
   ctx.restore();
 }
-
-// Draw the parked bike and characters mounted on it during escape sequence
 function drawBikeEscapeRiders(isL2){
   if(!bikeEscape.active) return;
   const bx = bikeEscape.x - cameraX;
@@ -6212,7 +6157,12 @@ function updateSwim(){
   const shot = keys['Space'] && s.attackCooldown<=0;
   if(shot){
     s.attackTimer=10; s.attackCooldown=20; fireAttack(s);
-    if(o.attackCooldown<=0){ o.attackTimer=10; o.attackCooldown=34; fireAttack(o); }
+    if(o.attackCooldown<=0){ o.attackTimer=10; o.attackCooldown=34;
+      if(ottoPower===2){
+        for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*5.5,vy:-0.5+k*0.6,life:42,r:5});
+        SFX.barf();
+      } else { fireAttack(o); }
+    }
   }
   if(s.attackTimer>0)s.attackTimer--;
   if(s.attackCooldown>0)s.attackCooldown--;
@@ -6227,6 +6177,19 @@ function updateSwim(){
   updateOttoSwim();
   updateBottles(s);
   updateGiantOttoCharge(lv.enemies);
+  if(ottoPower===3){
+    for(const e of lv.enemies){
+      if(!e.alive)continue;
+      const dist=Math.hypot(e.x+e.w/2-otto.x-otto.w/2, e.y+e.h/2-otto.y-otto.h/2);
+      if(dist<180){
+        if(!e.cutenessTimer)e.cutenessTimer=70;
+        e.cutenessTimer--;
+        if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
+        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12;score+=100;SFX.squash();
+          for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'}); }
+      }
+    }
+  }
 
   // ---- Enemies ----
   for(const e of lv.enemies){
