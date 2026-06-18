@@ -224,51 +224,115 @@ let cameraX = 0;
 
 // Audio system for background music with crossfading
 const audioManager = {
-  current: null,
+  current: null,       // currently playing Audio element
+  next: null,          // incoming Audio element (crossfading in)
   titleAudio: null,
+  crossfadeFrames: 90, // ~1.5s at 60fps
+  crossfadeTimer: 0,   // counts down from crossfadeFrames
+  targetVol: 0.4,
+  titleVol: 0.38,
   tracks: {
-    1: 'audio/Retirement.mp3',
-    2: 'audio/Flurries.mp3',
-    3: 'audio/Level3beach.mp3'
+    1: '/audio/Retirement.mp3',
+    2: '/audio/Flurries.mp3',
+    3: '/audio/Level3beach.mp3'
   },
+
   playTitle() {
-    if (this.titleAudio) return; // already running
-    const a = new Audio('audio/SawyerOttoTheme.mp3');
+    if (this.titleAudio) return;
+    const a = new Audio('/audio/SawyerOttoTheme.mp3');
     a.loop = true;
-    a.volume = soundOn ? 0.38 : 0;
+    a.volume = soundOn ? this.titleVol : 0;
     a.play().catch(()=>{});
     this.titleAudio = a;
   },
+
   stopTitle() {
-    if (this.titleAudio) {
-      this.titleAudio.pause();
-      this.titleAudio.currentTime = 0;
-      this.titleAudio = null;
-    }
+    if (!this.titleAudio) return;
+    this.titleAudio.pause();
+    this.titleAudio.currentTime = 0;
+    this.titleAudio = null;
   },
+
+  // Fade title out smoothly then play level music
   play(level) {
-    this.stopTitle(); // ensure title music stops when game starts
     if (!this.tracks[level]) return;
+    // Build the incoming track at volume 0
+    const incoming = new Audio(this.tracks[level]);
+    incoming.loop = true;
+    incoming.volume = 0;
+    incoming.play().catch(()=>{});
+
+    // If something is already playing, crossfade from it
     if (this.current) {
-      this.current.pause();
-      this.current.currentTime = 0;
-      this.current = null;
+      // Cancel any in-progress crossfade (previous next becomes new outgoing)
+      if (this.next) {
+        // Snap next to full volume and make it outgoing
+        this.next.volume = soundOn ? this.targetVol : 0;
+        this.current.pause();
+        this.current = this.next;
+        this.next = null;
+      }
+      this.next = incoming;
+      this.crossfadeTimer = this.crossfadeFrames;
+    } else {
+      // Nothing playing — just fade in
+      this.next = incoming;
+      this.crossfadeTimer = this.crossfadeFrames;
+      // current stays null; update() will handle ramp-up
     }
-    const audio = new Audio(this.tracks[level]);
-    audio.loop = true;
-    audio.volume = soundOn ? 0.4 : 0;
-    audio.play().catch(()=>{});
-    this.current = audio;
+
+    // Title fade-out happens via update()
   },
+
   stop() {
     this.stopTitle();
+    if (this.next) { this.next.pause(); this.next = null; }
+    if (this.current) { this.current.pause(); this.current = null; }
+    this.crossfadeTimer = 0;
+  },
+
+  // Called every frame from the game loop
+  update() {
+    if (this.crossfadeTimer <= 0) return;
+    this.crossfadeTimer--;
+    const t = 1 - this.crossfadeTimer / this.crossfadeFrames; // 0→1
+    // Smooth ease
+    const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+
+    const vol = soundOn ? this.targetVol : 0;
+
+    // Fade out current
     if (this.current) {
-      this.current.pause();
-      this.current.currentTime = 0;
-      this.current = null;
+      this.current.volume = Math.max(0, vol * (1 - ease));
+    }
+    // Fade out title if still running
+    if (this.titleAudio) {
+      this.titleAudio.volume = Math.max(0, (soundOn ? this.titleVol : 0) * (1 - ease));
+    }
+    // Fade in next
+    if (this.next) {
+      this.next.volume = Math.min(vol, vol * ease);
+    }
+
+    // Crossfade complete
+    if (this.crossfadeTimer === 0) {
+      if (this.current) { this.current.pause(); this.current = null; }
+      this.stopTitle();
+      if (this.next) {
+        this.next.volume = vol;
+        this.current = this.next;
+        this.next = null;
+      }
     }
   },
-  update() {}
+
+  // Call when soundOn toggles
+  syncVolume() {
+    const vol = soundOn ? this.targetVol : 0;
+    if (this.current) this.current.volume = vol;
+    if (this.titleAudio) this.titleAudio.volume = soundOn ? this.titleVol : 0;
+    if (this.next) this.next.volume = 0; // crossfade will ramp it
+  }
 };
 
 // Screen shake
@@ -343,7 +407,7 @@ function updateGiantOttoCharge(curEnemies){
     else if(currentLevel===3){ if(otto.x<0)otto.x=0; if(otto.x>L3_WORLD_W-otto.w)otto.x=L3_WORLD_W-otto.w; }
     else { if(otto.x<0)otto.x=0; if(otto.x>WORLD_W-otto.w)otto.x=WORLD_W-otto.w; }
     giantOttoTimer--;
-    if(giantOttoTimer<=0) resetGiantOtto();
+    if(giantOttoTimer<=0){ resetGiantOtto(); } // single charge — power consumed
   }
 }
 
@@ -482,13 +546,7 @@ function sfx(name){ (currentLevel===2 && SFX2[name] ? SFX2[name] : SFX[name])();
 function toggleSound(){ 
   soundOn = !soundOn; 
   document.getElementById('snd').innerHTML = '&#128266; Sound: ' + (soundOn ? 'on' : 'off');
-  if (audioManager.current) {
-    audioManager.current.volume = soundOn ? 0.4 : 0;
-  }
-  if (audioManager.titleAudio) {
-    audioManager.titleAudio.volume = soundOn ? 0.38 : 0;
-  }
-
+  audioManager.syncVolume();
 }
 
 function togglePause(){
@@ -504,7 +562,7 @@ function togglePause(){
     if(soundOn){
       if(audioManager.current) audioManager.current.play().catch(()=>{});
       if(audioManager.titleAudio) audioManager.titleAudio.play().catch(()=>{});
-      if(audioManager.next && audioManager.next.audio) audioManager.next.audio.play().catch(()=>{});
+      if(audioManager.next) audioManager.next.play().catch(()=>{});
     }
   }
 }
@@ -1041,7 +1099,7 @@ function update(){
   if (boss && boss.alive){
     if (!boss.active && !cutsceneActive && s.x > BOSS_GATE){ 
       cutsceneActive = true; 
-      cutsceneTimer = 180; // 3 seconds at 60fps
+      cutsceneTimer = 240; // 4 seconds at 60fps
     }
     if (boss.active){
       boss.phase+=0.07;
@@ -2197,17 +2255,47 @@ function drawBikeEscapeRiders(isL2){
 }
 
 function drawCutscene(){
-  const prog=1-(cutsceneTimer/180);
-  ctx.fillStyle=`rgba(0,0,0,${Math.min(0.7,prog*1.2)})`;ctx.fillRect(0,0,W,H);
-  const ottoShake=Math.sin(prog*Math.PI*4)*3,ottoScale=0.8+prog*0.2,ottoY=H/2+40+ottoShake;
-  ctx.save();ctx.translate(W/4+ottoShake,ottoY);ctx.scale(ottoScale,ottoScale);ctx.translate(-(W/4),-(H/2-40));drawBaby(W/4-11,H/2-40,otto);ctx.restore();
-  const bossReveal=Math.max(0,prog-0.3)/0.7;
-  ctx.save();ctx.globalAlpha=bossReveal;
-  const bossPx=W-120-(1-bossReveal)*200;
-  if(currentLevel===2) drawYetiSimple(bossPx,H/2-30); else if(currentLevel===3) drawCrabSimple(bossPx-50,H/2-40); else drawBossSimple(bossPx,H/2-20);
+  const TOTAL = 240;
+  const elapsed = TOTAL - cutsceneTimer;
+  const prog = elapsed / TOTAL;
+
+  // Smooth fade in / fade out
+  const fadeIn  = Math.min(1, elapsed / 36);
+  const fadeOut = cutsceneTimer < 24 ? cutsceneTimer / 24 : 1;
+  const alpha   = Math.min(0.78, fadeIn * 0.78) * fadeOut;
+  ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Otto — ease in from left
+  const ottoProg  = Math.min(1, elapsed / 48);
+  const easeOtto  = 1 - Math.pow(1 - ottoProg, 3);
+  const ottoShake = Math.sin(prog * Math.PI * 6) * (2 * fadeOut);
+  const ottoScale = 0.75 + easeOtto * 0.25;
+  const ottoDrawX = -60 + (W/4 + 60) * easeOtto;
+  ctx.save();
+  ctx.globalAlpha = easeOtto * fadeOut;
+  ctx.translate(ottoDrawX + ottoShake, H/2 + 40);
+  ctx.scale(ottoScale, ottoScale);
+  ctx.translate(-11, -(H/2 - 40));
+  drawBaby(0, H/2 - 40, otto);
   ctx.restore();
-  const textAlpha=Math.min(1,(prog-0.15)*3);
-  ctx.save();ctx.globalAlpha=textAlpha;ctx.textAlign='center';
+
+  // Boss — ease in from right after 28% progress
+  const bossProg = Math.max(0, (prog - 0.28) / 0.72);
+  const easeBoss = 1 - Math.pow(1 - Math.min(1, bossProg * 1.4), 3);
+  const bossPx   = (W + 120) + (W - 140 - W - 120) * easeBoss;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, bossProg * 2) * fadeOut;
+  if(currentLevel===2) drawYetiSimple(bossPx, H/2-30);
+  else if(currentLevel===3) drawCrabSimple(bossPx-50, H/2-40);
+  else drawBossSimple(bossPx, H/2-20);
+  ctx.restore();
+
+  // Title text — fade in after 20%
+  const textAlpha = Math.min(1, Math.max(0, (prog - 0.20) * 4)) * fadeOut;
+  ctx.save();
+  ctx.globalAlpha = textAlpha;
+  ctx.textAlign = 'center';
   if(currentLevel===2){
     ctx.fillStyle='#B0C4FF';ctx.font='bold 28px system-ui,sans-serif';ctx.fillText('THE YETI!',W/2,80);
     ctx.font='16px system-ui,sans-serif';ctx.fillStyle='#FFF';ctx.fillText('A massive Yeti blocks the way home...',W/2,120);
@@ -3217,7 +3305,7 @@ function updateLevel2(){
   // Yeti boss
   if(yeti&&yeti.alive){
     if(!yeti.active&&!cutsceneActive&&s.x>L2_BOSS_GATE){
-      cutsceneActive=true;cutsceneTimer=180;
+      cutsceneActive=true;cutsceneTimer=240;
     }
     if(yeti.active){
       yeti.phase+=0.06;
@@ -3613,7 +3701,7 @@ function updateLevel3(){
         kingCrab.hp--;kingCrab.hitFlash=8;shakeIntensity=5;score+=40;
         SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         if(kingCrab.hp===3&&kingCrab.phaseIndex===0){
-          kingCrab.phaseIndex=1;kingCrab.vx*=1.4;kingCrab.spitTimer=38;kingCrab.lungeTimer=110;
+          kingCrab.phaseIndex=1;kingCrab.vx*=1.5;kingCrab.lungeTimer=90;
           shakeIntensity=12;SFX.rattle();
         }
         if(kingCrab.hp<=0){
@@ -3637,44 +3725,44 @@ function updateLevel3(){
 
   if(kingCrab&&kingCrab.alive){
     if(!kingCrab.active&&!cutsceneActive&&s.x>L3_BOSS_GATE){
-      cutsceneActive=true;cutsceneTimer=180;
+      cutsceneActive=true;cutsceneTimer=240;
       s.invincible=220; s.vx=0; s.vy=0; // protect during cutscene
       venom=[]; l3Waves=[]; // clear active hazards
     }
     if(kingCrab.active){
       kingCrab.phase+=0.07;
       kingCrab.facing=s.x<kingCrab.x?-1:1;
+      // Gravity
+      if(!kingCrab.onGround){
+        kingCrab.vy=(kingCrab.vy||0)+0.55;
+        kingCrab.y+=kingCrab.vy;
+        if(kingCrab.y>=FLOOR-kingCrab.h){kingCrab.y=FLOOR-kingCrab.h;kingCrab.vy=0;kingCrab.onGround=true;}
+      }
       kingCrab.x+=kingCrab.vx;
       if(kingCrab.x<2680||kingCrab.x>3000)kingCrab.vx*=-1;
       if(kingCrab.hitFlash>0)kingCrab.hitFlash--;
       kingCrab.lungeTimer--;
       if(kingCrab.lungeTimer<=0){
-        kingCrab.vx=2.8*kingCrab.facing;kingCrab.lungeTimer=150+Math.random()*80;sfx('rattle');
-        shockwaves.push({x:kingCrab.x+kingCrab.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:kingCrab.facing});
-      } else if(Math.abs(kingCrab.vx)>1.5)kingCrab.vx*=0.95;
-      kingCrab.spitTimer--;
-      if(kingCrab.spitTimer<=0){
-        kingCrab.spitTimer=55;
-        const sx2=kingCrab.x+kingCrab.w/2, sy2=kingCrab.y+20;
-        const dx=(s.x+s.w/2)-sx2, dy=(s.y+s.h/2)-sy2;
-        const d=Math.hypot(dx,dy)||1;
-        venom.push({x:sx2,y:sy2,vx:dx/d*5,vy:dy/d*5-1,life:120,r:6});
-        sfx('bossSpit');
-      }
+        kingCrab.moveCount=(kingCrab.moveCount||0)+1;
+        if(kingCrab.moveCount%3===0&&kingCrab.onGround){
+          // Jump toward player
+          kingCrab.vy=-11.5;kingCrab.onGround=false;
+          kingCrab.vx=kingCrab.facing*3.2;
+          shakeIntensity=7;sfx('rattle');
+        } else {
+          // Scuttle burst
+          kingCrab.vx=2.8*kingCrab.facing;
+          shockwaves.push({x:kingCrab.x+kingCrab.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:kingCrab.facing});
+        }
+        kingCrab.lungeTimer=110+Math.random()*80;
+      } else if(kingCrab.onGround&&Math.abs(kingCrab.vx)>1.5) kingCrab.vx*=0.95;
       if(s.invincible===0&&s.x+s.w>kingCrab.x+16&&s.x<kingCrab.x+kingCrab.w-16&&s.y+s.h>kingCrab.y+16&&s.y<kingCrab.y+kingCrab.h)hurt(s);
     }
   } else if(kingCrab&&!kingCrab.alive&&kingCrab.dieTimer>0){
     kingCrab.dieTimer--;
   }
 
-  for(const v of venom){
-    v.vy+=0.12;v.x+=v.vx;v.y+=v.vy;v.life--;
-    if(v.y>FLOOR){v.y=FLOOR;v.vy*=-0.2;v.vx*=0.6;}
-    if(s.invincible===0&&Math.abs((s.x+s.w/2)-v.x)<s.w/2+v.r&&Math.abs((s.y+s.h/2)-v.y)<s.h/2+v.r){
-      hurt(s);v.life=0;
-    }
-  }
-  venom=venom.filter(v=>v.life>0);
+  venom=[]; // King Crab no longer spits
 
   if(!victoryActive&&!bikeEscape.active&&s.x+s.w>L3_FLAG.x+10&&s.x<L3_FLAG.x+90&&s.y+s.h>=FLOOR-10){
     if(!kingCrab||!kingCrab.alive){
