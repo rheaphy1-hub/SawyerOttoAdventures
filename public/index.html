@@ -217,8 +217,18 @@ const BOSS_GATE = 2380;
 
 let soundOn = true;
 let score = 0, lives = 3, gameOver = false, won = false;
+
+// High score persistence
+function getBestScore(level){
+  try{ return parseInt(localStorage.getItem('sawyer_best_'+level)||'0',10); }catch(e){ return 0; }
+}
+function saveBestScore(level, s){
+  try{ const best=getBestScore(level); if(s>best) localStorage.setItem('sawyer_best_'+level,s); }catch(e){}
+}
 let gameRunning = false;
 let gamePaused = false;
+let levelPaused = false; // true until player clicks PLAY on level popup
+let checkpoint = null; // {x, y} world position — set when player passes checkpoint flag
 let currentLevel = 1;
 let cameraX = 0;
 
@@ -346,6 +356,7 @@ let lastKillTime = 0, killCombo = 0;
 
 // Boss health bar effects
 let healthBarFlash = 0;
+let hurtFlashTimer = 0; // red screen flash on hurt
 
 // Cutscene
 let cutsceneActive = false, cutsceneTimer = 0;
@@ -420,10 +431,11 @@ function updateBottles(s){
         b.got=true;
         const newPwr = 1 + Math.floor(Math.random()*3);
         ottoPower = newPwr;
-        ottoPowerTimer = POWER_DURATION;
+        // Power 1 (giant rush) is self-terminating — no timer needed
+        ottoPowerTimer = newPwr === 1 ? 0 : POWER_DURATION;
         if(newPwr===1){
           giantOttoPhase='growing'; giantOttoTimer=GIANT_GROW_FRAMES;
-          otto.facing=sawyer.facing; // charge same direction Sawyer faces
+          otto.facing=sawyer.facing;
         }
         SFX.win();
         // burst particles
@@ -588,12 +600,17 @@ document.addEventListener('webkitfullscreenchange', () => {
 });
 
 function closeLevelPopup(){
-  const popup = document.getElementById('level-popup');
-  popup.style.opacity = '0';
-  popup.style.pointerEvents = 'none';
-  setTimeout(() => {
-    popup.style.display = 'none';
-  }, 300);
+  ['level-popup','level2-popup','level3-popup'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.style.opacity = '0';
+    el.style.pointerEvents = 'none';
+    setTimeout(()=>{ el.style.display='none'; }, 300);
+  });
+  levelPaused = false;
+  // Ensure game state is clean when player clicks Play
+  if(won){ won = false; }
+  if(victoryActive){ victoryActive = false; }
 }
 
 let sawyer = null, otto = null;
@@ -651,14 +668,14 @@ const enemies = [];
 function buildEnemies(){
   enemies.length = 0;
   // Elevated platform enemies — one per platform, spread across world
-  const elevTypes = ['scorpion','snake','mask','scorpion','snake','mask','scorpion','snake','mask','scorpion','snake'];
+  const elevTypes = ['scorpion','snake','scorpion','snake','scorpion','snake','scorpion','snake','scorpion','snake','scorpion'];
   for(let i=0;i<11;i++){
     const plat = platforms[i+5]; // indices 5-15 are the elevated platforms
     const e = makeEnemy(plat, elevTypes[i]);
     enemies.push(e);
   }
   // Ground enemies — evenly spread across the world width, avoiding pit edges
-  const groundTypes = ['scorpion','snake','mask','scorpion','snake'];
+  const groundTypes = ['javelina','snake','javelina','scorpion','javelina'];
   const groundXs = [350, 750, 1200, 1750, 2400];
   groundXs.forEach((gx,i)=>{
     // Find which ground segment this x falls in
@@ -842,10 +859,26 @@ function updateOtto(){
   
   // Cower animation (hide behind Sawyer)
   if (o.cower>0) o.cower--;
+
+  // Passive auto-spit: enemy within 180px and ahead of Sawyer
+  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
+    let nearestE=null, nearestD=180;
+    for(const e of enemies){
+      if(!e.alive) continue;
+      const d=Math.abs(e.x-o.x);
+      // Only target enemies roughly ahead in sawyer's facing direction
+      if(d<nearestD && Math.sign(e.x-s.x)===s.facing){ nearestD=d; nearestE=e; }
+    }
+    if(nearestE){
+      o.attackTimer=8; o.attackCooldown=240;
+      projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*5.5,vy:-0.5,life:42,r:5});
+      SFX.barf();
+    }
+  }
 }
 
 function update(){
-  if (gameOver||won) return;
+  if (gameOver||won||levelPaused) return;
   const speed=3.1, s=sawyer;
   
   // Cutscene handling
@@ -956,7 +989,16 @@ function update(){
     }
   }
 
-  cameraX = Math.max(0, Math.min(s.x - W/3, WORLD_W - W));
+  // Camera leads slightly in movement direction
+  const camTarget1 = Math.max(0, Math.min(s.x - W/3, WORLD_W - W));
+  cameraX += (camTarget1 - cameraX) * 0.06;
+  cameraX = Math.max(0, Math.min(cameraX, WORLD_W - W));
+  cameraX = Math.round(cameraX);
+  // Mid-level checkpoint at x≈1400
+  if(!checkpoint && s.x > 1400){
+    checkpoint={x:1400,y:FLOOR};
+    for(let i=0;i<16;i++) particles.push({x:1400-cameraX,y:FLOOR-20,vx:(Math.random()-0.5)*5,vy:-3-Math.random()*3,life:28,maxLife:28,type:'spark',color:'#FFD700'});
+  }
 
   // enemies move + only hurt Sawyer
   for (const e of enemies){
@@ -990,17 +1032,51 @@ function update(){
       else if (Math.abs(e.vx) > 0.4) e.vx *= 0.91;
       else e.vx = e.facing * 0.4;
       e.x += e.vx;
-    } else {
-      // Masks: sinusoidal float drift — hover up/down as they patrol
-      e.x += e.vx + Math.sin(e.phase * 1.2) * 0.6 * speedMult;
-      e.y = e.plat.y - e.h - 2 + Math.sin(e.phase * 0.85) * 9;
+    } else if (e.type === 'javelina'){
+      // Javelinas: wind up in place, then charge hard
+      if(e.chargeState === undefined){ e.chargeState = 'idle'; e.chargeTimer = 60 + Math.floor(Math.random()*40); e.chargeVx = 0; }
+      if(e.chargeState === 'idle'){
+        // Standing still, pawing the ground
+        e.chargeTimer--;
+        e.chargeVx *= 0.85;
+        e.x += e.chargeVx;
+        if(e.chargeTimer <= 0){
+          e.chargeState = 'windup'; e.chargeTimer = 40; // ~0.66s run in place
+        }
+      } else if(e.chargeState === 'windup'){
+        // Running in place — legs animate fast but no movement
+        e.phase += 0.25; // extra fast leg cycle for windup
+        e.chargeTimer--;
+        if(e.chargeTimer <= 0){
+          e.chargeState = 'charge'; e.chargeTimer = 50;
+          e.chargeVx = e.facing * 5 * speedMult;
+        }
+      } else if(e.chargeState === 'charge'){
+        // Launched! Full speed
+        e.x += e.chargeVx;
+        e.chargeTimer--;
+        if(e.chargeTimer <= 0){
+          e.chargeState = 'idle'; e.chargeTimer = 80 + Math.floor(Math.random()*40);
+          e.facing *= -1; // turn around for next charge
+          e.chargeVx = 0;
+        }
+      }
+      e.y = e.plat.y - e.h;
     }
 
     // Boundary bounce - keep enemies on their platform and flip facing
     if (e.x < e.plat.x || e.x + e.w > e.plat.x + e.plat.w){
-      e.facing *= -1;
-      e.vx *= -1;
       e.x = Math.max(e.plat.x, Math.min(e.x, e.plat.x + e.plat.w - e.w));
+      if(e.type === 'javelina'){
+        // End charge cleanly — stop, face inward, go idle
+        e.facing = (e.x <= e.plat.x) ? 1 : -1;
+        e.chargeState = 'idle';
+        e.chargeTimer = 60 + Math.floor(Math.random()*40);
+        e.chargeVx = 0;
+      } else {
+        e.facing *= -1;
+        e.vx *= -1;
+      }
     }
     
     if (s.invincible===0 &&
@@ -1100,6 +1176,8 @@ function update(){
     if (!boss.active && !cutsceneActive && s.x > BOSS_GATE){ 
       cutsceneActive = true; 
       cutsceneTimer = 240; // 4 seconds at 60fps
+      s.invincible = 260; s.vx = 0; s.vy = 0; // protect during cutscene
+      projectiles = []; venom = [];
     }
     if (boss.active){
       boss.phase+=0.07;
@@ -1166,8 +1244,6 @@ function update(){
       buildLevel2Rocks();
       buildYeti();
       buildIcicles();
-      showLevelPopup('FROZEN PEAKS', 'Level 2 — brave the blizzard and defeat the Yeti!');
-      // Crossfade to level 2 music
       audioManager.play(2);
     }
     // Lock Sawyer in place during victory
@@ -1203,10 +1279,14 @@ function hurt(p){
   if (p.ai) return;
   if (p.invincible>0) return;
   lives--; SFX.hurt();
-  shakeIntensity = 8; // Screen shake on hurt
-  if (lives<=0){ gameOver=true; SFX.over(); return; }
-  const rx = safeRespawnX();
-  p.x=rx; p.y=FLOOR-p.h-4; p.vx=0; p.vy=0; p.invincible=90;
+  shakeIntensity = 10;
+  hurtFlashTimer = 12; // red screen flash
+  // Knockback burst particles
+  for(let i=0;i<10;i++) particles.push({x:p.x+p.w/2,y:p.y+p.h/2,vx:(Math.random()-0.5)*6,vy:-2-Math.random()*3,life:18,maxLife:18,type:'spark',color:'#FF4444'});
+  if (lives<=0){ gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return; }
+  const rx = checkpoint ? checkpoint.x : safeRespawnX();
+  const ry = checkpoint ? checkpoint.y - p.h : FLOOR-p.h-4;
+  p.x=rx; p.y=ry; p.vx=0; p.vy=-4; p.invincible=90;
 }
 
 function rr(x,y,w,h,r,fill,stroke){
@@ -1280,25 +1360,49 @@ function texHatch(sx, sy, w, h, count, color, seed, len, angle){
 function drawPlayer(p){
   const px=p.x-cameraX, py=p.y;
   
-  // Apply cower effect (hide behind Sawyer)
   if (p.baby && otto.cower > 0){
     ctx.globalAlpha = Math.max(0.3, 1 - (120 - otto.cower) / 120);
   }
   
   const blink = p.invincible>0 && Math.floor(p.invincible/5)%2===0;
   if (!blink){ 
-    // Apply cheer bounce for Otto
     let drawY = py;
+    const t = Date.now();
+    const moving = Math.abs(p.vx) > 0.5;
+
+    // Walking bob — body rises/falls with step cycle
+    if (moving && p.onGround){
+      const stepFreq = p.baby ? 160 : 130;
+      const stepAmp  = p.baby ? 1.2 : 2.0;
+      drawY += Math.sin((t / stepFreq) * Math.PI * 2) * stepAmp;
+      // Store leg phase on player object for drawBoy/drawBaby
+      p.legPhase = (t / stepFreq) % 1;
+    } else {
+      p.legPhase = 0;
+      // Idle breathing — very subtle
+      if (p.onGround) drawY += Math.sin(t / 900) * 0.8;
+    }
+
+    // Cheer bounce for Otto
     if (p.baby && otto.cheer > 0){
       const cheerProg = 1 - (otto.cheer / 8);
       drawY = py - Math.sin(cheerProg * Math.PI) * 6;
     }
-    // Add walking animation bob for Sawyer
-    if (p.id === 'sawyer' && Math.abs(p.vx) > 0.5 && p.onGround){
-      const walkPhase = (Date.now() / 100) % (Math.PI * 2);
-      drawY += Math.sin(walkPhase) * 1.5;
+
+    // Landing squash — brief vertical squash on first few frames after landing
+    if (p.onGround && p.landTimer > 0){
+      p.landTimer--;
+      ctx.save();
+      const squash = 1 - (p.landTimer / 8) * 0.18;
+      const stretch = 1 + (p.landTimer / 8) * 0.12;
+      ctx.translate(px + p.w/2, py + p.h);
+      ctx.scale(stretch, squash);
+      ctx.translate(-(px + p.w/2), -(py + p.h));
+      p.baby ? drawBaby(px, drawY, p) : drawBoy(px, drawY, p);
+      ctx.restore();
+    } else {
+      p.baby ? drawBaby(px, drawY, p) : drawBoy(px, drawY, p);
     }
-    p.baby ? drawBaby(px, drawY, p) : drawBoy(px, drawY, p);
   }
   ctx.globalAlpha = 1;
 }
@@ -1306,9 +1410,15 @@ function drawPlayer(p){
 function drawBoy(px,py,p){
   ctx.save();
   if (p.facing<0){ ctx.translate(px+p.w/2,0); ctx.scale(-1,1); ctx.translate(-(px+p.w/2),0); }
-  rr(px+5,py+30,6,10,2,'#262624',null);
-  rr(px+15,py+30,6,10,2,'#262624',null);
-  ctx.fillStyle=p.stripe; ctx.fillRect(px+5,py+30,1.5,10); ctx.fillRect(px+19.5,py+30,1.5,10);
+  // Animated legs
+  const lp = p.legPhase || 0;
+  const l1 = Math.sin(lp * Math.PI * 2) * 4;       // left leg swing
+  const l2 = Math.sin(lp * Math.PI * 2 + Math.PI) * 4; // right leg (opposite)
+  rr(px+5, py+30+Math.max(0,l1), 6, 10-Math.abs(l1)*0.3, 2, '#262624', null);
+  rr(px+15,py+30+Math.max(0,l2), 6, 10-Math.abs(l2)*0.3, 2, '#262624', null);
+  ctx.fillStyle=p.stripe;
+  ctx.fillRect(px+5, py+30+Math.max(0,l1), 1.5, 10-Math.abs(l1)*0.3);
+  ctx.fillRect(px+19.5,py+30+Math.max(0,l2),1.5,10-Math.abs(l2)*0.3);
   rr(px+4,py+18,18,16,3,p.shirt,null);
   ctx.fillStyle=p.stripe;
   ctx.fillRect(px+4,py+18,2.5,15);
@@ -1477,6 +1587,24 @@ function drawVenom(){
     ctx.fillStyle='rgba(255,255,255,0.4)';
     ctx.beginPath(); ctx.arc(x-1.5,y-1.5,1.5,0,7); ctx.fill();
   }
+}
+
+function drawCheckpoint(){
+  if(!checkpoint) return;
+  const levels = {1:WORLD_W, 2:0, 3:0}; // only draw in active level
+  const cx = checkpoint.x - cameraX;
+  if(cx < -20 || cx > W+20) return;
+  // Post
+  ctx.strokeStyle='#C8A000'; ctx.lineWidth=3; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(cx,FLOOR); ctx.lineTo(cx,FLOOR-40); ctx.stroke();
+  // Flag pennant
+  ctx.fillStyle='#FFD700';
+  ctx.beginPath(); ctx.moveTo(cx,FLOOR-40); ctx.lineTo(cx+22,FLOOR-32); ctx.lineTo(cx,FLOOR-24); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.2)'; ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.moveTo(cx,FLOOR-40); ctx.lineTo(cx+22,FLOOR-32); ctx.lineTo(cx,FLOOR-24); ctx.closePath(); ctx.stroke();
+  // Checkpoint star
+  ctx.fillStyle='#FFFFFF'; ctx.font='bold 9px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText('★', cx+10, FLOOR-33);
 }
 
 function drawRocks(){
@@ -1679,32 +1807,101 @@ function drawSnake(ex,ey,e){
   ctx.beginPath(); ctx.moveTo(ex+30,ey+12); ctx.lineTo(ex+34,ey+11); ctx.stroke();
   ctx.restore();
 }
-function drawMask(ex,ey,e){
-  const bob=Math.sin(e.phase)*2; ctx.save(); ctx.translate(0,bob);
-  rr(ex+3,ey+2,22,24,8,'#854F0B','#4A1B0C');
-  // Weathered wood grain + cracks on the mask face
+function drawJavelina(ex,ey,e){
+  const bob=Math.sin(e.phase)*1.5; ctx.save(); ctx.translate(0,bob);
+  // Flip for facing direction
+  if(e.facing<0){ ctx.translate(ex+e.w/2,0); ctx.scale(-1,1); ctx.translate(-(ex+e.w/2),0); }
+
+  // Body — stocky dark grey oval
+  ctx.fillStyle='#4A4A42';
+  ctx.beginPath(); ctx.ellipse(ex+14,ey+17,13,9,0,0,Math.PI*2); ctx.fill();
+  // Body texture — coarse bristle speckle
   ctx.save();
-  ctx.beginPath(); ctx.roundRect(ex+3,ey+2,22,24,8); ctx.clip();
-  texGrain(ex+3, ey+2, 22, 24, 4, 'rgba(74,27,12,0.25)', e.plat.x*0.1+ex*0.01, 1.2, 0.6);
-  texCracks(ex+8, ey+2, 12, 24, 'rgba(40,20,8,0.3)', ex*0.7, 2, 0.6);
+  ctx.beginPath(); ctx.ellipse(ex+14,ey+17,13,9,0,0,Math.PI*2); ctx.clip();
+  texSpeckle(ex+2,ey+9,24,16,18,'rgba(0,0,0,0.22)',ex*0.3,1.1);
+  texSpeckle(ex+2,ey+9,24,16,8,'rgba(255,255,255,0.08)',ex*0.5,0.9);
   ctx.restore();
-  ctx.fillStyle='#1D9E75'; ctx.fillRect(ex+3,ey+6,22,3); ctx.fillRect(ex+3,ey+19,22,3);
-  // Tribal band highlights
-  ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.fillRect(ex+3,ey+6,22,1); ctx.fillRect(ex+3,ey+19,22,1);
-  ctx.fillStyle='#2C2C2A';
-  ctx.beginPath(); ctx.moveTo(ex+8,ey+11); ctx.lineTo(ex+13,ey+11); ctx.lineTo(ex+10,ey+15); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(ex+15,ey+11); ctx.lineTo(ex+20,ey+11); ctx.lineTo(ex+18,ey+15); ctx.fill();
-  // Glowing eye pinpoints
-  ctx.fillStyle='rgba(255,200,100,0.7)';
-  ctx.beginPath(); ctx.arc(ex+10.5,ey+12,0.8,0,7); ctx.fill();
-  ctx.beginPath(); ctx.arc(ex+17.5,ey+12,0.8,0,7); ctx.fill();
-  ctx.strokeStyle='#FAECE7'; ctx.lineWidth=1.5;
-  ctx.beginPath(); ctx.moveTo(ex+8,ey+20); ctx.lineTo(ex+11,ey+22); ctx.lineTo(ex+14,ey+20); ctx.lineTo(ex+17,ey+22); ctx.lineTo(ex+20,ey+20); ctx.stroke();
-  ctx.strokeStyle='#D85A30'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(ex+14,ey+2); ctx.lineTo(ex+14,ey-5); ctx.stroke();
-  ctx.strokeStyle='#378ADD';
-  ctx.beginPath(); ctx.moveTo(ex+9,ey+2); ctx.lineTo(ex+6,ey-3); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(ex+19,ey+2); ctx.lineTo(ex+22,ey-3); ctx.stroke();
+
+  // White collar / mane stripe — javelinas have a pale neck band
+  ctx.fillStyle='#C8C4A0';
+  ctx.beginPath(); ctx.ellipse(ex+14,ey+13,6,4,0,0,Math.PI*2); ctx.fill();
+
+  // Head
+  ctx.fillStyle='#3A3A32';
+  ctx.beginPath(); ctx.ellipse(ex+23,ey+14,8,6,0.2,0,Math.PI*2); ctx.fill();
+
+  // Snout — elongated, lighter
+  ctx.fillStyle='#6A5A48';
+  ctx.beginPath(); ctx.ellipse(ex+30,ey+16,5,3.5,-0.1,0,Math.PI*2); ctx.fill();
+  // Nostrils
+  ctx.fillStyle='#2A1A10';
+  ctx.beginPath(); ctx.arc(ex+33,ey+15,1,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ex+33,ey+17.5,1,0,Math.PI*2); ctx.fill();
+
+  // Tusks — short white upward curves
+  ctx.strokeStyle='#E8E0C8'; ctx.lineWidth=1.8; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(ex+29,ey+18); ctx.quadraticCurveTo(ex+31,ey+22,ex+33,ey+20); ctx.stroke();
+
+  // Eye — small, alert
+  ctx.fillStyle='#1A1A14';
+  ctx.beginPath(); ctx.arc(ex+26,ey+13,2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.arc(ex+25.3,ey+12.3,0.7,0,Math.PI*2); ctx.fill();
+
+  // Ear — short triangular
+  ctx.fillStyle='#3A3A32';
+  ctx.beginPath(); ctx.moveTo(ex+24,ey+9); ctx.lineTo(ex+21,ey+5); ctx.lineTo(ex+28,ey+8); ctx.closePath(); ctx.fill();
+
+  // Bristly mane ridge along back
+  ctx.strokeStyle='#2A2A22'; ctx.lineWidth=1.2; ctx.lineCap='round';
+  for(let i=0;i<5;i++){
+    const bx=ex+8+i*4, by=ey+9;
+    ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx+(Math.random()>0.5?1:-1),by-4); ctx.stroke();
+  }
+
+  // Legs — animated based on charge state
+  ctx.fillStyle='#3C3C34';
+  const jlp = e.legPhase || e.phase || 0;
+  const charging = e.chargeState==='charge';
+  const winding  = e.chargeState==='windup';
+  const legSpeed = winding ? 0.6 : (charging ? 0.5 : 0);
+  const la = Math.sin(jlp * Math.PI * 2) * (legSpeed > 0 ? 5 : 0);
+  const lb = Math.sin(jlp * Math.PI * 2 + Math.PI) * (legSpeed > 0 ? 5 : 0);
+  ctx.fillRect(ex+6,  ey+24+Math.max(0,la), 4, 6-Math.abs(la)*0.3);
+  ctx.fillRect(ex+11, ey+24+Math.max(0,lb), 4, 6-Math.abs(lb)*0.3);
+  ctx.fillRect(ex+18, ey+24+Math.max(0,la), 4, 6-Math.abs(la)*0.3);
+  ctx.fillRect(ex+23, ey+24+Math.max(0,lb), 4, 6-Math.abs(lb)*0.3);
+  if(winding) e.legPhase = (e.legPhase||0) + legSpeed;
+  if(charging) e.legPhase = (e.legPhase||0) + legSpeed;
+
+  // Windup dust puffs (behind the javelina)
+  if(winding && Math.random()>0.6){
+    particles.push({x:e.x+4,y:e.y+e.h,vx:(Math.random()-0.5)*2,vy:-0.5-Math.random(),life:10,maxLife:10,type:'dust'});
+  }
+  // Charge speed lines
+  if(charging){
+    ctx.save(); ctx.globalAlpha=0.4; ctx.strokeStyle='rgba(200,180,150,0.7)'; ctx.lineWidth=1.5; ctx.lineCap='round';
+    for(let i=0;i<3;i++){
+      const ly=ey+10+i*6;
+      const dir=e.facing;
+      ctx.beginPath(); ctx.moveTo(ex-dir*4,ly); ctx.lineTo(ex-dir*(14+i*5),ly); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // Anger snort during windup
+  if(winding){
+    ctx.save(); ctx.globalAlpha=0.5+Math.sin(e.phase*4)*0.3;
+    ctx.fillStyle='#AAA';
+    const sx=e.facing>0?ex+34:ex-6;
+    ctx.beginPath(); ctx.arc(sx,ey+14,2.5,0,7); ctx.fill();
+    ctx.beginPath(); ctx.arc(sx+e.facing*4,ey+12,1.8,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  // Tiny tail — short stub
+  ctx.strokeStyle='#4A4A42'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(ex+2,ey+14); ctx.quadraticCurveTo(ex-2,ey+12,ex-1,ey+10); ctx.stroke();
+
   ctx.restore();
 }
 function drawEnemies(){
@@ -1738,14 +1935,14 @@ function drawEnemies(){
       
       if (e.type==='scorpion') drawScorpion(ex,ey,e);
       else if (e.type==='snake') drawSnake(ex,ey,e);
-      else drawMask(ex,ey,e);
+      else drawJavelina(ex,ey,e);
       
       ctx.restore();
       e.deathTime--;
     } else if (e.alive){
       if (e.type==='scorpion') drawScorpion(ex,ey,e);
       else if (e.type==='snake') drawSnake(ex,ey,e);
-      else drawMask(ex,ey,e);
+      else drawJavelina(ex,ey,e);
       if(e.cutenessTimer&&e.cutenessTimer>0) drawDazedHeartEyes(ex,ey,e.w);
     }
   }
@@ -1816,7 +2013,14 @@ function drawBoss(){
     ctx.globalAlpha = healthBarAlpha;
     rr(bxs-3+healthBarShake,bys-3,bw+6,bh+6,4,'rgba(74,27,12,0.85)',null);
     rr(bxs+healthBarShake,bys,bw,bh,3,'#712B13',null);
-    rr(bxs+healthBarShake,bys,bw*(boss.hp/boss.maxHp),bh,3,'#E24B4A',null);
+    const l1FillW = bw*(boss.hp/boss.maxHp);
+    rr(bxs+healthBarShake,bys,l1FillW,bh,3,'#E24B4A',null);
+    // Liquid shine on fill
+    ctx.save(); ctx.beginPath(); ctx.roundRect(bxs+healthBarShake,bys,l1FillW,bh/2,3); ctx.clip();
+    ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.fillRect(bxs+healthBarShake,bys,l1FillW,bh/2); ctx.restore();
+    // Boss name
+    ctx.save(); ctx.globalAlpha=healthBarAlpha; ctx.font='600 10px system-ui,sans-serif'; ctx.fillStyle='#FAEEDA'; ctx.textAlign='center';
+    ctx.fillText('🐍 RATTLER REX', W/2, bys+bh+13); ctx.restore();
     ctx.globalAlpha = 1;
     
     ctx.font='600 11px system-ui,sans-serif'; ctx.fillStyle='#FAECE7'; ctx.textAlign='center';
@@ -2259,54 +2463,77 @@ function drawCutscene(){
   const elapsed = TOTAL - cutsceneTimer;
   const prog = elapsed / TOTAL;
 
-  // Smooth fade in / fade out
+  // Overlay — dark vignette only, light enough that world-space characters stay visible
   const fadeIn  = Math.min(1, elapsed / 36);
   const fadeOut = cutsceneTimer < 24 ? cutsceneTimer / 24 : 1;
-  const alpha   = Math.min(0.78, fadeIn * 0.78) * fadeOut;
+  const alpha   = Math.min(0.55, fadeIn * 0.55) * fadeOut;
   ctx.fillStyle = `rgba(0,0,0,${alpha})`;
   ctx.fillRect(0, 0, W, H);
 
-  // Otto — ease in from left
-  const ottoProg  = Math.min(1, elapsed / 48);
-  const easeOtto  = 1 - Math.pow(1 - ottoProg, 3);
-  const ottoShake = Math.sin(prog * Math.PI * 6) * (2 * fadeOut);
-  const ottoScale = 0.75 + easeOtto * 0.25;
-  const ottoDrawX = -60 + (W/4 + 60) * easeOtto;
-  ctx.save();
-  ctx.globalAlpha = easeOtto * fadeOut;
-  ctx.translate(ottoDrawX + ottoShake, H/2 + 40);
-  ctx.scale(ottoScale, ottoScale);
-  ctx.translate(-11, -(H/2 - 40));
-  drawBaby(0, H/2 - 40, otto);
-  ctx.restore();
+  if(currentLevel===3){
+    // L3: crab slides in from right, centered — Sawyer/Otto stay in world-space untouched
+    const bossProg = Math.min(1, elapsed / 120);
+    const easeBoss = 1 - Math.pow(1 - bossProg, 3);
+    const bossX    = W/2 - 50 + (1 - easeBoss) * (W * 0.6);
+    const bossY    = H/2 - 40;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, bossProg * 1.8) * fadeOut;
+    // Scale up slightly for drama
+    const sc = 1.0 + easeBoss * 0.35;
+    ctx.translate(bossX + 50, bossY + 40);
+    ctx.scale(sc, sc);
+    ctx.translate(-50, -40);
+    drawCrabSimple(0, 0);
+    ctx.restore();
 
-  // Boss — ease in from right after 28% progress
-  const bossProg = Math.max(0, (prog - 0.28) / 0.72);
-  const easeBoss = 1 - Math.pow(1 - Math.min(1, bossProg * 1.4), 3);
-  const bossPx   = (W + 120) + (W - 140 - W - 120) * easeBoss;
-  ctx.save();
-  ctx.globalAlpha = Math.min(1, bossProg * 2) * fadeOut;
-  if(currentLevel===2) drawYetiSimple(bossPx, H/2-30);
-  else if(currentLevel===3) drawCrabSimple(bossPx-50, H/2-40);
-  else drawBossSimple(bossPx, H/2-20);
-  ctx.restore();
+    // Text
+    const textAlpha = Math.min(1, Math.max(0, (prog - 0.25) * 4)) * fadeOut;
+    ctx.save();
+    ctx.globalAlpha = textAlpha;
+    ctx.textAlign = 'center';
+    ctx.fillStyle='#FF8040'; ctx.font='bold 28px system-ui,sans-serif';
+    ctx.fillText('KING CRAB KRAWLEY!', W/2, 72);
+    ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF';
+    ctx.fillText('The King of the Beach blocks the path...', W/2, 106);
+    ctx.restore();
 
-  // Title text — fade in after 20%
-  const textAlpha = Math.min(1, Math.max(0, (prog - 0.20) * 4)) * fadeOut;
-  ctx.save();
-  ctx.globalAlpha = textAlpha;
-  ctx.textAlign = 'center';
-  if(currentLevel===2){
-    ctx.fillStyle='#B0C4FF';ctx.font='bold 28px system-ui,sans-serif';ctx.fillText('THE YETI!',W/2,80);
-    ctx.font='16px system-ui,sans-serif';ctx.fillStyle='#FFF';ctx.fillText('A massive Yeti blocks the way home...',W/2,120);
-  } else if(currentLevel===3){
-    ctx.fillStyle='#FF8040';ctx.font='bold 28px system-ui,sans-serif';ctx.fillText('KING CRAB KRAWLEY!',W/2,80);
-    ctx.font='16px system-ui,sans-serif';ctx.fillStyle='#FFF';ctx.fillText('The King of the Beach blocks the path...',W/2,120);
   } else {
-    ctx.fillStyle='#E24B4A';ctx.font='bold 28px system-ui,sans-serif';ctx.fillText('RATTLER REX!',W/2,80);
-    ctx.font='16px system-ui,sans-serif';ctx.fillStyle='#FFF';ctx.fillText('The legendary boss is here...',W/2,120);
+    // L1 / L2: existing boss-reveal behaviour
+    const ottoProg  = Math.min(1, elapsed / 48);
+    const easeOtto  = 1 - Math.pow(1 - ottoProg, 3);
+    const ottoShake = Math.sin(prog * Math.PI * 6) * (2 * fadeOut);
+    const ottoScale = 0.75 + easeOtto * 0.25;
+    const ottoDrawX = -60 + (W/4 + 30 + 60) * easeOtto;
+    ctx.save();
+    ctx.globalAlpha = easeOtto * fadeOut;
+    ctx.translate(ottoDrawX + ottoShake, H/2 + 40);
+    ctx.scale(ottoScale, ottoScale);
+    ctx.translate(-11, -(H/2 - 40));
+    drawBaby(0, H/2 - 40, otto);
+    ctx.restore();
+
+    const bossProg = Math.max(0, (prog - 0.28) / 0.72);
+    const easeBoss = 1 - Math.pow(1 - Math.min(1, bossProg * 1.4), 3);
+    const bossPx   = (W + 120) + (W - 140 - W - 120) * easeBoss;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, bossProg * 2) * fadeOut;
+    if(currentLevel===2) drawYetiSimple(bossPx, H/2-30);
+    else drawBossSimple(bossPx, H/2-20);
+    ctx.restore();
+
+    const textAlpha = Math.min(1, Math.max(0, (prog - 0.20) * 4)) * fadeOut;
+    ctx.save();
+    ctx.globalAlpha = textAlpha;
+    ctx.textAlign = 'center';
+    if(currentLevel===2){
+      ctx.fillStyle='#B0C4FF'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('THE YETI!',W/2,80);
+      ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('A massive Yeti blocks the way home...',W/2,120);
+    } else {
+      ctx.fillStyle='#E24B4A'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('RATTLER REX!',W/2,80);
+      ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('The legendary boss is here...',W/2,120);
+    }
+    ctx.restore();
   }
-  ctx.restore();
 }
 function drawYetiSimple(bx,by){
   ctx.save();
@@ -2472,16 +2699,22 @@ function drawVictoryAnimation(){
 function drawOverlay(msg,sub){
   ctx.fillStyle='rgba(74,27,12,0.6)'; ctx.fillRect(0,0,W,H);
   ctx.fillStyle='#fff'; ctx.font='600 30px system-ui,sans-serif'; ctx.textAlign='center';
-  ctx.fillText(msg,W/2,H/2-16);
+  ctx.fillText(msg,W/2,H/2-28);
   ctx.font='400 16px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)';
-  ctx.fillText(sub,W/2,H/2+16);
-  ctx.font='400 13px system-ui,sans-serif'; ctx.fillText('Press R to play again',W/2,H/2+46);
+  ctx.fillText(sub,W/2,H/2+4);
+  const best=getBestScore(currentLevel);
+  if(best>0){
+    ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle='#FFD700';
+    ctx.fillText('🏆 Best: '+best+' pts',W/2,H/2+26);
+  }
+  ctx.font='400 13px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.7)';
+  ctx.fillText('Press R to play again',W/2,H/2+50);
 }
 
 function restartCurrentLevel(){
   const lvl = currentLevel||1;
   score=0; lives=3; gameOver=false; won=false; cameraX=0;
-  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0;
+  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
   shockwaves=[]; icicles=[]; l3Waves=[];
@@ -2496,6 +2729,7 @@ function restartCurrentLevel(){
   audioManager.play(currentLevel);
   const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'SANDY SHORES'};
   const popupDescs={1:'Guide Sawyer across the Texas desert!',2:'Brave the blizzard — defeat the Yeti!',3:'Otto spotted a hermit crab and now they\'re sprinting down the beach!'};
+  levelPaused = true;
   showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
 }
 function jumpToLevel(n){
@@ -2518,6 +2752,8 @@ function jumpToLevel(n){
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
   audioManager.play(n);
+  levelPaused = true;
+  showLevelPopup('', ''); // routes to correct popup by currentLevel
   // Highlight active level button
   [1,2,3].forEach(i=>{
     const btns=document.querySelectorAll('.bar button');
@@ -2528,9 +2764,10 @@ function jumpToLevel(n){
 function restart(resetLevel){
   const lvl = resetLevel ? 1 : (currentLevel||1);
   score=0; lives=3; gameOver=false; won=false; cameraX=0;
-  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0;
+  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
+  checkpoint=null;
   currentLevel=lvl;
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   
@@ -2548,6 +2785,9 @@ function restart(resetLevel){
   
   console.log(`[GAME] Restart called, playing audio for level ${currentLevel}`);
   audioManager.play(currentLevel);
+  levelPaused = true;
+  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'SANDY SHORES'};
+  showLevelPopup(popupTitles[currentLevel],'');
 }
 function loop(){
   if(gamePaused){
@@ -2591,13 +2831,13 @@ function loop(){
   
   if(currentLevel===2){
     drawL2Bg(); drawL2Platforms(); drawL2Flag(); drawL2Rocks();
-    drawL2Enemies(); drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawIcicles(); drawProjectiles();
+    drawL2Enemies(); drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawIcicles(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel===3){
     drawL3Bg(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
-    drawL3Enemies(); drawL3Waves(); drawKingCrab(); drawVenom(); drawProjectiles();
+    drawL3Enemies(); drawL3Waves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawCheckpoint();
   } else {
     drawBg(); drawPlatforms(); drawBike(bikeEscape.active ? bikeEscape.x : FLAG.x, bikeEscape.wheelSpin, false); drawRocks();
-    drawEnemies(); drawBoss(); drawVenom(); drawProjectiles();
+    drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
   }
   
   // Draw particles (dust, sparks, snow etc)
@@ -2791,6 +3031,16 @@ function loop(){
   // Draw victory animation
   if (victoryActive){
     drawVictoryAnimation();
+  }
+
+  // Hurt flash overlay
+  if (hurtFlashTimer > 0){
+    hurtFlashTimer--;
+    ctx.save();
+    ctx.globalAlpha = (hurtFlashTimer / 12) * 0.35;
+    ctx.fillStyle = '#FF0000';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
   }
   
   if (gameOver) drawOverlay('Game Over', 'Score: ' + score);
@@ -3132,7 +3382,7 @@ function drawIcicles(){
 // ── END ICICLES ──────────────────────────────────────────────────
 // ── L2 UPDATE ──
 function updateLevel2(){
-  if(gameOver||won) return;
+  if(gameOver||won||levelPaused) return;
   const speed=3.1, s=sawyer;
 
   if(cutsceneActive){
@@ -3158,7 +3408,7 @@ function updateLevel2(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L2_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      victoryActive=true; victoryTimer=220;
+      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=220;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -3213,7 +3463,14 @@ function updateLevel2(){
     }
   }
 
-  cameraX=Math.max(0,Math.min(s.x-W/3,L2_WORLD_W-W));
+  const camTarget2 = Math.max(0, Math.min(s.x - W/3, L2_WORLD_W - W));
+  cameraX += (camTarget2 - cameraX) * 0.06;
+  cameraX = Math.max(0, Math.min(cameraX, L2_WORLD_W - W));
+  cameraX = Math.round(cameraX);
+  if(!checkpoint && s.x > 1500){
+    checkpoint={x:1500,y:FLOOR};
+    for(let i=0;i<16;i++) particles.push({x:1500-cameraX,y:FLOOR-20,vx:(Math.random()-0.5)*5,vy:-3-Math.random()*3,life:28,maxLife:28,type:'spark',color:'#7DD9FF'});
+  }
 
   // L2 enemies
   for(const e of l2Enemies){
@@ -3306,6 +3563,8 @@ function updateLevel2(){
   if(yeti&&yeti.alive){
     if(!yeti.active&&!cutsceneActive&&s.x>L2_BOSS_GATE){
       cutsceneActive=true;cutsceneTimer=240;
+      s.invincible=260; s.vx=0; s.vy=0;
+      projectiles=[]; venom=[];
     }
     if(yeti.active){
       yeti.phase+=0.06;
@@ -3402,7 +3661,6 @@ function updateLevel2(){
       buildLevel3Rocks();
       buildKingCrab();
       buildL3Waves();
-      showLevelPopup('SANDY SHORES', 'Level 3 — Otto spotted a hermit crab. Now they\'re racing down the beach!');
       audioManager.play(3);
     }
     s.vx=0;
@@ -3431,6 +3689,13 @@ function updateOttoL2(){
   if(o.attackTimer>0)o.attackTimer--;
   if(o.cheer>0)o.cheer--;
   if(o.cower>0)o.cower--;
+
+  // Passive auto-spit L2
+  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
+    let nearestE=null, nearestD=180;
+    for(const e of l2Enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
+    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*5.5,vy:-0.5,life:42,r:5}); SFX.barf(); }
+  }
 }
 
 function resolveL2(p){
@@ -3443,6 +3708,7 @@ function resolveL2(p){
       if(p.id==='sawyer'&&Math.abs(p.vy)>5){
         for(let i=0;i<6;i++) particles.push({x:p.x+p.w/2+Math.random()*12-6,y:p.y+p.h,vx:Math.random()*3-1.5,vy:-0.5-Math.random()*1.5,life:14,maxLife:14,type:'snow'});
       }
+      if(!p.onGround && p.vy > 3){ p.landTimer = 8; }
       p.vy=0;p.onGround=true;
     }
   }
@@ -3546,7 +3812,7 @@ function drawL3Waves(){
 // LEVEL 3 UPDATE
 // ===========================
 function updateLevel3(){
-  if(gameOver||won) return;
+  if(gameOver||won||levelPaused) return;
   const s=sawyer,o=otto;
 
   // Cutscene handling
@@ -3555,7 +3821,10 @@ function updateLevel3(){
     if(cutsceneTimer<=0){
       cutsceneActive=false; kingCrab.active=true; otto.cower=120; SFX.rattle();
     }
-    s.vx=0; s.vy+=GRAVITY; resolveL3(s); return;
+    // Keep Sawyer on platform — apply gravity only, no horizontal movement
+    s.vx=0; s.vy+=GRAVITY; resolveL3(s);
+    // Camera stays locked at current position during cutscene
+    return;
   }
 
   // Bike escape — lock controls and run sequence
@@ -3573,7 +3842,7 @@ function updateLevel3(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L3_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      victoryActive=true; victoryTimer=220;
+      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=220;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -3622,7 +3891,14 @@ function updateLevel3(){
   s.vy+=GRAVITY; s.x+=s.vx; s.y+=s.vy;
   resolveL3(s);
   if(s.x<0)s.x=0; if(s.x>L3_WORLD_W-s.w)s.x=L3_WORLD_W-s.w;
-  cameraX=Math.max(0,Math.min(s.x-100,L3_WORLD_W-W));
+  const camTarget3 = Math.max(0, Math.min(s.x - 100, L3_WORLD_W - W));
+  cameraX += (camTarget3 - cameraX) * 0.06;
+  cameraX = Math.max(0, Math.min(cameraX, L3_WORLD_W - W));
+  cameraX = Math.round(cameraX);
+  if(!checkpoint && s.x > 1600){
+    checkpoint={x:1600,y:FLOOR};
+    for(let i=0;i<16;i++) particles.push({x:1600-cameraX,y:FLOOR-20,vx:(Math.random()-0.5)*5,vy:-3-Math.random()*3,life:28,maxLife:28,type:'spark',color:'#FFD700'});
+  }
   if(s.y>H+40){hurt(s);}
   if(s.invincible>0)s.invincible--;
   updateOttoL3();
@@ -3658,10 +3934,15 @@ function updateLevel3(){
     e.phase+=0.06;
     if(e.type==='stingray'){
       e.hoverTimer++;
-      e.hoverY=e.plat.y-26+Math.sin(e.hoverTimer*0.03)*20;
-      e.y=e.hoverY;
-      if(e.hoverTimer%120===0){e.vy=6;e.vx=Math.sign(s.x-e.x)*1.2;}
-      if(e.hoverTimer%120>60){e.vy+=0.3;e.y+=e.vy;}
+      // Smooth figure-8 style hover: gentle vertical sine + slow horizontal drift
+      const hBase = e.plat.y - 38;
+      e.y = hBase + Math.sin(e.hoverTimer * 0.025) * 22;
+      // Slow horizontal patrol — reverse at patrol bounds
+      if(!e.patrolDir) e.patrolDir = e.facing || 1;
+      e.x += e.patrolDir * 0.5;
+      const pLeft = e.plat.x + 10, pRight = e.plat.x + e.plat.w - e.w - 10;
+      if(e.x > pRight){ e.x = pRight; e.patrolDir = -1; e.facing = -1; }
+      if(e.x < pLeft){ e.x = pLeft; e.patrolDir = 1; e.facing = 1; }
     } else {
       e.x+=e.vx*fwd;
       for(const p of l3Platforms){
@@ -3688,6 +3969,7 @@ function updateLevel3(){
   for(const pr of projectiles){
     if(pr.type==='ball'){pr.vy+=0.32;pr.spin=(pr.spin||0)+0.4;} else {pr.vy+=0.2;}
     pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
+    if(pr.type==='ball'&&pr.y+pr.r>=FLOOR){pr.y=FLOOR-pr.r;pr.vy*=-0.5;pr.vx*=0.7;}
     for(const e of l3Enemies){
       if(!e.alive)continue;
       if(pr.x>e.x&&pr.x<e.x+e.w&&pr.y>e.y&&pr.y<e.y+e.h){
@@ -3702,7 +3984,7 @@ function updateLevel3(){
         SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         if(kingCrab.hp===3&&kingCrab.phaseIndex===0){
           kingCrab.phaseIndex=1;kingCrab.vx*=1.5;kingCrab.lungeTimer=90;
-          shakeIntensity=12;SFX.rattle();
+          shakeIntensity=16;hurtFlashTimer=20;SFX.rattle();
         }
         if(kingCrab.hp<=0){
           kingCrab.alive=false;kingCrab.dieTimer=120;score+=1000;shakeIntensity=16;SFX.bossDie();
@@ -3726,7 +4008,7 @@ function updateLevel3(){
   if(kingCrab&&kingCrab.alive){
     if(!kingCrab.active&&!cutsceneActive&&s.x>L3_BOSS_GATE){
       cutsceneActive=true;cutsceneTimer=240;
-      s.invincible=220; s.vx=0; s.vy=0; // protect during cutscene
+      s.invincible=260; s.vx=0; s.vy=0; // protect during cutscene
       venom=[]; l3Waves=[]; // clear active hazards
     }
     if(kingCrab.active){
@@ -3795,6 +4077,13 @@ function updateOttoL3(){
   if(o.attackTimer>0)o.attackTimer--;
   if(o.cheer>0)o.cheer--;
   if(o.cower>0)o.cower--;
+
+  // Passive auto-spit L3
+  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
+    let nearestE=null, nearestD=180;
+    for(const e of l3Enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
+    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*5.5,vy:-0.5,life:42,r:5}); SFX.barf(); }
+  }
 }
 
 function resolveL3(p){
@@ -4936,7 +5225,12 @@ function drawKingCrab(){
     ctx.fillStyle='#220808';ctx.beginPath();ctx.roundRect(bxs,bys,bw,bh,3);ctx.fill();
     const hpPct=kingCrab.hp/kingCrab.maxHp;
     const hpCol=kingCrab.phaseIndex===1?'#FF2A2A':'#E85D3C';
-    ctx.fillStyle=hpCol;ctx.beginPath();ctx.roundRect(bxs,bys,bw*hpPct,bh,3);ctx.fill();
+    const l3FillW=bw*hpPct;
+    // Hit flash
+    if(kingCrab.hitFlash>0){ ctx.save(); ctx.globalAlpha=kingCrab.hitFlash/8*0.6; ctx.fillStyle='#FFF'; ctx.beginPath(); ctx.roundRect(bxs,bys,bw+8,bh,3); ctx.fill(); ctx.restore(); }
+    ctx.fillStyle=hpCol;ctx.beginPath();ctx.roundRect(bxs,bys,l3FillW,bh,3);ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.roundRect(bxs,bys,l3FillW,bh/2,3); ctx.clip();
+    ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(bxs,bys,l3FillW,bh/2); ctx.restore();
     ctx.font='600 11px system-ui,sans-serif';ctx.fillStyle='#FAEEDA';ctx.textAlign='center';
     ctx.fillText(kingCrab.phaseIndex===1?'🦀 KING CRAB KRAWLEY — ENRAGED 🦀':'👑 King Crab Krawley',W/2,bys+bh+14);
   }
@@ -4947,10 +5241,15 @@ function drawL3Flag(){
 }
 
 function showLevelPopup(title, desc){
-  const popup = document.getElementById('level-popup');
-  popup.querySelector('h2').textContent = title;
-  popup.querySelectorAll('p')[0].textContent = desc;
-  popup.querySelectorAll('p')[1].textContent = 'Grab cool rocks, stomp enemies, defeat the boss!';
+  // Show the correct popup for the current level (each has styled content already)
+  const ids = {1:'level-popup', 2:'level2-popup', 3:'level3-popup'};
+  const id = ids[currentLevel] || 'level-popup';
+  // Hide others first
+  Object.values(ids).forEach(i=>{ const el=document.getElementById(i); if(el&&i!==id){ el.style.display='none'; el.style.opacity='1'; el.style.pointerEvents=''; } });
+  const popup = document.getElementById(id);
+  if(!popup) return;
+  popup.style.opacity = '1';
+  popup.style.pointerEvents = '';
   popup.style.display = 'flex';
 }
 
@@ -5154,7 +5453,6 @@ function showLevelPopup(title, desc){
       mScreen.style.opacity='0';
       mScreen.style.pointerEvents='none';
       setTimeout(()=>{ mScreen.style.display='none'; }, 500);
-      document.getElementById('level-popup').style.display='flex';
       restart(true);
       gameRunning=true;
       loop();
@@ -5177,5 +5475,37 @@ function showLevelPopup(title, desc){
 
 // game started by menu button above
 </script>
+
+<!-- Mobile Controls -->
+<div id="mobile-controls" style="display:none;position:fixed;bottom:0;left:0;right:0;height:130px;z-index:200;pointer-events:none;user-select:none;">
+  <div style="position:absolute;left:16px;bottom:16px;display:flex;gap:8px;pointer-events:all;">
+    <button id="mb-left"  style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.18);border:2px solid rgba(255,255,255,0.4);font-size:22px;color:#fff;cursor:pointer;touch-action:none;">◀</button>
+    <button id="mb-right" style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.18);border:2px solid rgba(255,255,255,0.4);font-size:22px;color:#fff;cursor:pointer;touch-action:none;">▶</button>
+  </div>
+  <div style="position:absolute;right:16px;bottom:16px;display:flex;gap:8px;pointer-events:all;">
+    <button id="mb-throw" style="width:56px;height:56px;border-radius:50%;background:rgba(255,140,0,0.35);border:2px solid rgba(255,180,0,0.6);font-size:13px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;">⚽</button>
+    <button id="mb-jump"  style="width:64px;height:64px;border-radius:50%;background:rgba(80,160,255,0.35);border:2px solid rgba(120,200,255,0.6);font-size:13px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;">JUMP</button>
+  </div>
+</div>
+<script>
+(function(){
+  const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || window.innerWidth < 600;
+  if(!isMobile) return;
+  document.getElementById('mobile-controls').style.display='block';
+  const held = {};
+  function bindBtn(id, key){
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.addEventListener('touchstart', e=>{ e.preventDefault(); held[key]=true; keys[key]=true; }, {passive:false});
+    el.addEventListener('touchend',   e=>{ e.preventDefault(); held[key]=false; keys[key]=false; }, {passive:false});
+    el.addEventListener('touchcancel',e=>{ held[key]=false; keys[key]=false; });
+  }
+  bindBtn('mb-left',  'ArrowLeft');
+  bindBtn('mb-right', 'ArrowRight');
+  bindBtn('mb-jump',  'ArrowUp');
+  bindBtn('mb-throw', 'Space');
+})();
+</script>
+
 </body>
 </html>
