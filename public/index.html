@@ -169,6 +169,7 @@
     </div>
     <div class="bar">
       <button class="tb" id="restart" onclick="restart()">&#8635; New game</button>
+      <button class="tb" id="pause-btn" onclick="togglePause()">&#9646;&#9646; Pause</button>
       <button class="tb" id="snd" onclick="toggleSound()">&#128266; Sound: on</button>
     </div>
   </div>
@@ -204,6 +205,7 @@ const BOSS_GATE = 2380;
 
 let soundOn = true;
 let score = 0, lives = 3, gameOver = false, won = false;
+let gamePaused = false;
 let currentLevel = 1;
 let cameraX = 0;
 
@@ -483,6 +485,24 @@ function toggleSound(){
   }
 }
 
+function togglePause(){
+  gamePaused = !gamePaused;
+  const btn = document.getElementById('pause-btn');
+  if(gamePaused){
+    btn.innerHTML = '&#9654; Resume';
+    // Pause background music
+    if(audioManager.current && audioManager.current.audio) audioManager.current.audio.pause();
+    if(audioManager.next && audioManager.next.audio) audioManager.next.audio.pause();
+  } else {
+    btn.innerHTML = '&#9646;&#9646; Pause';
+    // Resume background music
+    if(soundOn){
+      if(audioManager.current && audioManager.current.audio) audioManager.current.audio.play().catch(()=>{});
+      if(audioManager.next && audioManager.next.audio) audioManager.next.audio.play().catch(()=>{});
+    }
+  }
+}
+
 function toggleFullscreen(){
   const container = document.getElementById('canvas-container');
   const btn = document.getElementById('fs-btn');
@@ -646,7 +666,13 @@ function buildBoss(){
   };
 }
 
-const FLAG = { x: WORLD_W-70, y: FLOOR-130 };
+const FLAG = { x: WORLD_W-120, y: FLOOR }; // kept for hitbox reference
+
+// Bike escape state
+let bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
+// phase: 'idle' | 'wave' | 'ride'
+const BIKE_WAVE_FRAMES = 90;
+const BIKE_RIDE_FRAMES = 130;
 
 function resolve(p){
   p.onGround=false;
@@ -723,7 +749,8 @@ function updateOtto(){
   if (Math.abs(dx) > 6){ o.vx += Math.sign(dx)*accel; }
   else o.vx *= 0.7;
   o.vx = Math.max(-maxSpd, Math.min(maxSpd, o.vx));
-  if (Math.abs(o.vx) > 0.3) o.facing = Math.sign(o.vx);
+  // Otto always faces the direction Sawyer is facing (for shooting)
+  o.facing = sawyer.facing;
 
   // jump: when Sawyer is higher, or no ground ahead in travel direction
   const dir = Math.sign(dx) || 1;
@@ -743,9 +770,8 @@ function updateOtto(){
   // Otto's attack timers (firing is triggered by Sawyer's spacebar)
   if (o.attackCooldown>0) o.attackCooldown--;
   if (o.attackTimer>0) o.attackTimer--;
-  // Aim Otto toward nearest threat when shooting
-  const t = nearestThreat(o.x+o.w/2, o.y+o.h/2, 350);
-  if (t) o.facing = (t.x < o.x+o.w/2) ? -1 : 1;
+  // Otto always faces + shoots in the direction Sawyer is facing
+  o.facing = sawyer.facing;
   
   // Cheer animation (bounce + raise)
   if (o.cheer>0) o.cheer--;
@@ -772,6 +798,32 @@ function update(){
     s.vy += 0.6;
     resolve(s);
     return; // Skip rest of update during cutscene
+  }
+
+  // Bike escape — lock controls and run sequence
+  if (bikeEscape.active){
+    bikeEscape.timer--;
+    if (bikeEscape.phase === 'wave' && bikeEscape.timer <= 0){
+      bikeEscape.phase = 'ride';
+      bikeEscape.timer = BIKE_RIDE_FRAMES;
+    }
+    if (bikeEscape.phase === 'ride'){
+      const rideProgress = 1 - bikeEscape.timer / BIKE_RIDE_FRAMES;
+      const speed2 = 1.5 + rideProgress * 5;
+      bikeEscape.x += speed2;
+      bikeEscape.wheelSpin += speed2 * 0.15;
+      s.x = bikeEscape.x + 14; s.y = FLOOR - 72; s.vx = 0; s.vy = 0;
+      otto.x = bikeEscape.x + 74; otto.y = FLOOR - 54; otto.vx = 0; otto.vy = 0;
+      cameraX = Math.max(0, Math.min(bikeEscape.x - W/3, WORLD_W - W));
+    }
+    if (bikeEscape.timer <= 0){
+      victoryActive = true;
+      victoryTimer = 300;
+      bikeEscape.active = false;
+      bikeEscape.phase = 'idle';
+    }
+    document.getElementById('score-display').innerHTML = 'Score: ' + score + ' &nbsp;|&nbsp; &#10084;&#65039; ' + lives;
+    return;
   }
 
   // Sawyer control
@@ -820,16 +872,14 @@ function update(){
   updateOtto();
   updateBottles(s);
 
-  // Power 1: giant otto stomps enemies (must be falling)
+  // Power 1: giant otto kills enemies on contact (any direction)
   if(ottoPower===1){
     for(const e of enemies){
       if(!e.alive)continue;
-      const ox=otto, hit=ox.x+ox.w>e.x&&ox.x<e.x+e.w&&ox.y+ox.h>e.y&&ox.y+ox.h<e.y+e.h+16;
+      const ox=otto, hit=ox.x+ox.w>e.x&&ox.x<e.x+e.w&&ox.y+ox.h>e.y&&ox.y<e.y+e.h+16;
       if(hit){
-        if(ox.vy>0){ // falling — stomp kill
-          e.alive=false;e.deathTime=12;score+=100;SFX.squash();otto.vy=-6;
-          const pc=10;for(let i=0;i<pc;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:Math.cos(i/pc*Math.PI*2)*3.5,vy:Math.sin(i/pc*Math.PI*2)*3.5-1.5,life:22,maxLife:22,type:'squash',color:'#B5D4F4'});
-        }
+        e.alive=false;e.deathTime=12;score+=100;SFX.squash();
+        const pc=10;for(let i=0;i<pc;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:Math.cos(i/pc*Math.PI*2)*3.5,vy:Math.sin(i/pc*Math.PI*2)*3.5-1.5,life:22,maxLife:22,type:'squash',color:'#B5D4F4'});
       }
     }
   }
@@ -1032,11 +1082,18 @@ function update(){
   }
   venom = venom.filter(v=>v.life>0);
 
-  // win at flag (L1 only — L2 handles its own flag in updateLevel2)
-  if (!victoryActive && s.x+s.w>FLAG.x && s.x<FLAG.x+20 && s.y+s.h>FLAG.y){
-    if (!boss || !boss.alive){ 
-      victoryActive = true;
-      victoryTimer = 300; // Longer victory screen - 5 seconds at 60fps
+  // win at bike (L1 only — L2 handles its own in updateLevel2)
+  if (!victoryActive && !bikeEscape.active && s.x+s.w > FLAG.x+10 && s.x < FLAG.x+90 && s.y+s.h >= FLOOR-10){
+    if (!boss || !boss.alive){
+      bikeEscape.active = true;
+      bikeEscape.phase = 'wave';
+      bikeEscape.timer = BIKE_WAVE_FRAMES;
+      bikeEscape.x = FLAG.x;
+      bikeEscape.wheelSpin = 0;
+      s.vx = 0; s.vy = 0; s.x = FLAG.x + 14; s.y = FLOOR - 72;
+      s.facing = 1;
+      otto.vx = 0; otto.vy = 0; otto.x = FLAG.x + 74; otto.y = FLOOR - 54;
+      otto.facing = 1;
       SFX.win();
     }
   }
@@ -1425,7 +1482,7 @@ function drawRocks(){
 
 function drawScorpion(ex,ey,e){
   const bob=Math.sin(e.phase)*1.5; ctx.save(); ctx.translate(0,bob);
-  if (e.vx<0){ ctx.translate(ex+e.w/2,0); ctx.scale(-1,1); ctx.translate(-(ex+e.w/2),0); }
+  if (e.facing>0){ ctx.translate(ex+e.w/2,0); ctx.scale(-1,1); ctx.translate(-(ex+e.w/2),0); }
   ctx.fillStyle='#4A1B0C';
   for(let i=0;i<3;i++){ ctx.beginPath(); ctx.ellipse(ex+8+i*5,ey+18,5,4,0,0,7); ctx.fill(); }
   // Chitin highlight ridge on each segment + segment seams
@@ -1450,7 +1507,7 @@ function drawScorpion(ex,ey,e){
 }
 function drawSnake(ex,ey,e){
   const wig=Math.sin(e.phase)*3; ctx.save();
-  if (e.vx<0){ ctx.translate(ex+e.w/2,0); ctx.scale(-1,1); ctx.translate(-(ex+e.w/2),0); }
+  if (e.facing<0){ ctx.translate(ex+e.w/2,0); ctx.scale(-1,1); ctx.translate(-(ex+e.w/2),0); }
   ctx.strokeStyle='#639922'; ctx.lineWidth=6; ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(ex+2,ey+24);
   ctx.quadraticCurveTo(ex+10,ey+18+wig, ex+18,ey+22);
@@ -1845,14 +1902,231 @@ function drawBg(){
   drawCactus(1900,FLOOR,1);
   drawCactus(2350,FLOOR,0.85);
 }
-function drawFlag(){
-  const fx=FLAG.x-cameraX;
-  if(fx<-30||fx>W+30) return;
-  ctx.fillStyle='#854F0B'; ctx.fillRect(fx+8,FLAG.y,4,FLOOR-FLAG.y);
-  ctx.fillStyle='#1D9E75';
-  ctx.beginPath(); ctx.moveTo(fx+12,FLAG.y); ctx.lineTo(fx+44,FLAG.y+16); ctx.lineTo(fx+12,FLAG.y+32); ctx.fill();
-  ctx.font='600 10px system-ui,sans-serif'; ctx.fillStyle='#E1F5EE'; ctx.textAlign='center';
-  ctx.fillText('HOME', fx+24, FLAG.y+20);
+function drawBike(worldX, wheelSpin, isL2){
+  const bx = worldX - cameraX;
+  if(bx + 160 < -20 || bx > W + 20) return;
+  const GY = FLOOR; // ground y
+  const ws = wheelSpin || 0;
+
+  // Color palette
+  const frameCol  = isL2 ? '#2E5FA3' : '#C04A10';
+  const frameHi   = isL2 ? '#5588CC' : '#E8720C';
+  const sidecarCol= isL2 ? '#1A3F7A' : '#8B3008';
+  const sidecarHi = isL2 ? '#3A6AAE' : '#C05020';
+  const tireCol   = '#1A1A18';
+  const spokeCol  = 'rgba(200,200,200,0.6)';
+  const hubCol    = '#888';
+  const metalCol  = '#5F5E5A';
+  const metalHi   = '#9A9890';
+
+  ctx.save();
+
+  // ── WHEEL HELPER ──
+  function drawWheel(cx, cy, r){
+    // Tire
+    ctx.strokeStyle=tireCol; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='#333'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(cx,cy,r-2,0,Math.PI*2); ctx.stroke();
+    // Spokes
+    ctx.save(); ctx.translate(cx,cy); ctx.rotate(ws);
+    ctx.strokeStyle=spokeCol; ctx.lineWidth=1.2;
+    for(let i=0;i<8;i++){
+      const a=i*Math.PI/4;
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*(r-3),Math.sin(a)*(r-3)); ctx.stroke();
+    }
+    // Hub
+    ctx.fillStyle=hubCol; ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ccc'; ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  const WR = 16; // wheel radius
+  // Wheel positions: rear wheel at bx+18, front at bx+60
+  const rearWX = bx+20, frontWX = bx+64, wheelY = GY-WR;
+
+  // ── SIDECAR (draw first, behind bike) ──
+  // Axle connecting sidecar wheel to bike frame
+  ctx.strokeStyle=metalCol; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(bx+64, GY-22); ctx.lineTo(bx+95, GY-22); ctx.stroke();
+
+  // Sidecar wheel
+  drawWheel(bx+102, wheelY, 13);
+
+  // Sidecar pod body — teardrop/bullet shape
+  ctx.fillStyle=sidecarCol;
+  ctx.beginPath();
+  ctx.moveTo(bx+72, GY-38);
+  ctx.bezierCurveTo(bx+72, GY-52, bx+84, GY-56, bx+97, GY-54);
+  ctx.bezierCurveTo(bx+116, GY-52, bx+120, GY-44, bx+118, GY-34);
+  ctx.bezierCurveTo(bx+116, GY-26, bx+108, GY-22, bx+102, GY-22);
+  ctx.lineTo(bx+72, GY-22);
+  ctx.closePath(); ctx.fill();
+  // Sidecar highlight strip
+  ctx.fillStyle=sidecarHi;
+  ctx.beginPath();
+  ctx.moveTo(bx+76, GY-50);
+  ctx.bezierCurveTo(bx+80, GY-55, bx+100, GY-57, bx+110, GY-52);
+  ctx.bezierCurveTo(bx+106, GY-49, bx+84, GY-52, bx+78, GY-48);
+  ctx.closePath(); ctx.fill();
+  // Sidecar windshield
+  ctx.fillStyle='rgba(180,230,255,0.5)';
+  ctx.beginPath();
+  ctx.moveTo(bx+76, GY-36);
+  ctx.bezierCurveTo(bx+76, GY-46, bx+86, GY-50, bx+98, GY-48);
+  ctx.bezierCurveTo(bx+100, GY-44, bx+94, GY-40, bx+86, GY-38);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.4)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(bx+78,GY-43); ctx.bezierCurveTo(bx+84,GY-48,bx+94,GY-47,bx+98,GY-44); ctx.stroke();
+  // Sidecar rim trim
+  ctx.strokeStyle=metalCol; ctx.lineWidth=1.5;
+  ctx.beginPath();
+  ctx.moveTo(bx+72, GY-22);
+  ctx.bezierCurveTo(bx+72, GY-52, bx+84, GY-56, bx+97, GY-54);
+  ctx.bezierCurveTo(bx+116, GY-52, bx+120, GY-44, bx+118, GY-34);
+  ctx.stroke();
+
+  // ── MAIN BIKE FRAME ──
+  // Shadow on ground
+  ctx.fillStyle='rgba(0,0,0,0.15)';
+  ctx.beginPath(); ctx.ellipse(bx+42, GY+2, 38, 5, 0, 0, Math.PI*2); ctx.fill();
+
+  // Chain stay (bottom tube rear-axle to BB)
+  ctx.strokeStyle=frameCol; ctx.lineWidth=5; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(rearWX, wheelY); ctx.lineTo(bx+42, GY-24); ctx.stroke();
+  // Seat stay
+  ctx.beginPath(); ctx.moveTo(rearWX, wheelY); ctx.lineTo(bx+34, GY-50); ctx.stroke();
+  // Down tube  
+  ctx.beginPath(); ctx.moveTo(bx+34, GY-50); ctx.lineTo(bx+42, GY-24); ctx.stroke();
+  // Seat tube (up to seat)
+  ctx.beginPath(); ctx.moveTo(bx+42, GY-24); ctx.lineTo(bx+38, GY-55); ctx.stroke();
+  // Top tube
+  ctx.beginPath(); ctx.moveTo(bx+38, GY-55); ctx.lineTo(frontWX-4, GY-50); ctx.stroke();
+  // Fork
+  ctx.beginPath(); ctx.moveTo(frontWX-4, GY-50); ctx.lineTo(frontWX, wheelY); ctx.stroke();
+  // Head tube
+  ctx.lineWidth=7;
+  ctx.beginPath(); ctx.moveTo(frontWX-6, GY-52); ctx.lineTo(frontWX-2, GY-38); ctx.stroke();
+
+  // Inner highlight on frame tubes
+  ctx.strokeStyle=frameHi; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(rearWX+2, wheelY-2); ctx.lineTo(bx+42, GY-24); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bx+38, GY-55); ctx.lineTo(frontWX-5, GY-50); ctx.stroke();
+
+  // ── WHEELS ──
+  drawWheel(rearWX, wheelY, WR);
+  drawWheel(frontWX, wheelY, WR);
+
+  // ── HANDLEBARS ──
+  // Stem
+  ctx.strokeStyle=metalCol; ctx.lineWidth=4; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(frontWX-4, GY-52); ctx.lineTo(frontWX-6, GY-62); ctx.stroke();
+  // Bar
+  ctx.strokeStyle=metalHi; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(frontWX-14, GY-60); ctx.lineTo(frontWX+2, GY-62); ctx.stroke();
+  // Grips
+  ctx.strokeStyle=tireCol; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.moveTo(frontWX-14, GY-59); ctx.lineTo(frontWX-11, GY-60); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(frontWX+0, GY-62); ctx.lineTo(frontWX+2, GY-63); ctx.stroke();
+
+  // ── SEAT ──
+  ctx.fillStyle=tireCol;
+  ctx.beginPath(); ctx.roundRect(bx+30, GY-59, 18, 6, 3); ctx.fill();
+  ctx.fillStyle='#333';
+  ctx.beginPath(); ctx.roundRect(bx+31, GY-59, 16, 4, 2); ctx.fill();
+  // Seat post
+  ctx.strokeStyle=metalCol; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(bx+39, GY-55); ctx.lineTo(bx+39, GY-58); ctx.stroke();
+
+  // ── PEDAL CRANK ──
+  ctx.save(); ctx.translate(bx+42, GY-24); ctx.rotate(ws*1.4);
+  ctx.strokeStyle=metalCol; ctx.lineWidth=3; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(8, 0); ctx.stroke();
+  ctx.fillStyle=tireCol; ctx.beginPath(); ctx.arc(-8,0,3,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=tireCol; ctx.beginPath(); ctx.arc(8,0,3,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // ── HEADLIGHT ──
+  ctx.fillStyle='rgba(255,240,160,0.95)';
+  ctx.beginPath(); ctx.ellipse(frontWX+3, GY-46, 5, 4, -0.2, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle=metalCol; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.ellipse(frontWX+3, GY-46, 5, 4, -0.2, 0, Math.PI*2); ctx.stroke();
+
+  ctx.restore();
+}
+
+// Draw the parked bike and characters mounted on it during escape sequence
+function drawBikeEscapeRiders(isL2){
+  if(!bikeEscape.active) return;
+  const bx = bikeEscape.x - cameraX;
+  const wavePhase = bikeEscape.phase === 'wave';
+  const t = Date.now() / 120;
+
+  // Sawyer sits on bike seat — seat is at bx+30..+48, GY-59
+  const sawyerX = bx + 14;
+  const sawyerY = FLOOR - 72;
+  ctx.save();
+  if(bikeEscape.phase==='ride'){
+    // Lean forward while riding
+    ctx.translate(sawyerX+13, sawyerY+20);
+    ctx.rotate(0.15);
+    ctx.translate(-(sawyerX+13), -(sawyerY+20));
+  }
+  drawBoy(sawyerX, sawyerY, sawyer);
+  // Sawyer wave arm
+  if(wavePhase){
+    const waveAng = Math.sin(t*3) * 0.55 - 0.2;
+    ctx.save();
+    ctx.translate(sawyerX+20, sawyerY+22);
+    ctx.rotate(waveAng);
+    ctx.strokeStyle=sawyer.skin; ctx.lineWidth=4; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(10,-12); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // Otto sits in sidecar pod — sidecar spans bx+72..+120, pod opening around bx+80..100
+  const ottoX = bx + 74;
+  const ottoY = FLOOR - 54;
+  ctx.save();
+  drawBaby(ottoX, ottoY, otto);
+  // Otto wave arm
+  if(wavePhase){
+    const waveAng2 = Math.sin(t*3 + 1.2) * 0.55 - 0.2;
+    ctx.save();
+    ctx.translate(ottoX+3, ottoY+16);
+    ctx.rotate(-waveAng2);
+    ctx.strokeStyle=otto.skin; ctx.lineWidth=3; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-9,-9); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // L2: draw otto's hat over him in sidecar
+  if(isL2){
+    const ox = ottoX, oy = ottoY;
+    ctx.save();
+    if(otto.facing<0){ctx.translate(ox+otto.w/2,0);ctx.scale(-1,1);ctx.translate(-(ox+otto.w/2),0);}
+    const cx=ox+11, headTop=oy-1;
+    ctx.fillStyle='#3949AB'; ctx.beginPath(); ctx.roundRect(cx-9,headTop+1,18,5,2); ctx.fill();
+    ctx.fillStyle='#5C6BC0';
+    ctx.beginPath(); ctx.moveTo(cx-8,headTop+5); ctx.lineTo(cx-6,headTop-8); ctx.lineTo(cx+6,headTop-8); ctx.lineTo(cx+8,headTop+5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#FFFFFF'; ctx.beginPath(); ctx.arc(cx,headTop-10,3.5,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  // Speed lines while riding
+  if(bikeEscape.phase==='ride'){
+    const rp = 1 - bikeEscape.timer/BIKE_RIDE_FRAMES;
+    ctx.save(); ctx.globalAlpha = Math.min(0.55, rp*0.9);
+    ctx.strokeStyle='rgba(255,255,255,0.65)'; ctx.lineWidth=1.5; ctx.lineCap='round';
+    for(let i=0;i<6;i++){
+      const ly = FLOOR - 8 - i*9;
+      const len = 18 + i*7;
+      ctx.beginPath(); ctx.moveTo(bx-8-i*5, ly); ctx.lineTo(bx-8-i*5-len, ly); ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 function drawCutscene(){
@@ -2009,10 +2283,14 @@ function restartCurrentLevel(){
   ottoPower=0; ottoPowerTimer=0;
   shockwaves=[]; icicles=[];
   currentLevel=lvl;
+  bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   buildPlayers();
   if(currentLevel===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
+  // Restart music from beginning
+  audioManager.stop();
+  audioManager.play(currentLevel);
   showLevelPopup(currentLevel===2?'FROZEN PEAKS':'DESERT DASH', currentLevel===2?'Brave the blizzard — defeat the Yeti!':'Guide Sawyer across the Texas desert!');
 }
 function restart(resetLevel){
@@ -2022,6 +2300,7 @@ function restart(resetLevel){
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0;
   currentLevel=lvl;
+  bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   
   // Stop and reset audio
   audioManager.stop();
@@ -2039,6 +2318,22 @@ function restart(resetLevel){
   audioManager.play(currentLevel);
 }
 function loop(){
+  if(gamePaused){
+    // Draw a simple pause overlay so the screen isn't frozen with no feedback
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.45)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#FAEEDA';
+    ctx.font='bold 36px system-ui,sans-serif';
+    ctx.textAlign='center';
+    ctx.fillText('⏸ PAUSED',W/2,H/2-10);
+    ctx.font='14px system-ui,sans-serif';
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.fillText('Click "Resume" to continue',W/2,H/2+24);
+    ctx.restore();
+    requestAnimationFrame(loop);
+    return;
+  }
   if(currentLevel===2) updateLevel2();
   else update();
   
@@ -2065,7 +2360,7 @@ function loop(){
     drawL2Bg(); drawL2Platforms(); drawL2Flag(); drawL2Rocks();
     drawL2Enemies(); drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawIcicles(); drawProjectiles();
   } else {
-    drawBg(); drawPlatforms(); drawFlag(); drawRocks();
+    drawBg(); drawPlatforms(); drawBike(bikeEscape.active ? bikeEscape.x : FLAG.x, bikeEscape.wheelSpin, false); drawRocks();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles();
   }
   
@@ -2122,7 +2417,7 @@ function loop(){
   }
   
   // Power 1: draw giant otto
-  if(ottoPower===1){
+  if(ottoPower===1 && !bikeEscape.active){
     const ox=otto.x-cameraX, oy=otto.y;
     ctx.save();
     ctx.translate(ox+otto.w/2, oy+otto.h/2);
@@ -2135,9 +2430,11 @@ function loop(){
     // power glow
     ctx.save();ctx.globalAlpha=0.2;ctx.fillStyle='#B5D4F4';
     ctx.beginPath();ctx.arc(ox+otto.w/2,oy+otto.h/2,40,0,7);ctx.fill();ctx.restore();
-  } else {
+  } else if(!bikeEscape.active) {
     drawPlayer(otto); drawPlayer(sawyer);
   }
+  // Bike escape rider overlay
+  if(bikeEscape.active) drawBikeEscapeRiders(currentLevel===2);
   // Power indicator HUD
   if(ottoPower>0){
     const pwrNames=['','GIANT!','SPRAY!','CUTE!'];
@@ -2194,33 +2491,39 @@ function loop(){
       ctx.fillStyle='#E05050';ctx.fillRect(sx+18,sawyer.y+18,4,12);
       ctx.restore();
     }
-    // Otto's knit hat — drawn aligned to drawBaby head (center ox+11, oy+8, r=9)
+    // Otto's knit hat — drawn aligned to drawBaby head (center px+11, py+8, r=9)
     const ox=otto.x-cameraX, oy=otto.y;
     if(otto.invincible===0||Math.floor(otto.invincible/5)%2===0){
       ctx.save();
-      // Mirror if facing left (same as drawBaby mirror around w/2)
-      if(otto.facing<0){ctx.translate(ox+otto.w/2,0);ctx.scale(-1,1);ctx.translate(-(ox+otto.w/2),0);}
-      const cx = ox+11; // head center x (matches arc px+11 in drawBaby)
-      const headTop = oy-1; // top of head circle (oy+8 - r9 = oy-1)
-      // Brim — sits right at head top, full hat width
-      ctx.fillStyle='#3949AB';
-      ctx.beginPath();ctx.roundRect(cx-9,headTop+1,18,5,2);ctx.fill();
-      // Hat body — tapers slightly toward crown
-      ctx.fillStyle='#5C6BC0';
-      ctx.beginPath();
-      ctx.moveTo(cx-8,headTop+5);
-      ctx.lineTo(cx-6,headTop-8);
-      ctx.lineTo(cx+6,headTop-8);
-      ctx.lineTo(cx+8,headTop+5);
-      ctx.closePath();ctx.fill();
-      // Knit stripe lines on hat body
-      ctx.strokeStyle='#E8EAF6';ctx.lineWidth=1.2;
-      ctx.beginPath();ctx.moveTo(cx-7,headTop+1);ctx.lineTo(cx-5,headTop-5);ctx.lineTo(cx+5,headTop-5);ctx.lineTo(cx+7,headTop+1);ctx.stroke();
-      ctx.beginPath();ctx.moveTo(cx-6.5,headTop+3);ctx.lineTo(cx-4.5,headTop-3);ctx.lineTo(cx+4.5,headTop-3);ctx.lineTo(cx+6.5,headTop+3);ctx.stroke();
-      // Pom-pom on crown
-      ctx.fillStyle='rgba(255,255,255,0.4)';ctx.beginPath();ctx.arc(cx,headTop-10,5,0,7);ctx.fill();
-      ctx.fillStyle='#FFFFFF';ctx.beginPath();ctx.arc(cx,headTop-10,3.5,0,7);ctx.fill();
-      ctx.fillStyle='rgba(210,220,255,0.7)';ctx.beginPath();ctx.arc(cx-1.5,headTop-12,1.5,0,7);ctx.fill();
+      if(ottoPower===1){
+        // Match the giant-otto draw transform exactly
+        ctx.translate(ox + otto.w/2, oy + otto.h/2);
+        ctx.scale(2.5, 2.5);
+        ctx.translate(-otto.w/2, -otto.h/2);
+        // Now (0,0) maps to (ox,oy) in screen-space at 2.5x
+        if(otto.facing<0){ctx.translate(otto.w/2,0);ctx.scale(-1,1);ctx.translate(-otto.w/2,0);}
+        const cx = 11, headTop = -1;
+        ctx.fillStyle='#3949AB';ctx.beginPath();ctx.roundRect(cx-9,headTop+1,18,5,2);ctx.fill();
+        ctx.fillStyle='#5C6BC0';ctx.beginPath();ctx.moveTo(cx-8,headTop+5);ctx.lineTo(cx-6,headTop-8);ctx.lineTo(cx+6,headTop-8);ctx.lineTo(cx+8,headTop+5);ctx.closePath();ctx.fill();
+        ctx.strokeStyle='#E8EAF6';ctx.lineWidth=1.2;
+        ctx.beginPath();ctx.moveTo(cx-7,headTop+1);ctx.lineTo(cx-5,headTop-5);ctx.lineTo(cx+5,headTop-5);ctx.lineTo(cx+7,headTop+1);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(cx-6.5,headTop+3);ctx.lineTo(cx-4.5,headTop-3);ctx.lineTo(cx+4.5,headTop-3);ctx.lineTo(cx+6.5,headTop+3);ctx.stroke();
+        ctx.fillStyle='rgba(255,255,255,0.4)';ctx.beginPath();ctx.arc(cx,headTop-10,5,0,7);ctx.fill();
+        ctx.fillStyle='#FFFFFF';ctx.beginPath();ctx.arc(cx,headTop-10,3.5,0,7);ctx.fill();
+        ctx.fillStyle='rgba(210,220,255,0.7)';ctx.beginPath();ctx.arc(cx-1.5,headTop-12,1.5,0,7);ctx.fill();
+      } else {
+        // Normal size — use absolute screen coords
+        if(otto.facing<0){ctx.translate(ox+otto.w/2,0);ctx.scale(-1,1);ctx.translate(-(ox+otto.w/2),0);}
+        const cx = ox+11, headTop = oy-1;
+        ctx.fillStyle='#3949AB';ctx.beginPath();ctx.roundRect(cx-9,headTop+1,18,5,2);ctx.fill();
+        ctx.fillStyle='#5C6BC0';ctx.beginPath();ctx.moveTo(cx-8,headTop+5);ctx.lineTo(cx-6,headTop-8);ctx.lineTo(cx+6,headTop-8);ctx.lineTo(cx+8,headTop+5);ctx.closePath();ctx.fill();
+        ctx.strokeStyle='#E8EAF6';ctx.lineWidth=1.2;
+        ctx.beginPath();ctx.moveTo(cx-7,headTop+1);ctx.lineTo(cx-5,headTop-5);ctx.lineTo(cx+5,headTop-5);ctx.lineTo(cx+7,headTop+1);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(cx-6.5,headTop+3);ctx.lineTo(cx-4.5,headTop-3);ctx.lineTo(cx+4.5,headTop-3);ctx.lineTo(cx+6.5,headTop+3);ctx.stroke();
+        ctx.fillStyle='rgba(255,255,255,0.4)';ctx.beginPath();ctx.arc(cx,headTop-10,5,0,7);ctx.fill();
+        ctx.fillStyle='#FFFFFF';ctx.beginPath();ctx.arc(cx,headTop-10,3.5,0,7);ctx.fill();
+        ctx.fillStyle='rgba(210,220,255,0.7)';ctx.beginPath();ctx.arc(cx-1.5,headTop-12,1.5,0,7);ctx.fill();
+      }
       ctx.restore();
     }
   }
@@ -2285,7 +2588,7 @@ function loop(){
 // ===========================
 const L2_WORLD_W = 3200;
 const L2_BOSS_GATE = 2500;
-const L2_FLAG = { x: L2_WORLD_W - 80, y: FLOOR - 130 };
+const L2_FLAG = { x: L2_WORLD_W - 140, y: FLOOR };
 const L2_FLOOR = FLOOR; // same floor height
 
 const l2Platforms = [
@@ -2499,6 +2802,28 @@ function updateLevel2(){
     s.vx=0; s.vy+=0.6; resolveL2(s); return;
   }
 
+  // Bike escape — lock controls and run sequence (L2)
+  if(bikeEscape.active){
+    bikeEscape.timer--;
+    if(bikeEscape.phase==='wave'&&bikeEscape.timer<=0){
+      bikeEscape.phase='ride'; bikeEscape.timer=BIKE_RIDE_FRAMES;
+    }
+    if(bikeEscape.phase==='ride'){
+      const rp=1-bikeEscape.timer/BIKE_RIDE_FRAMES;
+      const spd=1.5+rp*5;
+      bikeEscape.x+=spd; bikeEscape.wheelSpin+=spd*0.15;
+      s.x=bikeEscape.x+14; s.y=FLOOR-72; s.vx=0; s.vy=0;
+      otto.x=bikeEscape.x+74; otto.y=FLOOR-54; otto.vx=0; otto.vy=0;
+      cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L2_WORLD_W-W));
+    }
+    if(bikeEscape.timer<=0){
+      victoryActive=true; victoryTimer=220;
+      bikeEscape.active=false; bikeEscape.phase='idle';
+    }
+    document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
+    return;
+  }
+
   if(keys['ArrowLeft']){s.vx=-speed;s.facing=-1;}
   else if(keys['ArrowRight']){s.vx=speed;s.facing=1;}
   else s.vx*=0.72; // no ice slide — that would be too frustrating as discussed
@@ -2533,9 +2858,9 @@ function updateLevel2(){
   if(ottoPower===1){
     for(const e of l2Enemies){
       if(!e.alive)continue;
-      const ox2=otto, hit2=ox2.x+ox2.w>e.x&&ox2.x<e.x+e.w&&ox2.y+ox2.h>e.y&&ox2.y+ox2.h<e.y+e.h+16;
-      if(hit2&&ox2.vy>0){
-        e.alive=false;e.deathTime=12;score+=100;SFX.squash();otto.vy=-6;
+      const ox2=otto, hit2=ox2.x+ox2.w>e.x&&ox2.x<e.x+e.w&&ox2.y+ox2.h>e.y&&ox2.y<e.y+e.h+16;
+      if(hit2){
+        e.alive=false;e.deathTime=12;score+=100;SFX.squash();
         for(let i=0;i<10;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*6,vy:-2-Math.random()*3,life:20,maxLife:20,type:'snow',color:'#B0D4F1'});
       }
     }
@@ -2575,6 +2900,22 @@ function updateLevel2(){
       if(e.lungeTimer<=0){e.vx=e.facing*5.5*speedMult;e.lungeTimer=100+Math.random()*60;}
       else if(Math.abs(e.vx)>0.4)e.vx*=0.91; else e.vx=e.facing*0.4;
       e.x+=e.vx;
+      // Frost goblin snowball throw
+      if(e.throwTimer===undefined) e.throwTimer=80+Math.floor(Math.random()*80);
+      e.throwTimer--;
+      if(e.throwTimer<=0){
+        e.throwTimer=90+Math.floor(Math.random()*60);
+        const sx=s.x+s.w/2, sy=s.y+s.h/2;
+        const ex2=e.x+e.w/2, ey2=e.y+10;
+        const dx=sx-ex2, dy=sy-ey2;
+        const dist=Math.hypot(dx,dy)||1;
+        // Only throw if player is within range and roughly in front
+        if(dist<400){
+          const spd=3.8;
+          venom.push({x:ex2,y:ey2,vx:dx/dist*spd,vy:dy/dist*spd-0.6,life:120,r:5,isSnowball:true});
+          sfx('ball');
+        }
+      }
     } else { // snowowl — floats/bobs
       e.x+=e.vx+Math.sin(e.phase*1.2)*0.6*speedMult;
       e.y=e.plat.y-e.h-2+Math.sin(e.phase*0.85)*12;
@@ -2676,9 +3017,13 @@ function updateLevel2(){
 
   // Boulders & shockwaves
   for(const v of venom){
-    if(v.isBoulder){v.vy+=0.18;} else {v.vy+=0.12;}
+    if(v.isBoulder){v.vy+=0.18;} else if(v.isSnowball){v.vy+=0.14;} else {v.vy+=0.12;}
     v.x+=v.vx;v.y+=v.vy;v.life--;
     if(v.isBoulder&&v.y+v.r>=FLOOR){v.y=FLOOR-v.r;v.vy*=-0.3;v.vx*=0.7;}
+    if(v.isSnowball&&v.y+v.r>=FLOOR){
+      v.life=0;
+      for(let i=0;i<4;i++) particles.push({x:v.x,y:FLOOR,vx:(Math.random()-.5)*3,vy:-1-Math.random()*1.5,life:12,maxLife:12,type:'snow',color:'#EAF4FF'});
+    }
     if(s.invincible===0&&Math.abs((s.x+s.w/2)-v.x)<s.w/2+v.r&&Math.abs((s.y+s.h/2)-v.y)<s.h/2+v.r){hurt(s);v.life=0;}
     if(v.y>FLOOR+30)v.life=0;
   }
@@ -2699,9 +3044,16 @@ function updateLevel2(){
   }
 
   // L2 flag check — yeti must be defeated
-  if(!victoryActive && s.x+s.w>L2_FLAG.x && s.x<L2_FLAG.x+20 && s.y+s.h>L2_FLAG.y){
+  if(!victoryActive && !bikeEscape.active && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
     if(!yeti || !yeti.alive){
-      victoryActive=true; victoryTimer=220; sfx('win');
+      bikeEscape.active = true;
+      bikeEscape.phase = 'wave';
+      bikeEscape.timer = BIKE_WAVE_FRAMES;
+      bikeEscape.x = L2_FLAG.x;
+      bikeEscape.wheelSpin = 0;
+      s.vx=0; s.vy=0; s.x=L2_FLAG.x+14; s.y=FLOOR-72; s.facing=1;
+      otto.vx=0; otto.vy=0; otto.x=L2_FLAG.x+74; otto.y=FLOOR-54; otto.facing=1;
+      sfx('win');
     }
   }
 
@@ -2722,7 +3074,8 @@ function updateOttoL2(){
   const accel=0.5,maxSpd=3.6;
   if(Math.abs(dx)>6)o.vx+=Math.sign(dx)*accel; else o.vx*=0.7;
   o.vx=Math.max(-maxSpd,Math.min(maxSpd,o.vx));
-  if(Math.abs(o.vx)>0.3)o.facing=Math.sign(o.vx);
+  // Otto always faces the direction Sawyer is facing (for shooting)
+  o.facing = sawyer.facing;
   const dir=Math.sign(dx)||1;
   const needHop=o.onGround&&((s.y<o.y-24)||(Math.abs(dx)>30&&!groundAheadL2(o,dir)));
   if(needHop){o.vy=-10.5;o.onGround=false;sfx('jumpBaby');}
@@ -3008,7 +3361,7 @@ function drawSnowOwl(ex,ey,e){
 
 function drawIceCrab(ex,ey,e){
   const bob=Math.sin(e.phase)*1.5;ctx.save();ctx.translate(0,bob);
-  if(e.vx<0){ctx.translate(ex+e.w/2,0);ctx.scale(-1,1);ctx.translate(-(ex+e.w/2),0);}
+  if(e.facing<0){ctx.translate(ex+e.w/2,0);ctx.scale(-1,1);ctx.translate(-(ex+e.w/2),0);}
   // Shell body
   ctx.fillStyle='#4A90C4';ctx.beginPath();ctx.ellipse(ex+14,ey+14,11,9,0,0,7);ctx.fill();
   // Shell cracks + frosted speckle
@@ -3040,7 +3393,7 @@ function drawIceCrab(ex,ey,e){
 
 function drawFrostGoblin(ex,ey,e){
   const wig=Math.sin(e.phase)*2;ctx.save();
-  if(e.vx<0){ctx.translate(ex+e.w/2,0);ctx.scale(-1,1);ctx.translate(-(ex+e.w/2),0);}
+  if(e.facing<0){ctx.translate(ex+e.w/2,0);ctx.scale(-1,1);ctx.translate(-(ex+e.w/2),0);}
   // Body
   ctx.fillStyle='#5A9E6F';ctx.beginPath();ctx.ellipse(ex+14,ey+18,9,10,0,0,7);ctx.fill();
   // Warty skin speckle
@@ -3221,6 +3574,11 @@ function drawL2Boulders(){
       ctx.fillStyle='#A0C8E8';ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.fill();
       ctx.fillStyle='rgba(255,255,255,0.4)';ctx.beginPath();ctx.arc(x-2,y-2,v.r*0.4,0,7);ctx.fill();
       ctx.strokeStyle='#5A8FC7';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.stroke();
+    } else if(v.isSnowball){
+      // Frost goblin snowball — white fluffy ball
+      ctx.fillStyle='rgba(230,242,255,0.95)';ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.7)';ctx.beginPath();ctx.arc(x-1.5,y-1.5,v.r*0.45,0,7);ctx.fill();
+      ctx.strokeStyle='rgba(160,200,240,0.8)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.stroke();
     } else {
       ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.fillStyle='rgba(200,230,255,0.85)';ctx.fill();
     }
@@ -3241,13 +3599,7 @@ function drawL2Shockwaves(){
 }
 
 function drawL2Flag(){
-  const fx=L2_FLAG.x-cameraX;
-  if(fx<-30||fx>W+30)return;
-  ctx.fillStyle='#5C6BC0';ctx.fillRect(fx+8,L2_FLAG.y,4,FLOOR-L2_FLAG.y);
-  ctx.fillStyle='#E8EAF6';
-  ctx.beginPath();ctx.moveTo(fx+12,L2_FLAG.y);ctx.lineTo(fx+44,L2_FLAG.y+16);ctx.lineTo(fx+12,L2_FLAG.y+32);ctx.fill();
-  ctx.font='600 10px system-ui,sans-serif';ctx.fillStyle='#3F51B5';ctx.textAlign='center';
-  ctx.fillText('HOME',fx+24,L2_FLAG.y+20);
+  drawBike(bikeEscape.active ? bikeEscape.x : L2_FLAG.x, bikeEscape.wheelSpin, true);
 }
 
 function showLevelPopup(title, desc){
