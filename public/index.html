@@ -234,7 +234,7 @@ const audioManager = {
   tracks: {
     1: '/audio/Retirement.mp3',
     2: '/audio/Flurries.mp3',
-    3: '/audio/Level3beach.mp3'
+    3: '/audio/Level3Beach.mp3'
   },
 
   playTitle() {
@@ -5161,8 +5161,17 @@ function showLevelPopup(title, desc){
     }
   });
 
-  // Start title screen music
+  // Start title screen music — retry on first interaction (autoplay policy)
   audioManager.playTitle();
+  const _resumeTitle = () => {
+    if (audioManager.titleAudio) {
+      audioManager.titleAudio.play().catch(()=>{});
+    }
+    window.removeEventListener('pointerdown', _resumeTitle);
+    window.removeEventListener('keydown', _resumeTitle);
+  };
+  window.addEventListener('pointerdown', _resumeTitle);
+  window.addEventListener('keydown', _resumeTitle);
   menuLoop();
 })();
 
