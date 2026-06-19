@@ -31,6 +31,38 @@
     color:#FAEEDA; border-radius:6px; padding:4px 9px;
     font-size:13px; cursor:pointer; z-index:10; transition:background 0.2s; }
   #fs-btn:hover{ background:rgba(255,255,255,0.15); }
+  /* ---- On-screen touch controls (mobile / fullscreen landscape) ---- */
+  #touch-controls{ display:none; position:absolute; inset:0; z-index:9; pointer-events:none;
+    touch-action:none; }
+  @media (pointer: coarse){ #touch-controls{ display:block; } }
+  #dpad, #actions{ position:absolute; bottom:16px; pointer-events:none; }
+  #dpad{ left:16px; width:152px; height:120px; }
+  #actions{ right:16px; width:160px; height:120px; }
+  .tcbtn{ position:absolute; pointer-events:auto; touch-action:none;
+    -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
+    -webkit-touch-callout:none; background:rgba(255,255,255,0.12);
+    border:2px solid rgba(255,255,255,0.34); color:#FAEEDA; border-radius:12px;
+    width:52px; height:52px; font-size:20px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; backdrop-filter:blur(2px); }
+  .tcbtn.pressed{ background:rgba(120,200,255,0.45); border-color:rgba(170,225,255,0.95); }
+  #tc-left{ left:0; top:34px; }
+  #tc-right{ left:100px; top:34px; }
+  #tc-down{ left:50px; top:68px; font-size:17px; opacity:0.92; }
+  .tcbtn.act{ border-radius:50%; width:60px; height:60px; font-size:13px; font-weight:800;
+    letter-spacing:0.03em; }
+  #tc-jump{ right:4px; bottom:4px; width:74px; height:74px; font-size:14px;
+    background:rgba(120,255,180,0.18); border-color:rgba(150,255,200,0.55); }
+  #tc-throw{ right:86px; bottom:30px; background:rgba(255,200,120,0.18);
+    border-color:rgba(255,210,140,0.55); }
+  #restart-overlay-btn{ display:none; position:absolute; left:50%; top:68%;
+    transform:translate(-50%,-50%); z-index:12; pointer-events:auto;
+    background:#E24B4A; color:#fff; border:2px solid #fff; border-radius:10px;
+    padding:12px 30px; font-size:18px; font-weight:700; cursor:pointer;
+    font-family:system-ui,sans-serif; letter-spacing:0.02em;
+    box-shadow:0 4px 18px rgba(0,0,0,0.5); -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation; }
+  #restart-overlay-btn:active{ transform:translate(-50%,-50%) scale(0.95);
+    background:#C93B3A; }
   #game-footer{ width:100%; max-width:1200px; padding:8px 16px 0;
     display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; }
   #score-display{ font-size:14px; color:#D3D1C7; }
@@ -216,6 +248,18 @@
   <div id="canvas-container">
     <canvas id="game" width="680" height="360"></canvas>
     <button id="fs-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
+    <div id="touch-controls" aria-hidden="true">
+      <div id="dpad">
+        <button class="tcbtn" id="tc-left"  data-key="ArrowLeft">&#9664;</button>
+        <button class="tcbtn" id="tc-right" data-key="ArrowRight">&#9654;</button>
+        <button class="tcbtn" id="tc-down"  data-key="ArrowDown">&#9660;</button>
+      </div>
+      <div id="actions">
+        <button class="tcbtn act" id="tc-throw" data-key="Space">THROW</button>
+        <button class="tcbtn act" id="tc-jump"  data-key="ArrowUp">JUMP</button>
+      </div>
+    </div>
+    <button id="restart-overlay-btn" onclick="restartCurrentLevel()">&#8635; Play Again</button>
   </div>
 
   <div id="game-footer">
@@ -527,6 +571,32 @@ document.addEventListener('keydown', e => {
   if (e.code === 'KeyR' && (gameOver || won)) restartCurrentLevel();
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
+// ---- Touch controls: drive the same keys{} state ----
+(function(){
+  const tc = document.getElementById('touch-controls');
+  if(!tc) return;
+  tc.querySelectorAll('.tcbtn').forEach(btn=>{
+    const code = btn.dataset.key;
+    const press = e=>{ if(e.cancelable)e.preventDefault();
+      try{ btn.setPointerCapture && e.pointerId!=null && btn.setPointerCapture(e.pointerId); }catch(_){}
+      keys[code]=true; btn.classList.add('pressed'); };
+    const release = e=>{ if(e&&e.cancelable)e.preventDefault();
+      keys[code]=false; btn.classList.remove('pressed'); };
+    if(window.PointerEvent){
+      btn.addEventListener('pointerdown',press);
+      btn.addEventListener('pointerup',release);
+      btn.addEventListener('pointercancel',release);
+    } else {
+      btn.addEventListener('touchstart',press,{passive:false});
+      btn.addEventListener('touchend',release,{passive:false});
+      btn.addEventListener('touchcancel',release,{passive:false});
+    }
+    btn.addEventListener('contextmenu',e=>e.preventDefault());
+  });
+  // safety: if the page loses focus, clear any held touch keys
+  window.addEventListener('blur',()=>{ ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].forEach(k=>keys[k]=false);
+    tc.querySelectorAll('.tcbtn.pressed').forEach(b=>b.classList.remove('pressed')); });
+})();
 
 let audioCtx = null;
 function beep(freq, dur, type='square', vol=0.08, slideTo=null) {
@@ -791,6 +861,7 @@ const FLAG = { x: WORLD_W-120, y: FLOOR }; // kept for hitbox reference
 
 // Bike escape state
 let bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
+let bikeLift = 0, bikeTilt = 0;  // rocket-bike liftoff (L6): vertical climb + nose-up tilt
 // phase: 'idle' | 'wave' | 'ride'
 const BIKE_WAVE_FRAMES = 90;
 const BIKE_RIDE_FRAMES = 130;
@@ -1317,6 +1388,17 @@ function safeRespawnX(){
   return best;
 }
 
+function respawnSpot(p){
+  if(currentLevel===6){
+    const plats=LV[6].platforms.slice().sort((a,b)=>a.x-b.x);
+    const probe=cameraX+80; let best=plats[0], bd=Infinity;
+    for(const pl of plats){ if(pl.w<40)continue; const cxp=Math.max(pl.x+24,Math.min(pl.x+pl.w-24,probe)); const d=Math.abs(cxp-probe); if(d<bd){bd=d;best=pl;} }
+    const rx=Math.max(best.x+24,Math.min(best.x+best.w-24,probe));
+    return {x:rx, y:best.y-p.h-4};
+  }
+  if(checkpoint) return {x:checkpoint.x, y:checkpoint.y-p.h};
+  return {x:safeRespawnX(), y:FLOOR-p.h-4};
+}
 function hurt(p){
   if (p.ai) return;
   if (p.invincible>0) return;
@@ -1326,9 +1408,8 @@ function hurt(p){
   // Knockback burst particles
   for(let i=0;i<10;i++) particles.push({x:p.x+p.w/2,y:p.y+p.h/2,vx:(Math.random()-0.5)*6,vy:-2-Math.random()*3,life:18,maxLife:18,type:'spark',color:'#FF4444'});
   if (lives<=0){ gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return; }
-  const rx = checkpoint ? checkpoint.x : safeRespawnX();
-  const ry = checkpoint ? checkpoint.y - p.h : FLOOR-p.h-4;
-  p.x=rx; p.y=ry; p.vx=0; p.vy=-4; p.invincible=90;
+  const sp = respawnSpot(p);
+  p.x=sp.x; p.y=sp.y; p.vx=0; p.vy=-4; p.invincible=90;
 }
 
 function rr(x,y,w,h,r,fill,stroke){
@@ -2358,7 +2439,8 @@ function drawBike(worldX, wheelSpin, isL2){
   const bx = worldX - cameraX;
   if(bx + 130 < -20 || bx > W + 20) return;
   const GY=FLOOR, ws=wheelSpin||0;
-  const frameCol=isL2?'#3F72C4':'#D24A28', frameHi=isL2?'#7FB0EE':'#F2772E';
+  const space=(currentLevel===6);
+  const frameCol=space?'#C4CCD6':(isL2?'#3F72C4':'#D24A28'), frameHi=space?'#EEF4FC':(isL2?'#7FB0EE':'#F2772E');
   const tire='#16161A', rim='#CFCFD6', spoke='rgba(225,225,235,0.7)', hub='#A0A0A6';
   const steel='#6A6A66';
   const wick='#D6A23E', wickShad='#A6781F', wickRim='#7E5A18';
@@ -2367,9 +2449,11 @@ function drawBike(worldX, wheelSpin, isL2){
   const BBx=bx+46, BBy=GY-24;                 // bottom bracket (crank)
   const seatX=bx+41, seatY=GY-60;             // saddle
   const headX=bx+73, headTopY=GY-58, headBotY=GY-40;
-
-  // ground shadow
-  ctx.fillStyle='rgba(0,0,0,0.16)'; ctx.beginPath(); ctx.ellipse(bx+52,GY+2,46,5,0,0,7); ctx.fill();
+  // ground shadow — drawn BEFORE the lift transform so it stays on the ground and fades as the bike climbs
+  { const shA=0.16*Math.max(0,1-bikeLift/90);
+    if(shA>0.01){ ctx.fillStyle='rgba(0,0,0,'+shA.toFixed(3)+')'; ctx.beginPath(); ctx.ellipse(bx+52,GY+2,46*Math.max(0.4,1-bikeLift/200),5,0,0,7); ctx.fill(); } }
+  if(bikeLift||bikeTilt){ const pvx=bx+52, pvy=GY-30-bikeLift;
+    ctx.translate(pvx,pvy); ctx.rotate(bikeTilt); ctx.translate(-pvx,-pvy); ctx.translate(0,-bikeLift); }
 
   function wheel(cx){
     ctx.strokeStyle=tire; ctx.lineWidth=5; ctx.beginPath(); ctx.arc(cx,wheelY,WR,0,7); ctx.stroke();
@@ -2430,6 +2514,41 @@ function drawBike(worldX, wheelSpin, isL2){
   ctx.strokeStyle=wickRim; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(bL-1,bTopY); ctx.lineTo(bR+1,bTopY); ctx.stroke();
   ctx.fillStyle='rgba(255,225,160,0.35)'; ctx.fillRect(bL+1,bTopY+1.5,bR-bL-2,2);
 
+  // ---- ROCKET BIKE (space level): thruster pod + flame exhaust ----
+  if(space){
+    const t=Date.now()*0.03;
+    const riding=bikeEscape.active && bikeEscape.phase==='ride';
+    // swept fin behind the seat tube
+    ctx.fillStyle=frameCol;
+    ctx.beginPath(); ctx.moveTo(seatX-1,seatY+2); ctx.lineTo(seatX-17,seatY+15); ctx.lineTo(seatX-1,seatY+15); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=frameHi; ctx.fillRect(seatX-3,seatY+2,3,13);
+    // thruster housing at the rear
+    ctx.fillStyle='#8893A0'; ctx.beginPath(); ctx.roundRect(bx-3,GY-54,26,16,4); ctx.fill();
+    ctx.fillStyle='#C2CCD8'; ctx.fillRect(bx-1,GY-53,22,3);
+    ctx.fillStyle='#5A6470'; ctx.fillRect(bx-3,GY-41,26,3);
+    // twin nozzles pointing back (left)
+    const nys=[GY-49,GY-41];
+    for(const ny of nys){
+      ctx.fillStyle='#3A4450'; ctx.beginPath();
+      ctx.moveTo(bx-3,ny-4); ctx.lineTo(bx-13,ny-5); ctx.lineTo(bx-13,ny+5); ctx.lineTo(bx-3,ny+4); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='#1A1E24'; ctx.beginPath(); ctx.ellipse(bx-13,ny,2.5,5,0,0,7); ctx.fill();
+    }
+    // animated flame exhaust (longer while riding)
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    const base=(riding?30:15);
+    for(const ny of nys){
+      const len=base*(0.82+Math.random()*0.34)+Math.sin(t+ny)*3, fx=bx-13;
+      ctx.fillStyle='rgba(110,210,255,0.8)';
+      ctx.beginPath(); ctx.moveTo(fx,ny-5); ctx.quadraticCurveTo(fx-len*0.6,ny,fx-len,ny); ctx.quadraticCurveTo(fx-len*0.6,ny,fx,ny+5); ctx.closePath(); ctx.fill();
+      const len2=len*0.6;
+      ctx.fillStyle='rgba(255,240,185,0.95)';
+      ctx.beginPath(); ctx.moveTo(fx,ny-3); ctx.quadraticCurveTo(fx-len2*0.6,ny,fx-len2,ny); ctx.quadraticCurveTo(fx-len2*0.6,ny,fx,ny+3); ctx.closePath(); ctx.fill();
+    }
+    ctx.fillStyle='rgba(120,210,255,0.16)';
+    ctx.beginPath(); ctx.ellipse(bx+30,GY-2,40,6,0,0,7); ctx.fill();
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 function drawBikeEscapeRiders(isL2){
@@ -2437,6 +2556,8 @@ function drawBikeEscapeRiders(isL2){
   const bx = bikeEscape.x - cameraX;
   const wavePhase = bikeEscape.phase === 'wave';
   const t = Date.now() / 120;
+  if(bikeLift||bikeTilt){ ctx.save(); const pvx=bx+52, pvy=FLOOR-30-bikeLift;
+    ctx.translate(pvx,pvy); ctx.rotate(bikeTilt); ctx.translate(-pvx,-pvy); ctx.translate(0,-bikeLift); }
 
   // Otto sits in front basket — basket is at frontWX-34 = bx+48, y=FLOOR-64
   // frontWX = bx+82, so basket x = bx+48, basket top = FLOOR-64, basket h=22
@@ -2505,6 +2626,7 @@ function drawBikeEscapeRiders(isL2){
     }
     ctx.restore();
   }
+  if(bikeLift||bikeTilt) ctx.restore();
 }
 
 function drawCutscene(){
@@ -2800,7 +2922,7 @@ function drawOverlay(msg,sub){
     ctx.fillText('🏆 Best: '+best+' pts',W/2,H/2+26);
   }
   ctx.font='400 13px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.7)';
-  ctx.fillText('Press R to play again',W/2,H/2+50);
+  ctx.fillText('Tap Play Again, or press R',W/2,H/2+50);
 }
 
 function drawFinishCard(){
@@ -2980,7 +3102,7 @@ function loop(){
     drawSwimBg(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls();
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel>=5&&currentLevel<=6){
-    drawGenBg(); drawGenPlatforms(); drawGenFlag(); drawGenRocks();
+    drawGenBg(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks();
     drawGenEnemies(); drawGenBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
   } else {
     drawBg(); drawPlatforms(); drawBike(bikeEscape.active ? bikeEscape.x : FLAG.x, bikeEscape.wheelSpin, false); drawRocks();
@@ -3191,6 +3313,11 @@ function loop(){
     ctx.restore();
   }
   
+  const _overlayUp = gameOver || won;
+  const _rb = document.getElementById('restart-overlay-btn');
+  if (_rb) _rb.style.display = _overlayUp ? 'block' : 'none';
+  const _tcEl = document.getElementById('touch-controls');
+  if (_tcEl) _tcEl.style.display = _overlayUp ? 'none' : '';
   if (gameOver) drawOverlay('Game Over', 'Score: ' + score);
   if (won && currentLevel===1) drawOverlay('You Beat Rattler Rex! \u{1F335}', 'Final Score: ' + score);
   if (won && currentLevel===2) drawOverlay('You Beat the Yeti! \u2744\uFE0F', 'Final Score: ' + score);
@@ -5582,39 +5709,38 @@ function buildLevel5(){ buildHausLevel(); buildGenBoss(5); }
 const SPACE_PITS = [450, 970, 1510, 2030];
 function spacePlatforms(){
   return [
-    makePlatform(0, FLOOR, 420),
-    makePlatform(480, FLOOR, 460),
-    makePlatform(1000, FLOOR, 480),
-    makePlatform(1540, FLOOR, 460),
-    makePlatform(2060, FLOOR, 3400-2060),
-    // floating asteroids / station panels (spaced for floaty low-grav jumps)
-    makePlatform(180, FLOOR-95, 90),
-    makePlatform(360, FLOOR-175, 80),
-    makePlatform(560, FLOOR-120, 100),
-    makePlatform(760, FLOOR-190, 90),
-    makePlatform(960, FLOOR-130, 100),
-    makePlatform(1160, FLOOR-195, 90),
-    makePlatform(1360, FLOOR-120, 100),
-    makePlatform(1560, FLOOR-185, 90),
-    makePlatform(1760, FLOOR-115, 110),
-    makePlatform(1960, FLOOR-190, 90),
-    makePlatform(2160, FLOOR-130, 100),
-    makePlatform(2340, FLOOR-195, 90),
-    makePlatform(2500, FLOOR-150, 100),
-    makePlatform(2640, FLOOR-110, 90),
+    makePlatform(0, FLOOR, 160),            // 0 launch deck
+    makePlatform(250, FLOOR-80, 90),        // 1
+    makePlatform(430, FLOOR-130, 90),       // 2
+    makePlatform(610, FLOOR-90, 100),       // 3 BOOST
+    makePlatform(615, FLOOR-205, 120),      // 4 (directly above 3)
+    makePlatform(840, FLOOR-150, 90),       // 5
+    makePlatform(1020, FLOOR-100, 90),      // 6
+    makePlatform(1200, FLOOR-90, 100),      // 7 BOOST
+    makePlatform(1205, FLOOR-205, 120),     // 8 (above 7)
+    makePlatform(1430, FLOOR-150, 90),      // 9
+    makePlatform(1610, FLOOR-100, 90),      // 10
+    makePlatform(1790, FLOOR-90, 100),      // 11 BOOST
+    makePlatform(1795, FLOOR-205, 120),     // 12 (above 11)
+    makePlatform(2020, FLOOR-150, 90),      // 13
+    makePlatform(2200, FLOOR-110, 100),     // 14
+    makePlatform(2380, FLOOR-150, 90),      // 15
+    makePlatform(2480, FLOOR, 3400-2480),   // 16 boss deck
   ];
 }
 function buildSpaceLevel(){
   const lv=LV[6];
   lv.platforms=spacePlatforms();
-  lv.pits=SPACE_PITS.slice();
-  lv.enemies=[]; lv.rocks=[]; lv.pitMobs=[]; lv.pitTimer=90; lv.bossObj=null;
-  const mk=(slot,x,y,plat)=>{ lv.enemies.push({slot,x,y,w:28,h:26,vx:(slot==='B'?0.7:0.95),facing:1,alive:true,plat,phase:Math.random()*6,hoverTimer:(Math.random()*100|0),shootTimer:60+(Math.random()*40|0),hitCount:0}); };
-  const pat=['C','A','D','B','C','A','D','B','C','A','D','B','C','A'];
-  for(let i=0;i<14;i++){ const plat=lv.platforms[i+5]; if(!plat)break; mk(pat[i], plat.x+Math.max(8,plat.w/2-14), plat.y-26, plat); }
-  const gx=[300,720,1250,1750,2400], gs=['A','B','A','B','A'];
-  gx.forEach((x,i)=>{ let gp=lv.platforms[0]; for(const pl of lv.platforms){ if(pl.y===FLOOR&&x>=pl.x&&x<=pl.x+pl.w){gp=pl;break;} } mk(gs[i],x,FLOOR-26,gp); });
-  buildGenRocks(6);
+  lv.pits=[];
+  lv.enemies=[]; lv.rocks=[]; lv.pitMobs=[]; lv.pitTimer=99999; lv.bossObj=null;
+  const P=lv.platforms;
+  const mk=(slot,plat)=>{ lv.enemies.push({slot,x:plat.x+Math.max(8,plat.w/2-14),y:plat.y-26,w:28,h:26,vx:(slot==='B'?0.7:0.95),facing:1,alive:true,plat,phase:Math.random()*6,hoverTimer:(Math.random()*100|0),shootTimer:60+(Math.random()*40|0),hitCount:0}); };
+  const eIdx={1:'A',2:'C',5:'A',6:'D',9:'B',10:'A',14:'C',15:'A'};
+  for(const i in eIdx){ mk(eIdx[i], P[i]); }
+  // rare rocks reward the boost climbs (on the high asteroids) + a couple more
+  const rIdx=[4,8,12,14], rar=[3,3,3,2], pts=[250,250,250,150];
+  rIdx.forEach((i,k)=>{ lv.rocks.push({x:P[i].x+P[i].w/2-8, y:P[i].y-26, got:false, rarity:rar[k], points:pts[k]}); });
+  lv.boostPads=[3,7,11].map(i=>({x:P[i].x+P[i].w/2-18, y:P[i].y-7, w:36, h:7}));
 }
 function buildLevel6(){ buildSpaceLevel(); buildGenBoss(6); }
 
@@ -5692,11 +5818,25 @@ function updateGen(){
     bikeEscape.timer--;
     if(bikeEscape.phase==='wave'&&bikeEscape.timer<=0){ bikeEscape.phase='ride'; bikeEscape.timer=BIKE_RIDE_FRAMES; }
     if(bikeEscape.phase==='ride'){
-      const rp=1-bikeEscape.timer/BIKE_RIDE_FRAMES; const spd=1.5+rp*5;
-      bikeEscape.x+=spd; bikeEscape.wheelSpin+=spd*0.15;
-      s.x=bikeEscape.x+18; s.y=FLOOR-76; s.vx=0; s.vy=0;
-      otto.x=bikeEscape.x+50; otto.y=FLOOR-56; otto.vx=0; otto.vy=0;
-      cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,lv.worldW-W));
+      const rp=1-bikeEscape.timer/BIKE_RIDE_FRAMES;
+      if(currentLevel===6){
+        // roll briefly on the deck, then BLAST OFF: climb + nose-up tilt, arcing off the top
+        const lf=Math.max(0,(rp-0.22)/0.78), liftFrac=lf*lf;   // ease-in
+        bikeLift=liftFrac*440; bikeTilt=-liftFrac*0.6;          // climb off-screen, nose up ~34deg
+        const spd=(1.5+rp*5)*(1-liftFrac*0.55);                // ease off forward drift as it climbs
+        bikeEscape.x+=spd; bikeEscape.wheelSpin+=spd*0.15;
+        s.x=bikeEscape.x+18; s.y=FLOOR-76; s.vx=0; s.vy=0;
+        otto.x=bikeEscape.x+50; otto.y=FLOOR-56; otto.vx=0; otto.vy=0;
+        cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,lv.worldW-W));
+        const ex=bikeEscape.x-12, ey=FLOOR-45-bikeLift;        // exhaust plume below the climbing bike
+        for(let i=0;i<3;i++) particles.push({x:ex,y:ey+(Math.random()*10-5),vx:-2-Math.random()*3-spd*0.4,vy:1+Math.random()*2.6,life:22,maxLife:22,type:'spark',color:i?'#7AD0FF':'#FFE6A0'});
+      } else {
+        const spd=1.5+rp*5;
+        bikeEscape.x+=spd; bikeEscape.wheelSpin+=spd*0.15;
+        s.x=bikeEscape.x+18; s.y=FLOOR-76; s.vx=0; s.vy=0;
+        otto.x=bikeEscape.x+50; otto.y=FLOOR-56; otto.vx=0; otto.vy=0;
+        cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,lv.worldW-W));
+      }
     }
     if(bikeEscape.timer<=0){
       saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=220;
@@ -5751,6 +5891,15 @@ function updateGen(){
   s.vy+=GRAVITY*(currentLevel===6?0.6:1); s.x+=s.vx; s.y+=s.vy;
   if(currentLevel===6&&s.vy>7.5)s.vy=7.5;
   resolveGen(s);
+  if(currentLevel===6){
+    if(s.y<22){ s.y=22; if(s.vy<0)s.vy=0; }   // soft ceiling keeps boosts on-screen
+    if(lv.boostPads) for(const bp of lv.boostPads){
+      if(s.x+s.w>bp.x && s.x<bp.x+bp.w && (s.y+s.h)>=bp.y-3 && (s.y+s.h)<=bp.y+16 && s.vy>-1){
+        s.vy=-12; s.onGround=false; sfx('jump');
+        for(let i=0;i<10;i++) particles.push({x:bp.x+bp.w/2+(Math.random()-.5)*22,y:bp.y,vx:(Math.random()-.5)*2,vy:-2-Math.random()*4,life:18,maxLife:18,type:'spark',color:'#7AF0FF'});
+      }
+    }
+  }
   if(s.x<0)s.x=0; if(s.x>lv.worldW-s.w)s.x=lv.worldW-s.w;
   const camTarget=Math.max(0,Math.min(s.x-100,lv.worldW-W));
   cameraX+=(camTarget-cameraX)*0.06;
@@ -5971,7 +6120,7 @@ function updateGen(){
   const flagX=lv.worldW-140;
   if(!victoryActive&&!bikeEscape.active&&s.x+s.w>flagX+10&&s.x<flagX+90&&s.y+s.h>=FLOOR-10){
     if(!boss||!boss.alive){
-      bikeEscape.active=true;bikeEscape.phase='wave';bikeEscape.timer=BIKE_WAVE_FRAMES;bikeEscape.x=flagX;bikeEscape.wheelSpin=0;
+      bikeEscape.active=true;bikeEscape.phase='wave';bikeEscape.timer=BIKE_WAVE_FRAMES;bikeEscape.x=flagX;bikeEscape.wheelSpin=0;bikeLift=0;bikeTilt=0;
       s.vx=0;s.vy=0;s.x=flagX+18;s.y=FLOOR-76;s.facing=1;
       o.vx=0;o.vy=0;o.x=flagX+50;o.y=FLOOR-56;o.facing=1;
       SFX.win();
@@ -6756,7 +6905,23 @@ function drawGenBg(){
     const ss=(t*40)%240; if(ss<40){ const sx=W-ss*8, sy=40+ss*2; ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+20,sy-6); ctx.stroke(); }
   }
 }
+function drawBoostPads(){
+  const lv=curLV(); if(!lv.boostPads) return;
+  const t=Date.now()*0.006;
+  for(const bp of lv.boostPads){
+    const sx=bp.x-cameraX; if(sx<-40||sx>W+40) continue;
+    const pulse=0.5+0.5*Math.sin(t*2);
+    ctx.fillStyle='#2A3A4A'; ctx.beginPath(); ctx.roundRect(sx,bp.y,bp.w,bp.h,2); ctx.fill();
+    ctx.fillStyle='#00E0FF'; ctx.fillRect(sx+2,bp.y,bp.w-4,2);
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle='rgba(0,224,255,'+(0.18+pulse*0.3)+')'; ctx.beginPath(); ctx.ellipse(sx+bp.w/2,bp.y,bp.w*0.7,10+pulse*6,0,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(140,240,255,'+(0.6+pulse*0.4)+')'; ctx.lineWidth=2; ctx.lineCap='round';
+    for(let c=0;c<2;c++){ const cy=bp.y-6-c*7-((t*10)%14); ctx.beginPath(); ctx.moveTo(sx+bp.w/2-7,cy+5); ctx.lineTo(sx+bp.w/2,cy); ctx.lineTo(sx+bp.w/2+7,cy+5); ctx.stroke(); }
+    ctx.restore();
+  }
+}
 function drawGenPitVoids(){
+  if(currentLevel===6) return;
   const lv=curLV();
   for(const pl of lv.platforms){} // ground gaps are rendered as dark voids below
   ctx.fillStyle=lv.pal.pit;
@@ -7144,7 +7309,7 @@ function goToLevel(n){
   projectiles=[]; venom=[]; particles=[]; killCombo=0;
   cutsceneActive=false; victoryActive=false; victoryTimer=0;
   finishCardActive=false; finishCardTimer=0; shockwaves=[]; icicles=[];
-  bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0};
+  bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0}; bikeLift=0; bikeTilt=0;
   buildPlayers();
   buildLevelContent(n);
   audioManager.play(n);
