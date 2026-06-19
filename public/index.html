@@ -303,6 +303,7 @@ let levelPaused = false; // true until player clicks PLAY on level popup
 let checkpoint = null; // {x, y} world position — set when player passes checkpoint flag
 let currentLevel = 1;
 let cameraX = 0;
+let cameraY = 0;   // vertical camera (Level 6: follows high jumps/boosts)
 
 // Audio system for background music with crossfading
 const audioManager = {
@@ -1409,7 +1410,7 @@ function hurt(p){
   for(let i=0;i<10;i++) particles.push({x:p.x+p.w/2,y:p.y+p.h/2,vx:(Math.random()-0.5)*6,vy:-2-Math.random()*3,life:18,maxLife:18,type:'spark',color:'#FF4444'});
   if (lives<=0){ gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return; }
   const sp = respawnSpot(p);
-  p.x=sp.x; p.y=sp.y; p.vx=0; p.vy=-4; p.invincible=90;
+  p.x=sp.x; p.y=sp.y; p.vx=0; p.vy=-4; p.boostT=0; p.invincible=90;
 }
 
 function rr(x,y,w,h,r,fill,stroke){
@@ -3090,7 +3091,7 @@ function loop(){
   }
   
   ctx.save();
-  ctx.translate(shakeX, shakeY);
+  ctx.translate(shakeX, shakeY - (currentLevel===6?cameraY:0));
   
   if(currentLevel===2){
     drawL2Bg(); drawL2Platforms(); drawL2Flag(); drawL2Rocks();
@@ -3102,8 +3103,10 @@ function loop(){
     drawSwimBg(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls();
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel>=5&&currentLevel<=6){
-    drawGenBg(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks();
+    if(currentLevel===6){ ctx.save(); ctx.translate(0,cameraY); drawGenBg(); ctx.restore(); } else drawGenBg();
+    drawGenPlatforms(); if(currentLevel===6){ drawBoostPads(); drawSpaceRings(); } drawGenFlag(); drawGenRocks();
     drawGenEnemies(); drawGenBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
+    if(currentLevel===6){ ctx.save(); ctx.translate(0,cameraY); drawVoidVignette(); ctx.restore(); }
   } else {
     drawBg(); drawPlatforms(); drawBike(bikeEscape.active ? bikeEscape.x : FLAG.x, bikeEscape.wheelSpin, false); drawRocks();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
@@ -5587,7 +5590,7 @@ const LV = {
     audio:'/audio/HauntedHaus.mp3'
   },
   6: {
-    worldW:3400, bossGate:2600, next:null,
+    worldW:4400, bossGate:3350, arenaCX:3825, next:null,
     pal:{ skyT:'#000000', skyM:'#0A0A2E', skyL:'#16213E', ground:'#2A2A3A',
           edge:'#3A4A6A', plat:'#4A5A7A', glow:'#7ABAFF',
           primary:'#00FF00', secondary:'#00CCFF', tertiary:'#FFFF00',
@@ -5709,23 +5712,27 @@ function buildLevel5(){ buildHausLevel(); buildGenBoss(5); }
 const SPACE_PITS = [450, 970, 1510, 2030];
 function spacePlatforms(){
   return [
-    makePlatform(0, FLOOR, 160),            // 0 launch deck
-    makePlatform(250, FLOOR-80, 90),        // 1
-    makePlatform(430, FLOOR-130, 90),       // 2
-    makePlatform(610, FLOOR-90, 100),       // 3 BOOST
-    makePlatform(615, FLOOR-205, 120),      // 4 (directly above 3)
-    makePlatform(840, FLOOR-150, 90),       // 5
-    makePlatform(1020, FLOOR-100, 90),      // 6
-    makePlatform(1200, FLOOR-90, 100),      // 7 BOOST
-    makePlatform(1205, FLOOR-205, 120),     // 8 (above 7)
-    makePlatform(1430, FLOOR-150, 90),      // 9
-    makePlatform(1610, FLOOR-100, 90),      // 10
-    makePlatform(1790, FLOOR-90, 100),      // 11 BOOST
-    makePlatform(1795, FLOOR-205, 120),     // 12 (above 11)
-    makePlatform(2020, FLOOR-150, 90),      // 13
-    makePlatform(2200, FLOOR-110, 100),     // 14
-    makePlatform(2380, FLOOR-150, 90),      // 15
-    makePlatform(2480, FLOOR, 3400-2480),   // 16 boss deck
+    makePlatform(0,    FLOOR,     200),     // 0  launch deck
+    makePlatform(290,  FLOOR-75,  120),     // 1
+    makePlatform(490,  FLOOR-120, 100),     // 2
+    makePlatform(640,  FLOOR-70,  150),     // 3  BOOST 1  (ends 790)
+    // ===== TRUE VOID 790 -> 1210 (420px) : a normal jump dies, only the launch clears it =====
+    makePlatform(1210, FLOOR-100, 175),     // 4  landing 1 (wide catch)
+    makePlatform(1440, FLOOR-150, 110),     // 5  high hop (ring overhead)
+    makePlatform(1640, FLOOR-100, 120),     // 6
+    makePlatform(1830, FLOOR-70,  150),     // 7  BOOST 2  (ends 1980)
+    // ===== TRUE VOID 1980 -> 2400 (420px) =====
+    makePlatform(2400, FLOOR-100, 175),     // 8  landing 2 (wide catch)
+    makePlatform(2630, FLOOR-160, 110),     // 9  high platform (ring overhead)
+    makePlatform(2830, FLOOR-110, 130),     // 10
+    makePlatform(3040, FLOOR-70,  150),     // 11 BOOST 3  (ends 3190) — leap toward the arena
+    // leap over the approach 3190 -> 3550 (arena floor underlies it, so a short boost is caught)
+    makePlatform(3550, FLOOR-100, 150),     // 12 arena entry ledge
+    // ============ BOSS ARENA (floor 3250-4400, centre 3825) ============
+    makePlatform(3250, FLOOR, 4400-3250),   // 13 arena floor
+    // two dodge platforms, equidistant (140px) from centre — leap between them, over the boss
+    makePlatform(3640, FLOOR-80,  90),      // 14 dodge LEFT   (centre 3685)
+    makePlatform(3920, FLOOR-80,  90),      // 15 dodge RIGHT  (centre 3965)
   ];
 }
 function buildSpaceLevel(){
@@ -5735,14 +5742,24 @@ function buildSpaceLevel(){
   lv.enemies=[]; lv.rocks=[]; lv.pitMobs=[]; lv.pitTimer=99999; lv.bossObj=null;
   const P=lv.platforms;
   const mk=(slot,plat)=>{ lv.enemies.push({slot,x:plat.x+Math.max(8,plat.w/2-14),y:plat.y-26,w:28,h:26,vx:(slot==='B'?0.7:0.95),facing:1,alive:true,plat,phase:Math.random()*6,hoverTimer:(Math.random()*100|0),shootTimer:60+(Math.random()*40|0),hitCount:0}); };
-  const eIdx={1:'A',2:'C',5:'A',6:'D',9:'B',10:'A',14:'C',15:'A'};
+  // enemies ONLY on the traversal run — never in the boss arena (13/14/15)
+  const eIdx={1:'A',2:'C',5:'D',6:'A',8:'B',9:'D',10:'C'};
   for(const i in eIdx){ mk(eIdx[i], P[i]); }
-  // rare rocks reward the boost climbs (on the high asteroids) + a couple more
-  const rIdx=[4,8,12,14], rar=[3,3,3,2], pts=[250,250,250,150];
+  // rare cells reward the void-crossing landings, the high ring platforms + the arena entry ledge
+  const rIdx=[4,5,8,9,12], rar=[3,3,3,3,2], pts=[250,250,250,250,150];
   rIdx.forEach((i,k)=>{ lv.rocks.push({x:P[i].x+P[i].w/2-8, y:P[i].y-26, got:false, rarity:rar[k], points:pts[k]}); });
-  lv.boostPads=[3,7,11].map(i=>({x:P[i].x+P[i].w/2-18, y:P[i].y-7, w:36, h:7}));
+  // launch pads sit toward the leading (right) edge so the boost arc spans the void
+  lv.boostPads=[3,7,11].map(i=>({x:P[i].x+P[i].w*0.58-20, y:P[i].y-7, w:40, h:7}));
+  // space rings to fly through (bonus) — placed along the boost arcs & over high platforms
+  lv.rings=[
+    {x:920,  y:FLOOR-185, rx:30, ry:40, passed:false, points:100},
+    {x:1495, y:FLOOR-235, rx:30, ry:40, passed:false, points:100},
+    {x:2110, y:FLOOR-185, rx:30, ry:40, passed:false, points:100},
+    {x:2685, y:FLOOR-255, rx:30, ry:40, passed:false, points:100},
+    {x:3320, y:FLOOR-205, rx:30, ry:40, passed:false, points:100},
+  ];
 }
-function buildLevel6(){ buildSpaceLevel(); buildGenBoss(6); }
+function buildLevel6(){ buildSpaceLevel(); buildGenBoss(6); LV[6].bossObj.x=LV[6].arenaCX-LV[6].bossObj.w/2; }
 
 // ---- physics / collision (clones of resolveL3 / groundAheadL3) ----
 function resolveGen(p){
@@ -5865,10 +5882,19 @@ function updateGen(){
   }
 
   // Sawyer movement
-  if(keys['ArrowLeft']){s.vx=-4;s.facing=-1;}
-  else if(keys['ArrowRight']){s.vx=4;s.facing=1;}
-  else s.vx*=0.8;
-  s.vx=Math.max(-5,Math.min(5,s.vx));
+  if(currentLevel===6 && s.boostT>0){           // mid-launch: keep forward momentum, allow gentle air-steer
+    s.boostT--;
+    if(keys['ArrowLeft'])  s.vx-=0.45;
+    else if(keys['ArrowRight']) s.vx+=0.45;
+    s.vx*=0.995;
+    s.vx=Math.max(-11,Math.min(11,s.vx));
+    if(keys['ArrowRight'])s.facing=1; else if(keys['ArrowLeft'])s.facing=-1;
+  } else {
+    if(keys['ArrowLeft']){s.vx=-4;s.facing=-1;}
+    else if(keys['ArrowRight']){s.vx=4;s.facing=1;}
+    else s.vx*=0.8;
+    s.vx=Math.max(-5,Math.min(5,s.vx));
+  }
   if(s.onGround){s.coyoteTimer=6;} else s.coyoteTimer--;
   if(keys['ArrowUp']&&s.coyoteTimer>0){
     s.vy=-11.5; s.coyoteTimer=0; sfx('jump');
@@ -5892,19 +5918,38 @@ function updateGen(){
   if(currentLevel===6&&s.vy>7.5)s.vy=7.5;
   resolveGen(s);
   if(currentLevel===6){
-    if(s.y<22){ s.y=22; if(s.vy<0)s.vy=0; }   // soft ceiling keeps boosts on-screen
+    if(s.y<-900){ s.y=-900; if(s.vy<0)s.vy=0; }   // no real ceiling — jump/boost as high as you like, camera follows
+    // space rings — fly through for bonus
+    if(lv.rings){ const scx=s.x+s.w/2, scy=s.y+s.h/2;
+      for(const ring of lv.rings){ if(ring.passed)continue;
+        if(Math.abs(scx-ring.x)<ring.rx && Math.abs(scy-ring.y)<ring.ry){
+          ring.passed=true; score+=ring.points; sfx('ball');
+          for(let i=0;i<14;i++){const a=i/14*6.283;particles.push({x:ring.x+Math.cos(a)*ring.rx,y:ring.y+Math.sin(a)*ring.ry,vx:Math.cos(a)*2.5,vy:Math.sin(a)*2.5,life:24,maxLife:24,type:'spark',color:'#FFE060'});}
+        }
+      }
+    }
     if(lv.boostPads) for(const bp of lv.boostPads){
       if(s.x+s.w>bp.x && s.x<bp.x+bp.w && (s.y+s.h)>=bp.y-3 && (s.y+s.h)<=bp.y+16 && s.vy>-1){
-        s.vy=-12; s.onGround=false; sfx('jump');
+        s.vy=-12; s.vx=11; s.facing=1; s.boostT=50; s.onGround=false; shakeIntensity=Math.max(shakeIntensity,5); sfx('jump');
         for(let i=0;i<10;i++) particles.push({x:bp.x+bp.w/2+(Math.random()-.5)*22,y:bp.y,vx:(Math.random()-.5)*2,vy:-2-Math.random()*4,life:18,maxLife:18,type:'spark',color:'#7AF0FF'});
       }
     }
   }
   if(s.x<0)s.x=0; if(s.x>lv.worldW-s.w)s.x=lv.worldW-s.w;
-  const camTarget=Math.max(0,Math.min(s.x-100,lv.worldW-W));
-  cameraX+=(camTarget-cameraX)*0.06;
+  const bossLock = currentLevel===6 && (cutsceneActive || (boss&&boss.active&&boss.alive));
+  const camTarget = bossLock
+    ? Math.max(0,Math.min(lv.arenaCX-W/2, lv.worldW-W))      // lock on the boss stage
+    : Math.max(0,Math.min(s.x-100, lv.worldW-W));
+  cameraX+=(camTarget-cameraX)*(bossLock?0.04:0.06);
   cameraX=Math.max(0,Math.min(cameraX,lv.worldW-W));
   cameraX=Math.round(cameraX);
+  // vertical camera — follow Sawyer up on big jumps/boosts; fixed at floor level & during boss
+  if(currentLevel===6 && !bossLock){
+    const camYTarget=Math.min(0, s.y-110);
+    cameraY+=(camYTarget-cameraY)*0.12;
+    if(Math.abs(cameraY)<0.5)cameraY=0;
+  } else { cameraY+=(0-cameraY)*0.15; if(Math.abs(cameraY)<0.5)cameraY=0; }
+  cameraY=Math.round(cameraY);
   if(s.y>H+40){hurt(s);}
   if(s.invincible>0)s.invincible--;
   updateOttoGen();
@@ -6058,12 +6103,15 @@ function updateGen(){
   if(boss&&boss.alive){
     if(!boss.active&&!cutsceneActive&&s.x>lv.bossGate){
       cutsceneActive=true;cutsceneTimer=240;
-      s.invincible=260; s.vx=0; s.vy=0; venom=[]; projectiles=[];
+      s.invincible=260; s.vx=0; s.vy=0; s.boostT=0; venom=[]; projectiles=[];
+      // hero lands on the arena floor inside the locked stage view, facing the boss
+      if(currentLevel===6){ s.x=lv.arenaCX-200; s.y=FLOOR-s.h; s.vy=0; s.vx=0; s.facing=1; o.x=lv.arenaCX-240; o.y=FLOOR-o.h; o.vx=0; o.vy=0; }
     }
     if(boss.active){
       boss.phase+=0.07; boss.orbit+=0.05;
       boss.facing=s.x<boss.x?-1:1;
-      const lo=lv.bossGate+80, hi=Math.min(lv.worldW-boss.w-20, lv.bossGate+460);
+      const lo = currentLevel===6 ? (lv.arenaCX-90) : lv.bossGate+80;
+      const hi = currentLevel===6 ? (lv.arenaCX+90) : Math.min(lv.worldW-boss.w-20, lv.bossGate+460);
       boss.x+=boss.vx;
       if(boss.x<lo||boss.x>hi)boss.vx*=-1;
       boss.y=FLOOR-boss.h-6+Math.sin(boss.orbit)*14; // gentle undulation
@@ -6092,8 +6140,8 @@ function updateGen(){
           boss.slamTimer=110;
           shockwaves.push({x:boss.x+boss.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:boss.facing,col:lv.pal.tertiary});
           shakeIntensity=8; sfx('rattle');
-          if(s.invincible===0 && s.onGround && Math.abs((s.x+s.w/2)-(boss.x+boss.w/2))<160){
-            s.vx=(s.x<boss.x?-1:1)*6; s.vy=-6;
+          if(s.invincible===0 && (s.y+s.h)>=FLOOR-6 && Math.abs((s.x+s.w/2)-(boss.x+boss.w/2))<180){
+            s.vx=(s.x<boss.x?-1:1)*6; s.vy=-8;
           }
         }
       }
@@ -6888,21 +6936,125 @@ function drawGenBg(){
     ctx.fillStyle='rgba(220,210,190,0.18)';
     for(let i=0;i<16;i++){ const x=((i*97-cameraX*0.6)%(W+40)+W+40)%(W+40)-20, y=(i*53+t*20*(1+i%2))%(FLOOR-30)+10; ctx.beginPath(); ctx.arc(x,y,1.2,0,7); ctx.fill(); }
     } else {
-    // Deep space: layered starfield, nebula, ringed planet, shooting star
-    for(let i=0;i<40;i++){ const x=((i*73-cameraX*0.03)%(W+30)+W+30)%(W+30)-15, y=(i*89)%H, tw=0.4+Math.sin(t*1.5+i)*0.4; ctx.fillStyle='rgba(200,210,255,'+(0.2+tw*0.4)+')'; ctx.fillRect(x,y,1,1); }
-    for(let i=0;i<3;i++){ const x=((i*460-cameraX*0.06)%(W+700)+W+700)%(W+700)-350, y=70+i*70;
-      ctx.save(); ctx.globalAlpha=0.12; ctx.fillStyle=i%2?'#5A2A8A':'#2A5A9A';
-      for(let k=0;k<5;k++){ ctx.beginPath(); ctx.arc(x+k*22-44,y+Math.sin(k+i)*16,34,0,7); ctx.fill(); }
+    // ===== THE VOID — dead, hungry deep space =====
+    // crushing dark gradient overlay (sky pal is already near-black)
+    const vg=ctx.createLinearGradient(0,0,0,H);
+    vg.addColorStop(0,'rgba(2,0,8,0.0)'); vg.addColorStop(0.55,'rgba(1,0,4,0.4)'); vg.addColorStop(1,'rgba(0,0,0,0.92)');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,W,H);
+    // sickly creeping nebula clouds, low + bruised
+    for(let i=0;i<4;i++){ const x=((i*380-cameraX*0.04)%(W+760)+W+760)%(W+760)-380, y=40+i*60+Math.sin(t*0.3+i)*10;
+      ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.06;
+      ctx.fillStyle=i%2?'#1E5A2E':'#3A1240';
+      for(let k=0;k<6;k++){ ctx.beginPath(); ctx.arc(x+k*30-75,y+Math.sin(k+i*2)*18,40,0,7); ctx.fill(); }
       ctx.restore(); }
-    for(let i=0;i<30;i++){ const x=((i*97-cameraX*0.12)%(W+40)+W+40)%(W+40)-20, y=(i*131)%H, tw=0.5+Math.sin(t*2.5+i)*0.5; ctx.fillStyle='rgba(255,255,255,'+(0.3+tw*0.6)+')'; ctx.fillRect(x,y,(i%4===0?2:1),(i%4===0?2:1)); }
-    const px=((480-cameraX*0.05)%(W+520)+W+520)%(W+520)-260;
-    ctx.save(); ctx.globalAlpha=0.85;
-    ctx.fillStyle='#3A4A7A'; ctx.beginPath(); ctx.arc(px,92,46,0,7); ctx.fill();
-    ctx.fillStyle='#5A6AAA'; ctx.beginPath(); ctx.arc(px-12,80,38,0,7); ctx.fill();
-    ctx.fillStyle='rgba(40,30,60,0.4)'; ctx.beginPath(); ctx.ellipse(px,104,40,10,0,0,7); ctx.fill();
-    ctx.strokeStyle='rgba(200,180,255,0.6)'; ctx.lineWidth=4; ctx.save(); ctx.translate(px,92); ctx.rotate(-0.4); ctx.beginPath(); ctx.ellipse(0,0,68,18,0,0,7); ctx.stroke(); ctx.restore();
+    // cold sparse stars (most barely visible — emptiness)
+    for(let i=0;i<46;i++){ const x=((i*71-cameraX*0.03)%(W+30)+W+30)%(W+30)-15, y=(i*97)%H, tw=Math.sin(t*1.2+i*1.7);
+      ctx.fillStyle='rgba(150,170,210,'+(0.12+Math.max(0,tw)*0.25)+')'; ctx.fillRect(x,y,1,1); }
+    for(let i=0;i<8;i++){ const x=((i*173-cameraX*0.08)%(W+40)+W+40)%(W+40)-20, y=(i*131)%(H*0.7), tw=0.5+Math.sin(t*2.2+i)*0.5;
+      ctx.fillStyle='rgba(210,225,255,'+(0.2+tw*0.5)+')'; ctx.fillRect(x,y,2,2); }
+    // ==== distant BLACK HOLE — an eye that watches ====
+    const bhx=((360-cameraX*0.05)%(W+640)+W+640)%(W+640)-320, bhy=88;
+    ctx.save();
+    // gravitational red glow / accretion bloom
+    ctx.globalCompositeOperation='lighter';
+    const ar=ctx.createRadialGradient(bhx,bhy,4,bhx,bhy,70);
+    ar.addColorStop(0,'rgba(255,60,20,0.55)'); ar.addColorStop(0.4,'rgba(180,20,60,0.22)'); ar.addColorStop(1,'rgba(40,0,30,0)');
+    ctx.fillStyle=ar; ctx.beginPath(); ctx.arc(bhx,bhy,70,0,7); ctx.fill();
     ctx.restore();
-    const ss=(t*40)%240; if(ss<40){ const sx=W-ss*8, sy=40+ss*2; ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+20,sy-6); ctx.stroke(); }
+    // lensed accretion ring (tilted)
+    ctx.save(); ctx.translate(bhx,bhy); ctx.rotate(-0.35);
+    ctx.strokeStyle='rgba(255,120,40,0.7)'; ctx.lineWidth=3; ctx.beginPath(); ctx.ellipse(0,0,40,12,0,0,7); ctx.stroke();
+    ctx.strokeStyle='rgba(255,200,120,0.5)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.ellipse(0,0,46,15,0,0,7); ctx.stroke();
+    // top lensing arc bending light over the hole
+    ctx.strokeStyle='rgba(255,150,80,0.6)'; ctx.lineWidth=2.4; ctx.beginPath(); ctx.ellipse(0,0,40,12,0,Math.PI*1.05,Math.PI*1.95); ctx.stroke();
+    ctx.restore();
+    // the void disk itself — pure black hole
+    ctx.fillStyle='#000000'; ctx.beginPath(); ctx.arc(bhx,bhy,18,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(255,80,30,0.35)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(bhx,bhy,18.5,0,7); ctx.stroke();
+    // ==== drifting dead debris / asteroid hulks (parallax) ====
+    for(let i=0;i<6;i++){ const x=((i*240+90-cameraX*0.18)%(W+300)+W+300)%(W+300)-150, y=50+(i*61%200)+Math.sin(t*0.4+i)*6, r=4+(i%3)*3;
+      ctx.fillStyle='rgba(26,22,30,0.9)'; ctx.beginPath();
+      for(let k=0;k<6;k++){ const a=k*1.047; const rr=r*(0.7+((i*7+k)%3)*0.16); const px=x+Math.cos(a+i)*rr, py=y+Math.sin(a+i)*rr; k?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle='rgba(60,54,70,0.5)'; ctx.beginPath(); ctx.arc(x-r*0.3,y-r*0.3,r*0.3,0,7); ctx.fill(); }
+    // ==== THE ABYSS below the platforms — falling means the dark takes you ====
+    const ab=ctx.createLinearGradient(0,FLOOR-30,0,H);
+    ab.addColorStop(0,'rgba(0,0,0,0)'); ab.addColorStop(0.5,'rgba(2,0,6,0.85)'); ab.addColorStop(1,'rgba(0,0,0,1)');
+    ctx.fillStyle=ab; ctx.fillRect(0,FLOOR-30,W,H-FLOOR+30);
+    // faint blood-red ember pulsing from the depths
+    const eg=0.04+Math.sin(t*0.7)*0.03; ctx.save(); ctx.globalCompositeOperation='lighter';
+    const er=ctx.createLinearGradient(0,H-46,0,H); er.addColorStop(0,'rgba(120,10,30,0)'); er.addColorStop(1,'rgba(150,16,30,'+(0.18+eg)+')');
+    ctx.fillStyle=er; ctx.fillRect(0,H-46,W,46); ctx.restore();
+    // occasional cold streaking mote pulled toward the hole
+    const ss=(t*30)%320; if(ss<46){ const sx=bhx+120-ss*3, sy=bhy-30+ss*1.4; ctx.strokeStyle='rgba(180,200,255,0.55)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+14,sy-5); ctx.stroke(); }
+  }
+}
+function drawVoidVignette(){
+  // heavy corner darkness closing in — the void presses on the edges
+  const g=ctx.createRadialGradient(W/2,H*0.46,H*0.32,W/2,H*0.5,W*0.72);
+  g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(0.7,'rgba(0,0,4,0.30)'); g.addColorStop(1,'rgba(0,0,2,0.74)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+function drawSpaceAsteroid(sx, p){
+  const isFloor=(p.y===FLOOR), w=p.w, py=p.y;
+  let t=((Math.floor(p.x)*2654435761)>>>0)^0x9e3779b9;
+  const rnd=()=>{ t=(t*1664525+1013904223)>>>0; return t/4294967296; };
+  ctx.save();
+  if(isFloor){
+    const bottom=H;
+    ctx.beginPath();
+    ctx.moveTo(sx,bottom); ctx.lineTo(sx,py+2);
+    for(let x=sx; x<sx+w; x+=24){ ctx.lineTo(x, py-rnd()*4); ctx.lineTo(Math.min(sx+w,x+12), py+rnd()*3); }
+    ctx.lineTo(sx+w,py); ctx.lineTo(sx+w,bottom); ctx.closePath();
+    const g=ctx.createLinearGradient(0,py,0,Math.min(bottom,py+120));
+    g.addColorStop(0,'#5C564E'); g.addColorStop(0.22,'#403B36'); g.addColorStop(1,'#201C1A');
+    ctx.fillStyle=g; ctx.fill();
+    ctx.strokeStyle='rgba(150,180,215,0.45)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(sx,py+0.5); ctx.lineTo(sx+w,py+0.5); ctx.stroke();
+    const n=Math.max(2,Math.floor(w/130));
+    for(let i=0;i<n;i++){ const cxp=sx+14+rnd()*(w-28), cyp=py+12+rnd()*46, cr=4+rnd()*7;
+      ctx.fillStyle='rgba(0,0,0,0.34)'; ctx.beginPath(); ctx.ellipse(cxp,cyp,cr,cr*0.7,0,0,7); ctx.fill();
+      ctx.strokeStyle='rgba(160,170,180,0.22)'; ctx.lineWidth=1; ctx.beginPath(); ctx.ellipse(cxp,cyp-1,cr,cr*0.7,0,Math.PI,Math.PI*2); ctx.stroke(); }
+  } else {
+    const top=py, depth=Math.max(24,p.h+20), bot=py+depth, midx=sx+w/2;
+    ctx.beginPath();
+    ctx.moveTo(sx+4,top+2); ctx.lineTo(sx+w-4,top+2);
+    ctx.quadraticCurveTo(sx+w+6,top+depth*0.4,sx+w-12,bot-4);
+    ctx.quadraticCurveTo(midx,bot+7,sx+12,bot-4);
+    ctx.quadraticCurveTo(sx-6,top+depth*0.4,sx+4,top+2); ctx.closePath();
+    const g=ctx.createLinearGradient(0,top,0,bot);
+    g.addColorStop(0,'#6C675F'); g.addColorStop(0.3,'#4A453F'); g.addColorStop(1,'#231E1C');
+    ctx.fillStyle=g; ctx.fill();
+    ctx.strokeStyle='rgba(18,14,12,0.55)'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.fillStyle='rgba(165,195,225,0.4)'; ctx.fillRect(sx+5,top,w-10,2.5);
+    const n=Math.max(1,Math.floor(w/64));
+    for(let i=0;i<n;i++){ const cxp=sx+10+rnd()*(w-20), cyp=top+7+rnd()*(depth*0.55), cr=3+rnd()*5;
+      ctx.fillStyle='rgba(0,0,0,0.4)'; ctx.beginPath(); ctx.ellipse(cxp,cyp,cr,cr*0.72,0,0,7); ctx.fill();
+      ctx.fillStyle='rgba(155,165,175,0.18)'; ctx.beginPath(); ctx.ellipse(cxp-cr*0.3,cyp-cr*0.3,cr*0.42,cr*0.32,0,0,7); ctx.fill(); }
+    ctx.fillStyle='rgba(185,215,255,0.5)';
+    for(let i=0;i<2;i++) ctx.fillRect(sx+6+rnd()*(w-12), top+5+rnd()*(depth*0.5), 1.6,1.6);
+  }
+  ctx.restore();
+}
+function drawSpaceRings(){
+  const lv=curLV(); if(!lv.rings) return;
+  const t=Date.now()*0.004;
+  for(const ring of lv.rings){ if(ring.passed) continue;
+    const sx=ring.x-cameraX; if(sx<-60||sx>W+60) continue;
+    const pulse=0.6+0.4*Math.sin(t*3+ring.x*0.01);
+    ctx.save(); ctx.translate(sx,ring.y);
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle='rgba(120,240,255,'+(0.18+pulse*0.22)+')'; ctx.lineWidth=11;
+    ctx.beginPath(); ctx.ellipse(0,0,ring.rx,ring.ry,0,0,7); ctx.stroke();
+    ctx.globalCompositeOperation='source-over';
+    ctx.strokeStyle='#00DFFF'; ctx.lineWidth=4;
+    ctx.beginPath(); ctx.ellipse(0,0,ring.rx,ring.ry,0,0,7); ctx.stroke();
+    ctx.strokeStyle='rgba(210,255,255,0.9)'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.ellipse(0,0,ring.rx-3,ring.ry-3,0,0,7); ctx.stroke();
+    // upward chevrons cueing "fly through"
+    ctx.strokeStyle='rgba(150,245,255,'+(0.5+pulse*0.4)+')'; ctx.lineWidth=2; ctx.lineCap='round';
+    for(let c=0;c<2;c++){ const cy=ring.ry+6+c*7-((t*40)%14); ctx.beginPath(); ctx.moveTo(-7,cy+5); ctx.lineTo(0,cy); ctx.lineTo(7,cy+5); ctx.stroke(); }
+    ctx.restore();
   }
 }
 function drawBoostPads(){
@@ -6938,6 +7090,7 @@ function drawGenPlatforms(){
   for(const p of lv.platforms){
     const sx=p.x-cameraX;
     if(sx+p.w<-20||sx>W+20)continue;
+    if(currentLevel===6){ drawSpaceAsteroid(sx, p); continue; }
     if(p.y===FLOOR){
       if(haus){
         ctx.fillStyle='#2A1E14'; ctx.fillRect(sx,p.y,p.w,H-p.y);
@@ -7141,39 +7294,86 @@ function drawHausEnemy(e,pal,wob){
 }
 
 function drawSpaceEnemy(e,pal,wob){
-  const w=e.w,h=e.h, fc=e.facing>0?1:-1;
-  if(e.slot==='A'){ // DRONE
-    ctx.fillStyle='#3A4A5A'; ctx.beginPath(); ctx.ellipse(w/2,h/2,w*0.42,h*0.3,0,0,7); ctx.fill();
-    ctx.fillStyle='#1A2A3A'; ctx.beginPath(); ctx.ellipse(w/2,h*0.44,w*0.3,h*0.16,0,0,7); ctx.fill();
-    const g=0.6+Math.sin(e.phase*4)*0.3; ctx.fillStyle='rgba(255,60,60,'+g+')'; ctx.beginPath(); ctx.arc(w*0.5+fc*4,h*0.46,3,0,7); ctx.fill();
-    ctx.fillStyle='#FFD0D0'; ctx.beginPath(); ctx.arc(w*0.5+fc*4,h*0.46,1.2,0,7); ctx.fill();
-    ctx.fillStyle='rgba(120,200,255,0.7)'; ctx.beginPath(); ctx.arc(w*0.12,h*0.55,2,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(w*0.88,h*0.55,2,0,7); ctx.fill();
-    ctx.fillStyle='#9AB0C0'; ctx.fillRect(w*0.4,h*0.2,w*0.2,2);
-  } else if(e.slot==='B'){ // MECH BOT (2-hit)
-    ctx.fillStyle='#6A7A88'; ctx.fillRect(w*0.18,h*0.2,w*0.64,h*0.66);
-    ctx.fillStyle='#48565F'; ctx.fillRect(w*0.18,h*0.2,w*0.64,4);
-    ctx.strokeStyle='#2A343A'; ctx.lineWidth=1; for(let i=0;i<2;i++) ctx.strokeRect(w*0.24,h*0.34+i*h*0.2,w*0.52,h*0.16);
-    ctx.fillStyle='#1A1A1A'; ctx.fillRect(w*0.28,h*0.28,w*0.44,h*0.12);
-    const g=0.5+Math.sin(e.phase*3)*0.4; ctx.fillStyle='rgba(0,255,120,'+g+')'; ctx.fillRect(w*0.32,h*0.31,w*0.36,4);
-    ctx.strokeStyle='#9AB0C0'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(w*0.5,h*0.2); ctx.lineTo(w*0.5,h*0.06); ctx.stroke(); ctx.fillStyle='#FF4040'; ctx.beginPath(); ctx.arc(w*0.5,h*0.04,2,0,7); ctx.fill();
-    ctx.fillStyle='#48565F'; ctx.fillRect(w*0.08,h*0.4,w*0.1,h*0.3); ctx.fillRect(w*0.82,h*0.4,w*0.1,h*0.3);
-    if(e.hitCount>0){ ctx.strokeStyle='rgba(255,200,0,0.85)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(w*0.3,h*0.4); ctx.lineTo(w*0.5,h*0.6); ctx.lineTo(w*0.42,h*0.7); ctx.stroke(); }
-  } else if(e.slot==='C'){ // SATELLITE (hover)
-    ctx.fillStyle='#1A3A6A'; ctx.fillRect(0,h*0.36,w*0.28,h*0.28); ctx.fillRect(w*0.72,h*0.36,w*0.28,h*0.28);
-    ctx.strokeStyle='#3A6AAA'; ctx.lineWidth=0.8; for(let i=0;i<3;i++){ ctx.strokeRect(0,h*0.36+i*h*0.09,w*0.28,h*0.09); ctx.strokeRect(w*0.72,h*0.36+i*h*0.09,w*0.28,h*0.09); }
-    ctx.strokeStyle='#9AB0C0'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(w*0.28,h*0.5); ctx.lineTo(w*0.72,h*0.5); ctx.stroke();
-    ctx.fillStyle='#C0C8D0'; ctx.beginPath(); ctx.arc(w*0.5,h*0.5,w*0.16,0,7); ctx.fill();
-    ctx.strokeStyle='#E0E8F0'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(w*0.5,h*0.34,5,Math.PI,0); ctx.stroke();
-    const g=0.5+Math.sin(e.phase*5)*0.5; ctx.fillStyle='rgba(255,60,60,'+g+')'; ctx.beginPath(); ctx.arc(w*0.5,h*0.5,2,0,7); ctx.fill();
-  } else { // PLASMA TURRET (shooter)
-    ctx.fillStyle='#4A5A6A'; ctx.beginPath(); ctx.arc(w/2,h*0.7,w*0.4,Math.PI,0); ctx.fill();
-    ctx.fillStyle='#2A3A4A'; ctx.fillRect(w*0.1,h*0.68,w*0.8,h*0.2);
-    ctx.save(); ctx.translate(w/2,h*0.5); ctx.fillStyle='#6A7A88'; ctx.fillRect(Math.min(0,fc*w*0.5),-3,Math.abs(fc*w*0.5),6); ctx.restore();
-    const cg=3+Math.sin(e.phase*4)*1.5; ctx.fillStyle='rgba(255,255,0,0.5)'; ctx.beginPath(); ctx.arc(w*0.5+fc*w*0.42,h*0.5,cg+2,0,7); ctx.fill();
-    ctx.fillStyle='#FFFF80'; ctx.beginPath(); ctx.arc(w*0.5+fc*w*0.42,h*0.5,cg*0.6,0,7); ctx.fill();
-    ctx.fillStyle='#00FFCC'; ctx.beginPath(); ctx.arc(w/2,h*0.58,3,0,7); ctx.fill();
+  const w=e.w,h=e.h, fc=e.facing>0?1:-1, ph=e.phase;
+  if(e.slot==='A'){ // SKITTERLING — fleshy multi-eyed crawler (1-hit)
+    // skittering legs
+    ctx.strokeStyle='#1A0A14'; ctx.lineWidth=2; ctx.lineCap='round';
+    for(let k=-2;k<=2;k++){ const lx=w*0.5+k*w*0.16, sw=Math.sin(ph*6+k)*3;
+      ctx.beginPath(); ctx.moveTo(lx,h*0.62); ctx.lineTo(lx+sw+k*2,h*0.78); ctx.lineTo(lx+sw*1.4+k*3,h*0.98); ctx.stroke(); }
+    // bulb body (sickly green, bruised underside)
+    const pulse=0.5+Math.sin(ph*3)*0.5;
+    ctx.fillStyle='#3E7A34'; ctx.beginPath(); ctx.ellipse(w*0.5,h*0.46,w*0.4,h*0.34,0,0,7); ctx.fill();
+    ctx.fillStyle='#5AA046'; ctx.beginPath(); ctx.ellipse(w*0.5,h*0.4,w*0.3,h*0.22,0,0,7); ctx.fill();
+    ctx.fillStyle='rgba(122,42,106,0.45)'; ctx.beginPath(); ctx.ellipse(w*0.5,h*0.58,w*0.34,h*0.16,0,0,7); ctx.fill();
+    // pulsing membrane veins
+    ctx.strokeStyle='rgba(180,255,140,'+(0.2+pulse*0.3)+')'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(w*0.3,h*0.4); ctx.quadraticCurveTo(w*0.5,h*0.3,w*0.7,h*0.42); ctx.stroke();
+    // eye cluster (3 blood-red eyes, tracking)
+    for(let k=0;k<3;k++){ const ex=w*(0.34+k*0.16)+fc*2, ey=h*(0.4+(k%2)*0.07);
+      ctx.fillStyle='#FF2A2A'; ctx.beginPath(); ctx.arc(ex,ey,2.6,0,7); ctx.fill();
+      ctx.fillStyle='#FFE0D0'; ctx.beginPath(); ctx.arc(ex+fc*0.8,ey-0.4,0.9,0,7); ctx.fill(); }
+    // dripping maw
+    ctx.fillStyle='#160712'; ctx.beginPath(); ctx.ellipse(w*0.5,h*0.66,w*0.16,h*0.1,0,0,7); ctx.fill();
+    ctx.fillStyle='#D8E8C0'; for(let k=-1;k<=1;k++){ ctx.beginPath(); ctx.moveTo(w*0.5+k*5,h*0.6); ctx.lineTo(w*0.5+k*5+1.4,h*0.72); ctx.lineTo(w*0.5+k*5-1.4,h*0.72); ctx.fill(); }
+    if(Math.sin(ph*2)>0.7){ ctx.fillStyle='rgba(120,220,90,0.6)'; ctx.beginPath(); ctx.arc(w*0.5,h*0.78,1.4,0,7); ctx.fill(); }
+  } else if(e.slot==='B'){ // CARAPACE BRUTE — armored chitin alien (2-hit)
+    const cracked=e.hitCount>0, core=0.5+Math.sin(ph*4)*0.5;
+    // hulking limbs
+    ctx.fillStyle='#241018'; ctx.fillRect(w*0.04,h*0.42,w*0.14,h*0.5); ctx.fillRect(w*0.82,h*0.42,w*0.14,h*0.5);
+    // shell body, layered chitin plates
+    ctx.fillStyle=cracked?'#5A2230':'#4A2A1E'; ctx.beginPath(); ctx.moveTo(w*0.16,h*0.9); ctx.lineTo(w*0.14,h*0.34); ctx.quadraticCurveTo(w*0.5,h*0.06,w*0.86,h*0.34); ctx.lineTo(w*0.84,h*0.9); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle='#1A0C10'; ctx.lineWidth=1.4;
+    for(let i=0;i<3;i++){ const yy=h*(0.34+i*0.18); ctx.beginPath(); ctx.moveTo(w*0.16,yy); ctx.quadraticCurveTo(w*0.5,yy-6,w*0.84,yy); ctx.stroke(); }
+    // exposed glowing spinal core
+    ctx.fillStyle='rgba(120,255,90,'+(0.4+core*0.5)+')'; ctx.beginPath(); ctx.ellipse(w*0.5,h*0.5,w*0.1,h*0.26,0,0,7); ctx.fill();
+    ctx.fillStyle='#E8FFC0'; ctx.beginPath(); ctx.ellipse(w*0.5,h*0.5,w*0.04,h*0.16,0,0,7); ctx.fill();
+    // mandibles
+    ctx.strokeStyle='#D8C0A0'; ctx.lineWidth=2.2; ctx.lineCap='round';
+    const gn=Math.abs(Math.sin(ph*3))*4;
+    ctx.beginPath(); ctx.moveTo(w*0.34,h*0.2); ctx.lineTo(w*0.28-gn,h*0.34); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(w*0.66,h*0.2); ctx.lineTo(w*0.72+gn,h*0.34); ctx.stroke();
+    // hateful eyes
+    ctx.fillStyle='#FFC400'; ctx.beginPath(); ctx.arc(w*0.4+fc*2,h*0.24,2.4,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(w*0.6+fc*2,h*0.24,2.4,0,7); ctx.fill();
+    ctx.fillStyle='#1A0A00'; ctx.beginPath(); ctx.arc(w*0.4+fc*2.6,h*0.24,1,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(w*0.6+fc*2.6,h*0.24,1,0,7); ctx.fill();
+    if(cracked){ ctx.strokeStyle='rgba(120,255,90,0.9)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(w*0.3,h*0.36); ctx.lineTo(w*0.46,h*0.56); ctx.lineTo(w*0.36,h*0.7); ctx.stroke(); }
+  } else if(e.slot==='C'){ // WATCHER — floating eyeball with membrane tentacles (hover)
+    const drift=Math.sin(ph*1.6)*2;
+    // trailing tentacles
+    ctx.strokeStyle='rgba(122,42,106,0.8)'; ctx.lineWidth=2.4; ctx.lineCap='round';
+    for(let k=-2;k<=2;k++){ const tx=w*0.5+k*w*0.16;
+      ctx.beginPath(); ctx.moveTo(tx,h*0.62); ctx.quadraticCurveTo(tx+Math.sin(ph*3+k)*5,h*0.82,tx+Math.sin(ph*3+k)*9,h*1.02); ctx.stroke(); }
+    // membranous sac
+    ctx.fillStyle='rgba(90,30,110,0.55)'; ctx.beginPath(); ctx.ellipse(w*0.5,h*0.46+drift,w*0.44,h*0.4,0,0,7); ctx.fill();
+    // giant iris tracking the player
+    ctx.fillStyle='#0C0410'; ctx.beginPath(); ctx.arc(w*0.5,h*0.42+drift,w*0.3,0,7); ctx.fill();
+    const ir=0.5+Math.sin(ph*2)*0.18;
+    ctx.fillStyle='#FFB000'; ctx.beginPath(); ctx.arc(w*0.5,h*0.42+drift,w*0.2*ir+w*0.12,0,7); ctx.fill();
+    ctx.fillStyle='#FF3A00'; ctx.beginPath(); ctx.arc(w*0.5,h*0.42+drift,w*0.12,0,7); ctx.fill();
+    ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(w*0.5+fc*3,h*0.42+drift,w*0.07,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(255,180,80,0.5)'; ctx.lineWidth=1; for(let k=0;k<8;k++){ const a=k*0.785+ph; ctx.beginPath(); ctx.moveTo(w*0.5+Math.cos(a)*w*0.3,h*0.42+drift+Math.sin(a)*w*0.3); ctx.lineTo(w*0.5+Math.cos(a)*w*0.42,h*0.42+drift+Math.sin(a)*w*0.42); ctx.stroke(); }
+  } else { // MAW SPITTER — rooted alien pod with charging throat-sac (shooter)
+    const charge=0.5+Math.sin(ph*4)*0.5, open=Math.max(0,Math.sin(ph*4));
+    // root tendrils anchoring it
+    ctx.strokeStyle='#2A1018'; ctx.lineWidth=2.4; ctx.lineCap='round';
+    for(let k=-2;k<=2;k++){ ctx.beginPath(); ctx.moveTo(w*0.5,h*0.86); ctx.lineTo(w*0.5+k*w*0.2,h*1.0); ctx.stroke(); }
+    // bulbous stalk
+    ctx.fillStyle='#3A6A2E'; ctx.beginPath(); ctx.moveTo(w*0.3,h*0.92); ctx.quadraticCurveTo(w*0.5,h*0.5,w*0.5,h*0.46); ctx.quadraticCurveTo(w*0.5,h*0.5,w*0.7,h*0.92); ctx.closePath(); ctx.fill();
+    // throbbing throat sac (glows as it charges)
+    ctx.fillStyle='rgba(180,255,80,'+(0.25+charge*0.55)+')'; ctx.beginPath(); ctx.ellipse(w*0.5,h*0.6,w*0.2+charge*3,h*0.22+charge*3,0,0,7); ctx.fill();
+    // splitting maw head facing the player
+    ctx.save(); ctx.translate(w*0.5,h*0.34);
+    ctx.fillStyle='#3E1428'; ctx.beginPath(); ctx.ellipse(0,0,w*0.34,h*0.3,0,0,7); ctx.fill();
+    // four petal jaws opening
+    ctx.fillStyle='#5A2238';
+    for(let k=0;k<4;k++){ const a=k*1.5708+ph*0.4, sp=open*0.5;
+      ctx.save(); ctx.rotate(a); ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(w*0.26,-h*0.1-sp*8); ctx.lineTo(w*0.3,0); ctx.lineTo(w*0.26,h*0.1+sp*8); ctx.closePath(); ctx.fill(); ctx.restore(); }
+    // inner glow + fangs
+    ctx.fillStyle='rgba(255,90,40,'+(0.4+open*0.5)+')'; ctx.beginPath(); ctx.arc(0,0,w*0.12,0,7); ctx.fill();
+    ctx.fillStyle='#E8E0C0'; for(let k=0;k<6;k++){ const a=k*1.047; ctx.beginPath(); ctx.moveTo(Math.cos(a)*w*0.1,Math.sin(a)*h*0.09); ctx.lineTo(Math.cos(a)*w*0.2,Math.sin(a)*h*0.18); ctx.lineTo(Math.cos(a+0.3)*w*0.12,Math.sin(a+0.3)*h*0.11); ctx.fill(); }
+    ctx.restore();
   }
 }
+
 function drawGenShockwaves(){
   for(const sw of shockwaves){
     const sx=sw.x-cameraX, a=sw.life/sw.maxLife;
@@ -7290,7 +7490,10 @@ function drawBossSpace(boss,bc,flash){
     ctx.fillStyle=r[0]; ctx.beginPath(); ctx.arc(r[2],0,3,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(-r[2],0,3,0,7); ctx.fill(); ctx.restore(); }
 }
 function drawGenFlag(){
-  drawBike(bikeEscape.active ? bikeEscape.x : (curLV().worldW-140), bikeEscape.wheelSpin, false);
+  if(bikeEscape.active){ drawBike(bikeEscape.x, bikeEscape.wheelSpin, false); return; }
+  const lv=curLV(), b=lv.bossObj;
+  // the getaway bike only rolls in once the boss is beaten
+  if(!b || !b.alive) drawBike(lv.worldW-140, bikeEscape.wheelSpin, false);
 }
 
 // ---- transitions ----
@@ -7305,7 +7508,7 @@ function buildLevelContent(n){
   buildBottles();
 }
 function goToLevel(n){
-  currentLevel=n; cameraX=0;
+  currentLevel=n; cameraX=0; cameraY=0;
   projectiles=[]; venom=[]; particles=[]; killCombo=0;
   cutsceneActive=false; victoryActive=false; victoryTimer=0;
   finishCardActive=false; finishCardTimer=0; shockwaves=[]; icicles=[];
