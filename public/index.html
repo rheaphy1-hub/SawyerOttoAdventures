@@ -4054,6 +4054,7 @@ function loop(){
   // Bike escape rider overlay
   // (bike escape removed — portal warp handles level finish)
   if(currentLevel===5 && !bikeEscape.active && !victoryActive) drawHausDarkness();
+  if(currentLevel===5 && !bikeEscape.active && !victoryActive) drawBaronGhoul();
   // Power indicator HUD
   if(ottoPower>0){
     const pwrNames=['','GIANT!','SPRAY!','CUTE!'];
@@ -7035,7 +7036,10 @@ function updateGen(){
       }
     }
     if(pr.life>0&&boss&&boss.active&&boss.alive){
-      if(pr.x>boss.x&&pr.x<boss.x+boss.w&&pr.y>boss.y&&pr.y<boss.y+boss.h){
+      let tbX0,tbX1,tbY0,tbY1;
+      if(currentLevel===5){ const cx=boss.x+boss.w/2; tbX0=cx-26; tbX1=cx+26; tbY0=boss.y+boss.h-132; tbY1=boss.y+boss.h; }
+      else { tbX0=boss.x; tbX1=boss.x+boss.w; tbY0=boss.y; tbY1=boss.y+boss.h; }
+      if(pr.x>tbX0&&pr.x<tbX1&&pr.y>tbY0&&pr.y<tbY1){
         boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;
         SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         const half=Math.ceil(bc.hp/2);
@@ -7090,22 +7094,54 @@ function updateGen(){
       if(boss.x<lo||boss.x>hi)boss.vx*=-1;
       boss.y=FLOOR-boss.h-6+Math.sin(boss.orbit)*14; // gentle undulation
       if(boss.hitFlash>0)boss.hitFlash--;
+      const haus=currentLevel===5;
       boss.lungeTimer--;
-      if(boss.lungeTimer<=0){ boss.vx=(boss.phaseIndex?bc.vx2:bc.vx1)*1.6*boss.facing; boss.lungeTimer=150+Math.random()*90; sfx('rattle'); }
+      if(boss.lungeTimer<=0){ boss.vx=(boss.phaseIndex?bc.vx2:bc.vx1)*1.6*boss.facing; boss.lungeTimer=150+Math.random()*90; sfx('rattle');
+        if(haus && !boss.casting && boss.animName!=='magic'){ boss.animName='roar'; boss.animFrame=0; boss.animAcc=0; } }
       else { const tgt=(boss.phaseIndex?bc.vx2:bc.vx1); if(Math.abs(boss.vx)>tgt+0.1)boss.vx*=0.96; }
       boss.spitTimer--;
       if(boss.spitTimer<=0){
         boss.spitTimer=(boss.phaseIndex?bc.spit2:bc.spit1);
-        const cnt=(boss.phaseIndex?bc.n2:bc.n1);
-        const sx=boss.x+boss.w/2, sy=boss.y+boss.h*0.4;
-        const dx=(s.x+s.w/2)-sx, dy=(s.y+s.h/2)-sy; const d=Math.hypot(dx,dy)||1;
-        const baseA=Math.atan2(dy,dx);
-        for(let k=0;k<cnt;k++){
-          const spread=(cnt>1)?((k-(cnt-1)/2)*0.18):0;
-          const a=baseA+spread;
-          venom.push({x:sx,y:sy,vx:Math.cos(a)*5.4,vy:Math.sin(a)*5.4-1.0,life:120,r:6,col:bc.proj});
+        if(haus){
+          // begin a cast — the bolt fires on the magic "release" frame (see anim machine below)
+          if(!boss.casting){ boss.casting=true; boss.castFired=false; boss.animName='magic'; boss.animFrame=0; boss.animAcc=0; }
+        } else {
+          const cnt=(boss.phaseIndex?bc.n2:bc.n1);
+          const sx=boss.x+boss.w/2, sy=boss.y+boss.h*0.4;
+          const dx=(s.x+s.w/2)-sx, dy=(s.y+s.h/2)-sy; const d=Math.hypot(dx,dy)||1;
+          const baseA=Math.atan2(dy,dx);
+          for(let k=0;k<cnt;k++){
+            const spread=(cnt>1)?((k-(cnt-1)/2)*0.18):0;
+            const a=baseA+spread;
+            venom.push({x:sx,y:sy,vx:Math.cos(a)*5.4,vy:Math.sin(a)*5.4-1.0,life:120,r:6,col:bc.proj});
+          }
+          SFX.bossSpit();
         }
-        SFX.bossSpit();
+      }
+      // --- Baron sprite animation state machine (game-tick timed; owns frame + bolt spawn) ---
+      if(haus){
+        if(boss.animName===undefined){ boss.animName='walk'; boss.animFrame=0; boss.animAcc=0; boss.casting=false; boss.castFired=false; }
+        const aset=BARON_SPRITES[boss.animName];
+        boss.animAcc += (aset.fps*(boss.phaseIndex?1.35:1))/60;  // frames to advance this tick (~60fps)
+        while(boss.animAcc>=1){
+          boss.animAcc-=1; boss.animFrame++;
+          if(boss.animFrame>=aset.frames.length){
+            if(aset.loop){ boss.animFrame=0; }
+            else { boss.animFrame=aset.frames.length-1; boss.animName='walk'; boss.animFrame=0; boss.casting=false; boss.castFired=false; break; }
+          }
+          // fire the bolt from his outstretched hand on the release frame
+          if(boss.casting && boss.animName==='magic' && boss.animFrame===3 && !boss.castFired){
+            boss.castFired=true;
+            const cnt=(boss.phaseIndex?bc.n2:bc.n1);
+            const mx=boss.x+boss.w/2 + boss.facing*18;     // hand position, tuned to the magic pose
+            const my=boss.y+boss.h - 106;
+            const dx=(s.x+s.w/2)-mx, dy=(s.y+s.h/2)-my; const d=Math.hypot(dx,dy)||1;
+            const baseA=Math.atan2(dy,dx);
+            for(let k=0;k<cnt;k++){ const spread=(cnt>1)?((k-(cnt-1)/2)*0.16):0; const a=baseA+spread;
+              venom.push({x:mx,y:my,vx:Math.cos(a)*5.6,vy:Math.sin(a)*5.6-0.5,life:120,r:7,col:bc.proj,baron:true}); }
+            SFX.bossSpit();
+          }
+        }
       }
       // Phase-2 ground slam shockwave
       if(boss.phaseIndex===1){
@@ -7119,7 +7155,11 @@ function updateGen(){
           }
         }
       }
-      if(s.invincible===0 && s.x+s.w>boss.x+10 && s.x<boss.x+boss.w-10 && s.y+s.h>boss.y+10 && s.y<boss.y+boss.h) hurt(s);
+      // contact hitbox: Baron's tall sprite needs a body-shaped box, not the 64px tile
+      let hbX0,hbX1,hbY0,hbY1;
+      if(currentLevel===5){ const cx=boss.x+boss.w/2; hbX0=cx-24; hbX1=cx+24; hbY0=boss.y+boss.h-130; hbY1=boss.y+boss.h; }
+      else { hbX0=boss.x+10; hbX1=boss.x+boss.w-10; hbY0=boss.y+10; hbY1=boss.y+boss.h; }
+      if(s.invincible===0 && s.x+s.w>hbX0 && s.x<hbX1 && s.y+s.h>hbY0 && s.y<hbY1) hurt(s);
     }
   } else if(boss&&!boss.alive&&boss.dieTimer>0){
     boss.dieTimer--;
@@ -7926,12 +7966,50 @@ function drawHausDarkness(){
   glow(oxx,oyy,48,0.98); cone(oxx+odir*6,oyy,odir,170,0.52,0.98);
   // Boss + exit glow so the level stays playable
   const lv=curLV(), bo=lv.bossObj;
-  if(bo&&bo.active) glow(bo.x-cameraX+bo.w/2,bo.y+bo.h/2,bo.w*1.5,0.95);
+  if(bo&&bo.active){
+    const bcx=bo.x-cameraX+bo.w/2, feet=bo.y+bo.h;
+    // tall stacked carve so the whole 156px Baron sprite reads vividly (head→feet)
+    glow(bcx,feet-150,62,1); glow(bcx,feet-100,98,1); glow(bcx,feet-45,86,1);
+  }
   glow((lv.worldW-120)-cameraX,FLOOR-40,70,0.8);
   for(const m of lv.pitMobs){ const ll=m.len||30; glow(m.x-cameraX+m.w/2, FLOOR-ll*0.5, 34+ll*0.45, 0.95); }
   dc.globalCompositeOperation='source-over';
   ctx.drawImage(_darkCv,0,0);
   if(lightFlash>0.01){ ctx.save(); ctx.fillStyle='rgba(220,228,255,'+(lightFlash*0.32)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+}
+function drawBaronGhoul(){
+  if(currentLevel!==5)return;
+  const lv=curLV(), b=lv.bossObj; if(!b||!b.active||!b.alive)return;
+  const t=performance.now()*0.001;
+  const cx=b.x-cameraX+b.w/2, feet=b.y+b.h, mid=feet-82;
+  const enr=b.phaseIndex===1;
+  const A=enr?'255,60,40':'170,84,232';     // aura rgb
+  const E=enr?'#FF5040':'#D8A0FF';           // eye/ember tint
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  // 1) breathing dread halo
+  const pulse=0.5+0.5*Math.sin(t*2.2);
+  let g=ctx.createRadialGradient(cx,mid,4,cx,mid,96+pulse*18);
+  g.addColorStop(0,'rgba('+A+','+(0.30+pulse*0.20)+')'); g.addColorStop(0.5,'rgba('+A+',0.12)'); g.addColorStop(1,'rgba('+A+',0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,mid,96+pulse*18,0,7); ctx.fill();
+  // 2) rising fog wisps from the floor
+  for(let i=0;i<6;i++){ const ph=t*0.55+i*1.05, rise=ph%1, wy=feet-rise*128, wx=cx+Math.sin(ph*3+i)*42*(0.4+rise), wr=10+rise*24;
+    ctx.globalAlpha=(1-rise)*0.22; const wg=ctx.createRadialGradient(wx,wy,1,wx,wy,wr);
+    wg.addColorStop(0,'rgba('+A+',0.55)'); wg.addColorStop(1,'rgba('+A+',0)'); ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(wx,wy,wr,0,7); ctx.fill(); }
+  ctx.globalAlpha=1;
+  // 3) orbiting spectral eyes that blink
+  const n=enr?6:4;
+  for(let i=0;i<n;i++){ const a=t*1.05+i*(6.283/n), rx=72+Math.sin(t*1.7+i)*12, ry=48;
+    const ex=cx+Math.cos(a)*rx, ey=mid+Math.sin(a)*ry;
+    const blink=Math.sin(t*2.6+i*2)>-0.55?1:0.12;
+    const eg=ctx.createRadialGradient(ex,ey,0.5,ex,ey,9.5);
+    eg.addColorStop(0,'rgba(255,255,255,'+(0.9*blink)+')'); eg.addColorStop(0.4,E); eg.addColorStop(1,'rgba('+A+',0)');
+    ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(ex,ey,9.5,0,7); ctx.fill();
+    ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(8,2,12,'+blink+')';
+    ctx.beginPath(); ctx.ellipse(ex,ey,1.6,3.4,0,0,7); ctx.fill(); ctx.globalCompositeOperation='lighter'; }
+  // 4) floating embers drifting upward
+  for(let i=0;i<10;i++){ const rise=(t*0.5+i*0.13)%1, ex=cx+Math.sin(i*2.3+t*0.6)*72, ey=feet-rise*156, er=1.2+Math.sin(t*4+i)*0.8;
+    ctx.globalAlpha=(1-rise)*0.7; ctx.fillStyle=E; ctx.beginPath(); ctx.arc(ex,ey,Math.max(0.4,er),0,7); ctx.fill(); }
+  ctx.globalAlpha=1; ctx.restore();
 }
 function drawGenBg(){
   const lv=curLV(), pal=lv.pal;
@@ -8504,40 +8582,24 @@ function drawNexusSimple(bx,by,el){
   ctx.restore();
 }
 // === BARON VON SCREAM SPRITES (Wave 3) ===
-const BARON_SPRITES={"walk":{"w":166,"h":300,"ax":83.1,"ay":295.6,"fps":8,"loop":true,"frames":[{"label":"idle","src":"assets/baron/walk_01_idle.webp"},{"label":"step1","src":"assets/baron/walk_02_step1.webp"},{"label":"pass","src":"assets/baron/walk_03_pass.webp"},{"label":"step2","src":"assets/baron/walk_04_step2.webp"}]},"roar":{"w":190,"h":300,"ax":94.8,"ay":295.4,"fps":8,"loop":false,"frames":[{"label":"idle","src":"assets/baron/roar_01_idle.webp"},{"label":"windup","src":"assets/baron/roar_02_windup.webp"},{"label":"roar","src":"assets/baron/roar_03_roar.webp"},{"label":"settle","src":"assets/baron/roar_04_settle.webp"}]},"magic":{"w":227,"h":300,"ax":113.5,"ay":295.2,"fps":8,"loop":false,"frames":[{"label":"idle","src":"assets/baron/magic_01_idle.webp"},{"label":"gather","src":"assets/baron/magic_02_gather.webp"},{"label":"scream","src":"assets/baron/magic_03_scream.webp"},{"label":"release","src":"assets/baron/magic_04_release.webp"}]}};
+const BARON_SPRITES={"walk":{"w":166,"h":300,"ax":83.1,"ay":295.6,"fps":8,"loop":true,"frames":[{"label":"idle","src":"assets/walk_01_idle.webp"},{"label":"step1","src":"assets/walk_02_step1.webp"},{"label":"pass","src":"assets/walk_03_pass.webp"},{"label":"step2","src":"assets/walk_04_step2.webp"}]},"roar":{"w":190,"h":300,"ax":94.8,"ay":295.4,"fps":8,"loop":false,"frames":[{"label":"idle","src":"assets/roar_01_idle.webp"},{"label":"windup","src":"assets/roar_02_windup.webp"},{"label":"roar","src":"assets/roar_03_roar.webp"},{"label":"settle","src":"assets/roar_04_settle.webp"}]},"magic":{"w":227,"h":300,"ax":113.5,"ay":295.2,"fps":8,"loop":false,"frames":[{"label":"idle","src":"assets/magic_01_idle.webp"},{"label":"gather","src":"assets/magic_02_gather.webp"},{"label":"scream","src":"assets/magic_03_scream.webp"},{"label":"release","src":"assets/magic_04_release.webp"}]}};
 const baronImgs={}; let baronReady=0, baronTotal=0;
 for(const a in BARON_SPRITES){ baronImgs[a]=BARON_SPRITES[a].frames.map(fr=>{ baronTotal++; const im=new Image(); im.onload=()=>{baronReady++;}; im.src=fr.src; return im; }); }
 const baronAllReady=()=>baronReady>=baronTotal;
 const BARON_DISPLAY_H=156;  // looming on-screen height (px)
 
 function drawBossHaus(boss,bc,flash){
-  // ---- animation state machine: walk(loop) / roar / magic(one-shot) ----
-  if(boss._anim===undefined){ boss._anim='walk'; boss._frame=0; boss._ft=0; boss._oneShot=false;
-    boss._prevSpit=boss.spitTimer; boss._prevLunge=boss.lungeTimer; boss._lastT=performance.now(); }
-  // a fired projectile resets spitTimer upward -> magic blast; a lunge resets lungeTimer upward -> roar
-  if(boss.spitTimer > boss._prevSpit + 4){ boss._anim='magic'; boss._frame=0; boss._ft=0; boss._oneShot=true; }
-  else if(boss.lungeTimer > boss._prevLunge + 4 && boss._anim!=='magic'){ boss._anim='roar'; boss._frame=0; boss._ft=0; boss._oneShot=true; }
-  boss._prevSpit=boss.spitTimer; boss._prevLunge=boss.lungeTimer;
+  // Pure renderer: animation state (animName/animFrame) is owned by updateGen.
   const enraged=boss.phaseIndex===1;
-  // fallback to procedural art until sprites decode
+  const name=boss.animName||'walk', frame=boss.animFrame||0;
   if(!baronAllReady()){ baronArt(boss.w,boss.h,flash,enraged,boss.phase); return; }
-  const set=BARON_SPRITES[boss._anim], imgs=baronImgs[boss._anim];
-  const now=performance.now(); let dt=now-boss._lastT; boss._lastT=now; if(dt>120)dt=120;
-  const fps=set.fps*(enraged?1.35:1), fdur=1000/fps;
-  boss._ft+=dt;
-  while(boss._ft>=fdur){ boss._ft-=fdur; boss._frame++;
-    if(boss._frame>=set.frames.length){
-      if(set.loop){ boss._frame=0; }
-      else { boss._frame=set.frames.length-1;
-        if(boss._oneShot){ boss._anim='walk'; boss._frame=0; boss._oneShot=false; break; } } } }
-  const a2=BARON_SPRITES[boss._anim], img2=baronImgs[boss._anim][boss._frame];
+  const a2=BARON_SPRITES[name], img2=baronImgs[name][frame];
   const sc=BARON_DISPLAY_H/a2.h, dw=a2.w*sc, dh=a2.h*sc;
-  const cx=boss.w/2, feetY=boss.h;            // local coords (ctx already at boss top-left)
+  const cx=boss.w/2, feetY=boss.h;                 // local coords (ctx already at boss top-left)
   const dx=cx-a2.ax*sc, dy=feetY-a2.ay*sc;
   ctx.save();
-  // face the player: source faces left; flip when moving/looking right
-  if(boss.facing>0){ ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0); }
-  // enraged dread aura behind him
+  // source art faces RIGHT; flip to face left when the player is on his left
+  if(boss.facing<0){ ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0); }
   if(enraged){ ctx.save(); ctx.globalCompositeOperation='lighter';
     const g=ctx.createRadialGradient(cx,feetY-dh*0.45,2,cx,feetY-dh*0.45,dw*0.8);
     g.addColorStop(0,'rgba(255,42,42,'+(0.28+Math.sin(boss.phase*4)*0.08)+')'); g.addColorStop(1,'rgba(255,42,42,0)');
