@@ -2215,6 +2215,44 @@ function drawVenom(){
       ctx.fillStyle='rgba(160,210,170,0.6)'; ctx.beginPath(); ctx.arc(x-1.5,y-1.8,v.r*0.4,0,7); ctx.fill();
       ctx.restore(); continue;
     }
+    if(v.baron){
+      const t=performance.now()*0.012 + v.x*0.05;   // per-bolt phase
+      const ang=Math.atan2(v.vy,v.vx), R=v.r, pulse=1+Math.sin(t*2)*0.12;
+      const hot='#E9C2FF', mid=v.col||'#9D4EDD', dark='#2A0A3A';
+      ctx.save();
+      // 1) screaming comet tail — receding afterimages along travel vector
+      ctx.globalCompositeOperation='lighter';
+      for(let i=7;i>=1;i--){ const f=i/7, tx=x-v.vx*i*1.25, ty=y-v.vy*i*1.25;
+        const g=ctx.createRadialGradient(tx,ty,0,tx,ty,R*1.6*(1-f*0.5));
+        g.addColorStop(0,'rgba(201,120,255,'+(0.16*(1-f))+')'); g.addColorStop(1,'rgba(157,78,221,0)');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tx,ty,R*1.6*(1-f*0.5),0,7); ctx.fill(); }
+      // 2) flickering soul wisps curling off the back
+      ctx.strokeStyle='rgba(201,120,255,0.5)'; ctx.lineWidth=1.4; ctx.lineCap='round';
+      for(let w=-1;w<=1;w+=2){ const off=Math.sin(t*3+w)*R*0.9;
+        ctx.beginPath(); ctx.moveTo(x,y);
+        ctx.quadraticCurveTo(x-v.vx*1.4+(-v.vy/6)*off, y-v.vy*1.4+(v.vx/6)*off,
+                             x-v.vx*3.2+(-v.vy/4)*off, y-v.vy*3.2+(v.vx/4)*off);
+        ctx.stroke(); }
+      // 3) outer halo
+      const halo=ctx.createRadialGradient(x,y,0,x,y,R*3*pulse);
+      halo.addColorStop(0,'rgba(201,120,255,0.55)'); halo.addColorStop(0.5,'rgba(157,78,221,0.28)'); halo.addColorStop(1,'rgba(157,78,221,0)');
+      ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(x,y,R*3*pulse,0,7); ctx.fill();
+      // 4) core orb
+      ctx.globalCompositeOperation='source-over';
+      const core=ctx.createRadialGradient(x-R*0.3,y-R*0.3,0,x,y,R*1.15);
+      core.addColorStop(0,hot); core.addColorStop(0.55,mid); core.addColorStop(1,dark);
+      ctx.fillStyle=core; ctx.beginPath(); ctx.arc(x,y,R*1.15*pulse,0,7); ctx.fill();
+      // 5) ghost-scream face on the core, oriented to travel
+      ctx.translate(x,y); ctx.rotate(ang);
+      const e=R*0.26;
+      ctx.fillStyle='rgba(20,2,32,0.92)';
+      ctx.beginPath(); ctx.ellipse(R*0.18,-R*0.34,e,e*1.3,0,0,7); ctx.fill();   // eye void
+      ctx.beginPath(); ctx.ellipse(R*0.18, R*0.34,e,e*1.3,0,0,7); ctx.fill();   // eye void
+      const m=0.55+Math.sin(t*4)*0.18;                                          // wailing mouth (animated)
+      ctx.beginPath(); ctx.ellipse(-R*0.5,0,R*0.46*m,R*0.74,0,0,7); ctx.fill();
+      ctx.restore();
+      continue;
+    }
     ctx.beginPath(); ctx.arc(x,y,v.r,0,7);
     ctx.fillStyle='#97C459'; ctx.fill();
     ctx.strokeStyle='#3B6D11'; ctx.lineWidth=1; ctx.stroke();
@@ -7146,7 +7184,7 @@ function updateGen(){
             const dx=(s.x+s.w/2)-mx, dy=(s.y+s.h/2)-my; const d=Math.hypot(dx,dy)||1;
             const baseA=Math.atan2(dy,dx);
             for(let k=0;k<cnt;k++){ const spread=(cnt>1)?((k-(cnt-1)/2)*0.16):0; const a=baseA+spread;
-              venom.push({x:mx,y:my,vx:Math.cos(a)*5.6,vy:Math.sin(a)*5.6-0.5,life:120,r:7,col:bc.proj,baron:true}); }
+              venom.push({x:mx,y:my,vx:Math.cos(a)*5.6,vy:Math.sin(a)*5.6-0.5,life:120,r:9,col:bc.proj,baron:true}); }
             SFX.bossSpit();
             boss.fxViolet=1; boss.fxCharge=0; shakeIntensity=Math.max(shakeIntensity,7);  // release flash + jolt
           }
