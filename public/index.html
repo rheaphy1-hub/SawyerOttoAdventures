@@ -8773,6 +8773,12 @@ function showLevelPopup(title, desc){
   Object.values(ids).forEach(i=>{ const el=document.getElementById(i); if(el&&i!==id){ el.style.display='none'; el.style.opacity='1'; el.style.pointerEvents=''; } });
   const popup = document.getElementById(id);
   if(!popup) return;
+  // In fullscreen, only descendants of the fullscreen element are rendered, so a popup
+  // left in <body> is invisible/unclickable and the game stays paused (looks frozen).
+  // Re-home the active popup into the fullscreen element while in fullscreen.
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  const host = fsEl || document.body;
+  if(popup.parentElement !== host) host.appendChild(popup);
   popup.style.opacity = '1';
   popup.style.pointerEvents = '';
   popup.style.display = 'flex';
