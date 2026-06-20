@@ -542,7 +542,7 @@ function buildBottles(){
     2:[{x:1400, y:FLOOR-40}],
     3:[{x:1300, y:FLOOR-40}],
     4:[{x:1500, y:150}],          // floating mid-water (swim level)
-    5:[{x:950,  y:FLOOR-232}],    // atop the grand-staircase landing
+    5:[{x:1230, y:FLOOR-40}],    // ground segment between pits — reachable
     6:[{x:1600, y:FLOOR-150}]     // up high (low-gravity reach)
   };
   const list = spots[currentLevel] || [{x:1200, y:FLOOR-40}];
@@ -1021,6 +1021,7 @@ function nearestThreat(fromX, fromY, range){
 function updateOtto(){
   const o = otto, s = sawyer;
   if(o.onGround) o.crossingPit=0;
+  if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
   // follow a spot trailing behind Sawyer
   const desiredX = s.x - s.facing*40;
   const dx = desiredX - o.x;
@@ -1422,18 +1423,12 @@ function update(){
   }
   venom = venom.filter(v=>v.life>0);
 
-  // win at bike (L1 only — L2 handles its own in updateLevel2)
-  if (!victoryActive && !bikeEscape.active && s.x+s.w > FLAG.x+10 && s.x < FLAG.x+90 && s.y+s.h >= FLOOR-10){
+  // win at flag (L1) — portal warp replaces bike
+  if (!victoryActive && s.x+s.w > FLAG.x+10 && s.x < FLAG.x+90 && s.y+s.h >= FLOOR-10){
     if (!boss || !boss.alive){
-      bikeEscape.active = true;
-      bikeEscape.phase = 'wave';
-      bikeEscape.timer = BIKE_WAVE_FRAMES;
-      bikeEscape.x = FLAG.x;
-      bikeEscape.wheelSpin = 0;
-      s.vx = 0; s.vy = 0; s.x = FLAG.x + 14; s.y = FLOOR - 72;
-      s.facing = 1;
-      otto.vx = 0; otto.vy = 0; otto.x = FLAG.x + 74; otto.y = FLOOR - 54;
-      otto.facing = 1;
+      victoryActive = true; victoryTimer = 220;
+      s.vx = 0; s.vy = 0; s.facing = 1;
+      otto.vx = 0; otto.vy = 0; otto.facing = 1;
       SFX.win();
     }
   }
@@ -3343,27 +3338,17 @@ function drawCutscene(){
     ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('Systems online. Target acquired.',W/2,106);
     ctx.restore();
   } else {
-    // L1 / L2: existing boss-reveal behaviour
-    const ottoProg  = Math.min(1, elapsed / 48);
-    const easeOtto  = 1 - Math.pow(1 - ottoProg, 3);
-    const ottoShake = Math.sin(prog * Math.PI * 6) * (2 * fadeOut);
-    const ottoScale = 0.75 + easeOtto * 0.25;
-    const ottoDrawX = -60 + (W/4 + 30 + 60) * easeOtto;
+    // L1 / L2: boss close-up (no Otto animation)
+    const bossProg = Math.min(1, elapsed / 80);
+    const easeBoss = 1 - Math.pow(1 - bossProg, 3);
+    const sc = 1.3 + easeBoss * 0.7;
+    const breathe = 1 + Math.sin(elapsed*0.1)*0.03;
     ctx.save();
-    ctx.globalAlpha = easeOtto * fadeOut;
-    ctx.translate(ottoDrawX + ottoShake, H/2 + 40);
-    ctx.scale(ottoScale, ottoScale);
-    ctx.translate(-11, -(H/2 - 40));
-    drawBaby(0, H/2 - 40, otto);
-    ctx.restore();
-
-    const bossProg = Math.max(0, (prog - 0.28) / 0.72);
-    const easeBoss = 1 - Math.pow(1 - Math.min(1, bossProg * 1.4), 3);
-    const bossPx   = (W + 120) + (W - 140 - W - 120) * easeBoss;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, bossProg * 2) * fadeOut;
-    if(currentLevel===2) drawYetiSimple(bossPx, H/2-30);
-    else drawBossSimple(bossPx, H/2-20);
+    ctx.globalAlpha = Math.min(1, bossProg * 1.8) * fadeOut;
+    ctx.translate(W/2, H/2 + 26);
+    ctx.scale(sc*breathe, sc*breathe);
+    if(currentLevel===2) drawYetiSimple(-55, -55);
+    else drawBossSimple(-48, -42);
     ctx.restore();
 
     const textAlpha = Math.min(1, Math.max(0, (prog - 0.20) * 4)) * fadeOut;
@@ -3371,11 +3356,11 @@ function drawCutscene(){
     ctx.globalAlpha = textAlpha;
     ctx.textAlign = 'center';
     if(currentLevel===2){
-      ctx.fillStyle='#B0C4FF'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('THE YETI!',W/2,80);
-      ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('A massive Yeti blocks the way home...',W/2,120);
+      ctx.fillStyle='#B0C4FF'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('THE YETI!',W/2,72);
+      ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('A massive Yeti blocks the way home...',W/2,106);
     } else {
-      ctx.fillStyle='#E24B4A'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('RATTLER REX!',W/2,80);
-      ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('The legendary boss is here...',W/2,120);
+      ctx.fillStyle='#E24B4A'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('RATTLER REX!',W/2,72);
+      ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('The legendary boss is here...',W/2,106);
     }
     ctx.restore();
   }
@@ -3848,7 +3833,7 @@ function loop(){
     drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6)drawGenRings();
     drawGenEnemies(); drawGenBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
   } else {
-    drawBg(); cosmicGlow(); drawPlatforms(); if(!bikeEscape.active) drawBike(FLAG.x, bikeEscape.wheelSpin, false); drawRocks();
+    drawBg(); cosmicGlow(); drawPlatforms(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, 1, performance.now()*0.004); drawRocks();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
   }
   
@@ -3934,7 +3919,7 @@ function loop(){
     drawPlayer(otto); drawPlayer(sawyer);
   }
   // Bike escape rider overlay
-  if(bikeEscape.active) drawBikeEscapeRiders(currentLevel===2);
+  // (bike escape removed — portal warp handles level finish)
   if(currentLevel===5 && !bikeEscape.active && !victoryActive) drawHausDarkness();
   // Power indicator HUD
   if(ottoPower>0){
@@ -4582,16 +4567,13 @@ function updateLevel2(){
     if(sf.y>H+5)sf.y=-5;
   }
 
-  // L2 flag check — yeti must be defeated
-  if(!victoryActive && !bikeEscape.active && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
+  // L2 flag check — yeti must be defeated; portal warp replaces bike
+  if(!victoryActive && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
     if(!yeti || !yeti.alive){
-      bikeEscape.active = true;
-      bikeEscape.phase = 'wave';
-      bikeEscape.timer = BIKE_WAVE_FRAMES;
-      bikeEscape.x = L2_FLAG.x;
-      bikeEscape.wheelSpin = 0;
-      s.vx=0; s.vy=0; s.x=L2_FLAG.x+14; s.y=FLOOR-72; s.facing=1;
-      otto.vx=0; otto.vy=0; otto.x=L2_FLAG.x+74; otto.y=FLOOR-54; otto.facing=1;
+      saveBestScore(currentLevel,score);
+      victoryActive = true; victoryTimer = 220;
+      s.vx=0; s.vy=0; s.facing=1;
+      otto.vx=0; otto.vy=0; otto.facing=1;
       sfx('win');
     }
   }
@@ -4620,6 +4602,7 @@ function updateLevel2(){
 function updateOttoL2(){
   const o=otto,s=sawyer;
   if(o.onGround)o.crossingPit=0;
+  if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
   const desiredX=s.x-s.facing*40;
   const dx=desiredX-o.x;
   const accel=0.5,maxSpd=3.6;
@@ -5013,11 +4996,12 @@ function updateLevel3(){
 
   venom=[]; // King Crab no longer spits
 
-  if(!victoryActive&&!bikeEscape.active&&s.x+s.w>L3_FLAG.x+10&&s.x<L3_FLAG.x+90&&s.y+s.h>=FLOOR-10){
+  if(!victoryActive&&s.x+s.w>L3_FLAG.x+10&&s.x<L3_FLAG.x+90&&s.y+s.h>=FLOOR-10){
     if(!kingCrab||!kingCrab.alive){
-      bikeEscape.active=true;bikeEscape.phase='wave';bikeEscape.timer=60;bikeEscape.x=L3_FLAG.x;bikeEscape.wheelSpin=0;
-      s.vx=0;s.vy=0;s.x=L3_FLAG.x+18;s.y=FLOOR-76;s.facing=1;
-      o.vx=0;o.vy=0;o.x=L3_FLAG.x+50;o.y=FLOOR-56;o.facing=1;
+      saveBestScore(currentLevel,score);
+      victoryActive=true; victoryTimer=220;
+      s.vx=0;s.vy=0;s.facing=1;
+      o.vx=0;o.vy=0;o.facing=1;
       SFX.win();
     }
   }
@@ -5028,6 +5012,7 @@ function updateLevel3(){
 function updateOttoL3(){
   const o=otto,s=sawyer;
   if(o.onGround)o.crossingPit=0;
+  if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
   const desiredX=s.x-s.facing*40;
   const dx=desiredX-o.x;
   const accel=0.5,maxSpd=3.6;
@@ -5769,7 +5754,7 @@ function drawL2Shockwaves(){
 }
 
 function drawL2Flag(){
-  drawBike(bikeEscape.active ? bikeEscape.x : L2_FLAG.x, bikeEscape.wheelSpin, true);
+  drawEscapePortal(L2_FLAG.x - cameraX + 24, FLOOR-50, 34, 1, performance.now()*0.004);
 }
 
 // ===========================
@@ -6215,7 +6200,7 @@ function drawKingCrab(){
 }
 
 function drawL3Flag(){
-  drawBike(bikeEscape.active ? bikeEscape.x : L3_FLAG.x, bikeEscape.wheelSpin, false);
+  drawEscapePortal(L3_FLAG.x - cameraX + 24, FLOOR-50, 34, 1, performance.now()*0.004);
 }
 
 
@@ -6467,6 +6452,7 @@ function groundAheadGen(p,dir){
 function updateOttoGen(){
   const o=otto,s=sawyer, lv=curLV();
   if(o.onGround)o.crossingPit=0;
+  if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
   const desiredX=s.x-s.facing*40;
   const dx=desiredX-o.x;
   const accel=0.5,maxSpd=3.6;
@@ -6847,13 +6833,14 @@ function updateGen(){
   for(const sw of shockwaves){ sw.w+=6; sw.life--; }
   shockwaves=shockwaves.filter(sw=>sw.life>0);
 
-  // Flag / win
+  // Flag / win — portal warp replaces bike
   const flagX=lv.worldW-140;
-  if(!victoryActive&&!bikeEscape.active&&s.x+s.w>flagX+10&&s.x<flagX+90&&s.y+s.h>=FLOOR-10){
+  if(!victoryActive&&s.x+s.w>flagX+10&&s.x<flagX+90&&s.y+s.h>=FLOOR-10){
     if(!boss||!boss.alive){
-      bikeEscape.active=true;bikeEscape.phase='wave';bikeEscape.timer=BIKE_WAVE_FRAMES;bikeEscape.x=flagX;bikeEscape.wheelSpin=0;bikeLift=0;bikeTilt=0;
-      s.vx=0;s.vy=0;s.x=flagX+18;s.y=FLOOR-76;s.facing=1;
-      o.vx=0;o.vy=0;o.x=flagX+50;o.y=FLOOR-56;o.facing=1;
+      saveBestScore(currentLevel,score);
+      victoryActive=true; victoryTimer=220;
+      s.vx=0;s.vy=0;s.facing=1;
+      o.vx=0;o.vy=0;o.facing=1;
       SFX.win();
     }
   }
@@ -6968,6 +6955,7 @@ function applyCurrents(p){
 
 function updateOttoSwim(){
   const s=sawyer, o=otto, FY=swimFloorY(), SY=SWIM.surfaceY;
+  if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=0; return; }
   const tx = s.x - s.facing*38, ty = s.y - 4;
   o.vx += (tx-o.x)*0.05; o.vy += (ty-o.y)*0.05;
   o.vx*=0.82; o.vy*=0.82;
@@ -8072,7 +8060,7 @@ function drawBossSpace(boss,bc,flash){
     ctx.fillStyle=r[0]; ctx.beginPath(); ctx.arc(r[2],0,3,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(-r[2],0,3,0,7); ctx.fill(); ctx.restore(); }
 }
 function drawGenFlag(){
-  drawBike(bikeEscape.active ? bikeEscape.x : (curLV().worldW-140), bikeEscape.wheelSpin, false);
+  drawEscapePortal((curLV().worldW-140) - cameraX + 24, FLOOR-50, 34, 1, performance.now()*0.004);
 }
 
 // ---- transitions ----
@@ -8307,10 +8295,16 @@ function showLevelPopup(title, desc){
     c.fillText('\u25B6  START GAME', bx+bw/2, by+bh/2+7);
     c.restore();
 
-    // ── Footer credit ──
+    // ── Footer credit (neon sign, subtle flicker) ──
     c.save(); c.textAlign='center';
-    c.font='600 12px system-ui,sans-serif'; c.fillStyle='rgba(255,255,255,0.62)';
-    c.fillText('A game by Activities with Ryan', MW/2, MH-15);
+    const nbase = 0.7 + 0.18*Math.sin(mT*0.05);
+    const nflick = ((Math.sin(mT*0.83)+Math.sin(mT*1.47)) > 1.86) ? 0.45 : 1; // occasional dropout
+    c.globalAlpha = nbase * nflick;
+    c.font='italic 700 13px "Courier New",ui-monospace,monospace';
+    c.shadowColor='#FF5BA6'; c.shadowBlur=9 + 4*Math.sin(mT*0.12);
+    c.fillStyle='#FFC2EC';
+    c.fillText('Music by Activities with Ryan', MW/2, MH-15);
+    c.shadowBlur=0; c.globalAlpha=1;
     c.restore();
   }
 
