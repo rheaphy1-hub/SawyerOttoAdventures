@@ -6640,7 +6640,8 @@ function buildGenBoss(n){
     x:lv.bossGate+260, y:FLOOR-64, w:64, h:64,
     alive:true, active:false, phase:0, hp:bc.hp, maxHp:bc.hp,
     vx:bc.vx1, facing:-1, hitFlash:0, spitTimer:bc.spit1, lungeTimer:140,
-    dieTimer:0, phaseIndex:0, slamTimer:100, orbit:0
+    dieTimer:0, phaseIndex:0, slamTimer:100, orbit:0,
+    fxCharge:0, fxDarken:0, fxViolet:0, fxEnrage:0, fxRed:0, fxDeathT:0, deathFlash:0, deathEyes:[]
   };
 }
 function buildLevel4(){ buildSwimLevel(); buildSwimBoss(); }
@@ -7046,8 +7047,15 @@ function updateGen(){
         if(boss.hp<=half&&boss.phaseIndex===0){
           boss.phaseIndex=1;boss.vx=(boss.vx<0?-1:1)*bc.vx2;boss.spitTimer=bc.spit2;
           shakeIntensity=16;hurtFlashTimer=20;SFX.rattle();
+          if(currentLevel===5){ boss.fxEnrage=42; boss.fxDarken=0.85; boss.fxViolet=0.9; boss.fxRed=1; SFX.bossSpit&&SFX.bossSpit(); }  // every eye snaps open
         }
         if(boss.hp<=0){ boss.alive=false;boss.dieTimer=120;score+=1000;shakeIntensity=16;SFX.bossDie();
+          if(currentLevel===5){ // dissolve into a scattering swarm of spectral eyes + room-revealing flash
+            boss.deathFlash=1; boss.fxDeathT=120; boss.deathEyes=[]; boss.fxDarken=0; boss.fxViolet=0;
+            const ecx=boss.x+boss.w/2, ecy=boss.y+boss.h-82;
+            for(let i=0;i<16;i++){ const a=i*(6.283/16)+Math.random()*0.4, sp=1.4+Math.random()*2.6;
+              boss.deathEyes.push({x:ecx,y:ecy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.2,life:60+Math.random()*40,max:100,r:5+Math.random()*4}); }
+          }
           for(let i=0;i<18;i++) particles.push({x:boss.x+boss.w/2,y:boss.y+boss.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:40,maxLife:40,type:'spark',color:bc.body}); }
       }
     }
@@ -7140,8 +7148,18 @@ function updateGen(){
             for(let k=0;k<cnt;k++){ const spread=(cnt>1)?((k-(cnt-1)/2)*0.16):0; const a=baseA+spread;
               venom.push({x:mx,y:my,vx:Math.cos(a)*5.6,vy:Math.sin(a)*5.6-0.5,life:120,r:7,col:bc.proj,baron:true}); }
             SFX.bossSpit();
+            boss.fxViolet=1; boss.fxCharge=0; shakeIntensity=Math.max(shakeIntensity,7);  // release flash + jolt
           }
         }
+        // --- cast FX easing (charge orb builds, world darkens on the inhale, flash decays) ---
+        const casting=boss.casting&&boss.animName==='magic';
+        const chgTgt=casting?Math.min(1,(boss.animFrame+boss.animAcc)/3):0;
+        boss.fxCharge += (chgTgt-boss.fxCharge)*0.4;
+        const darkTgt=(casting&&boss.animFrame>=2)?0.55:0;            // kill the lights as he inhales to scream
+        boss.fxDarken += (darkTgt-boss.fxDarken)*0.22;
+        boss.fxViolet*=0.86;
+        if(boss.fxEnrage>0) boss.fxEnrage--;
+        if(boss.fxRed>0.01) boss.fxRed*=0.9; else boss.fxRed=0;
       }
       // Phase-2 ground slam shockwave
       if(boss.phaseIndex===1){
@@ -7164,6 +7182,12 @@ function updateGen(){
   } else if(boss&&!boss.alive&&boss.dieTimer>0){
     boss.dieTimer--;
     if(boss.dieTimer%6===0) particles.push({x:boss.x+boss.w/2+(Math.random()-.5)*40,y:boss.y+boss.h/2,vx:(Math.random()-.5)*2,vy:-1-Math.random(),life:30,maxLife:30,type:'spark',color:bc.body});
+    if(currentLevel===5&&boss.deathEyes){ // scatter the spectral-eye swarm
+      if(boss.deathFlash>0.01)boss.deathFlash*=0.82; else boss.deathFlash=0;
+      if(boss.fxDeathT>0)boss.fxDeathT--;
+      for(const e of boss.deathEyes){ e.x+=e.vx; e.y+=e.vy; e.vy+=0.04; e.vx*=0.99; e.life--; }
+      boss.deathEyes=boss.deathEyes.filter(e=>e.life>0);
+    }
   }
 
   // Venom (themed colour, clone of L1 venom)
@@ -7950,10 +7974,11 @@ let _darkCv=null,_darkCx=null, lightT=90, lightStrike=0, lightFlash=0;
 function drawHausDarkness(){
   if(!_darkCv){ _darkCv=document.createElement('canvas'); _darkCv.width=W; _darkCv.height=H; _darkCx=_darkCv.getContext('2d'); }
   const dc=_darkCx;
+  const lv=curLV(), bo=lv.bossObj;
   dc.setTransform(1,0,0,1,0,0);
   dc.clearRect(0,0,W,H);
   dc.globalCompositeOperation='source-over';
-  dc.fillStyle='rgba(8,6,16,'+(0.6*(1-lightFlash*0.92))+')'; dc.fillRect(0,0,W,H);
+  dc.fillStyle='rgba(8,6,16,'+Math.min(0.96, 0.6*(1-lightFlash*0.92) + (bo?bo.fxDarken:0)*0.36)+')'; dc.fillRect(0,0,W,H);
   dc.globalCompositeOperation='destination-out';
   const glow=(x,y,r,st)=>{ const g=dc.createRadialGradient(x,y,2,x,y,r); g.addColorStop(0,'rgba(0,0,0,'+st+')'); g.addColorStop(0.62,'rgba(0,0,0,'+(st*0.82)+')'); g.addColorStop(1,'rgba(0,0,0,0)'); dc.fillStyle=g; dc.beginPath(); dc.arc(x,y,r,0,7); dc.fill(); };
   const cone=(x,y,dir,reach,spread,st)=>{ dc.save(); dc.beginPath(); dc.moveTo(x-dir*8,y-8); dc.lineTo(x+dir*reach,y-reach*spread); dc.lineTo(x+dir*reach,y+reach*spread); dc.closePath(); dc.clip();
@@ -7965,7 +7990,6 @@ function drawHausDarkness(){
   const oxx=otto.x-cameraX+otto.w/2, oyy=otto.y+14, odir=otto.facing>0?1:-1;
   glow(oxx,oyy,48,0.98); cone(oxx+odir*6,oyy,odir,170,0.52,0.98);
   // Boss + exit glow so the level stays playable
-  const lv=curLV(), bo=lv.bossObj;
   if(bo&&bo.active){
     const bcx=bo.x-cameraX+bo.w/2, feet=bo.y+bo.h;
     // tall stacked carve so the whole 156px Baron sprite reads vividly (head→feet)
@@ -7976,40 +8000,76 @@ function drawHausDarkness(){
   dc.globalCompositeOperation='source-over';
   ctx.drawImage(_darkCv,0,0);
   if(lightFlash>0.01){ ctx.save(); ctx.fillStyle='rgba(220,228,255,'+(lightFlash*0.32)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+  // Baron cast-release violet flash + enrage red wash + death room-reveal
+  if(bo){
+    if(bo.fxViolet>0.01){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle='rgba(150,60,230,'+(bo.fxViolet*0.34)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+    if(bo.fxRed>0.01){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle='rgba(255,40,30,'+(bo.fxRed*0.30)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+    if(bo.deathFlash>0.01){ ctx.save(); ctx.fillStyle='rgba(232,224,255,'+(bo.deathFlash*0.85)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+  }
 }
 function drawBaronGhoul(){
   if(currentLevel!==5)return;
-  const lv=curLV(), b=lv.bossObj; if(!b||!b.active||!b.alive)return;
+  const lv=curLV(), b=lv.bossObj; if(!b)return;
   const t=performance.now()*0.001;
   const cx=b.x-cameraX+b.w/2, feet=b.y+b.h, mid=feet-82;
+
+  // ---- DEATH DISSOLVE: scattering swarm of spectral eyes ----
+  if(!b.alive && b.dieTimer>0 && b.deathEyes){
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    for(const e of b.deathEyes){ const k=Math.max(0,e.life/e.max), ex=e.x-cameraX, ey=e.y;
+      const eg=ctx.createRadialGradient(ex,ey,0.5,ex,ey,e.r*1.4);
+      eg.addColorStop(0,'rgba(255,255,255,'+(0.95*k)+')'); eg.addColorStop(0.4,'rgba(216,160,255,'+k+')'); eg.addColorStop(1,'rgba(170,84,232,0)');
+      ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(ex,ey,e.r*1.4,0,7); ctx.fill();
+      ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(8,2,12,'+k+')';
+      ctx.beginPath(); ctx.ellipse(ex,ey,e.r*0.22,e.r*0.5,0,0,7); ctx.fill(); ctx.globalCompositeOperation='lighter'; }
+    ctx.restore();
+    return;
+  }
+  if(!b.active||!b.alive)return;
+
   const enr=b.phaseIndex===1;
-  const A=enr?'255,60,40':'170,84,232';     // aura rgb
-  const E=enr?'#FF5040':'#D8A0FF';           // eye/ember tint
+  const snap=b.fxEnrage>0?b.fxEnrage/42:0;          // 1→0 over the enrage cinematic
+  const A=enr?'255,60,40':'170,84,232';             // aura rgb
+  const E=enr?'#FF5040':'#D8A0FF';                  // eye/ember tint
   ctx.save(); ctx.globalCompositeOperation='lighter';
-  // 1) breathing dread halo
+  // 1) breathing dread halo (swells during enrage snap)
   const pulse=0.5+0.5*Math.sin(t*2.2);
-  let g=ctx.createRadialGradient(cx,mid,4,cx,mid,96+pulse*18);
-  g.addColorStop(0,'rgba('+A+','+(0.30+pulse*0.20)+')'); g.addColorStop(0.5,'rgba('+A+',0.12)'); g.addColorStop(1,'rgba('+A+',0)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,mid,96+pulse*18,0,7); ctx.fill();
+  const haloR=(96+pulse*18)*(1+snap*0.6);
+  let g=ctx.createRadialGradient(cx,mid,4,cx,mid,haloR);
+  g.addColorStop(0,'rgba('+A+','+(0.30+pulse*0.20+snap*0.3)+')'); g.addColorStop(0.5,'rgba('+A+',0.12)'); g.addColorStop(1,'rgba('+A+',0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,mid,haloR,0,7); ctx.fill();
   // 2) rising fog wisps from the floor
   for(let i=0;i<6;i++){ const ph=t*0.55+i*1.05, rise=ph%1, wy=feet-rise*128, wx=cx+Math.sin(ph*3+i)*42*(0.4+rise), wr=10+rise*24;
     ctx.globalAlpha=(1-rise)*0.22; const wg=ctx.createRadialGradient(wx,wy,1,wx,wy,wr);
     wg.addColorStop(0,'rgba('+A+',0.55)'); wg.addColorStop(1,'rgba('+A+',0)'); ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(wx,wy,wr,0,7); ctx.fill(); }
   ctx.globalAlpha=1;
-  // 3) orbiting spectral eyes that blink
+  // 3) orbiting spectral eyes — all snap wide open during the enrage cinematic
   const n=enr?6:4;
   for(let i=0;i<n;i++){ const a=t*1.05+i*(6.283/n), rx=72+Math.sin(t*1.7+i)*12, ry=48;
     const ex=cx+Math.cos(a)*rx, ey=mid+Math.sin(a)*ry;
-    const blink=Math.sin(t*2.6+i*2)>-0.55?1:0.12;
-    const eg=ctx.createRadialGradient(ex,ey,0.5,ex,ey,9.5);
+    const blink=Math.max(snap, Math.sin(t*2.6+i*2)>-0.55?1:0.12);
+    const er=9.5*(1+snap*0.7);
+    const eg=ctx.createRadialGradient(ex,ey,0.5,ex,ey,er);
     eg.addColorStop(0,'rgba(255,255,255,'+(0.9*blink)+')'); eg.addColorStop(0.4,E); eg.addColorStop(1,'rgba('+A+',0)');
-    ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(ex,ey,9.5,0,7); ctx.fill();
+    ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(ex,ey,er,0,7); ctx.fill();
     ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(8,2,12,'+blink+')';
     ctx.beginPath(); ctx.ellipse(ex,ey,1.6,3.4,0,0,7); ctx.fill(); ctx.globalCompositeOperation='lighter'; }
   // 4) floating embers drifting upward
   for(let i=0;i<10;i++){ const rise=(t*0.5+i*0.13)%1, ex=cx+Math.sin(i*2.3+t*0.6)*72, ey=feet-rise*156, er=1.2+Math.sin(t*4+i)*0.8;
     ctx.globalAlpha=(1-rise)*0.7; ctx.fillStyle=E; ctx.beginPath(); ctx.arc(ex,ey,Math.max(0.4,er),0,7); ctx.fill(); }
-  ctx.globalAlpha=1; ctx.restore();
+  ctx.globalAlpha=1;
+  // 5) CHARGE TELL — orb gathering at his outstretched hand as he winds up the scream
+  if(b.fxCharge>0.02){
+    const mx=cx + b.facing*18, my=feet-106, cr=4+b.fxCharge*16;
+    const cg=ctx.createRadialGradient(mx,my,1,mx,my,cr*2.2);
+    cg.addColorStop(0,'rgba(255,255,255,'+(0.9*b.fxCharge)+')'); cg.addColorStop(0.35,'rgba('+A+','+(0.8*b.fxCharge)+')'); cg.addColorStop(1,'rgba('+A+',0)');
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(mx,my,cr*2.2,0,7); ctx.fill();
+    // crackling arcs
+    ctx.strokeStyle='rgba(255,255,255,'+(0.7*b.fxCharge)+')'; ctx.lineWidth=1;
+    for(let i=0;i<4;i++){ const a=t*9+i*1.57; ctx.beginPath(); ctx.moveTo(mx,my);
+      let lx=mx,ly=my; for(let s=0;s<3;s++){ lx+=Math.cos(a+s)*cr*0.6*Math.random(); ly+=Math.sin(a+s)*cr*0.6*Math.random(); ctx.lineTo(lx,ly);} ctx.stroke(); }
+  }
+  ctx.restore();
 }
 function drawGenBg(){
   const lv=curLV(), pal=lv.pal;
