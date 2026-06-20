@@ -82,6 +82,10 @@
   #canvas-container:fullscreen #game,
   #canvas-container:-webkit-full-screen #game{
     width:auto; height:100%; max-width:100vw; border-radius:0; border:none; }
+  /* Keep the Play-Again button visible inside the fullscreen top layer */
+  #canvas-container:fullscreen #restart-overlay-btn,
+  #canvas-container:-webkit-full-screen #restart-overlay-btn{
+    position:fixed; left:50%; top:64%; z-index:2147483647; }
   
   /* ===== Level start window — translucent desert-highway neon sign ===== */
   .level-popup {
@@ -3408,111 +3412,41 @@ function drawCutscene(){
   const TOTAL = 240;
   const elapsed = TOTAL - cutsceneTimer;
   const prog = elapsed / TOTAL;
-
-  // Overlay — dark vignette only, light enough that world-space characters stay visible
   const fadeIn  = Math.min(1, elapsed / 36);
   const fadeOut = cutsceneTimer < 24 ? cutsceneTimer / 24 : 1;
-  const alpha   = Math.min(0.55, fadeIn * 0.55) * fadeOut;
+
+  // Dark vignette
+  const alpha = Math.min(0.7, fadeIn * 0.7) * fadeOut;
   ctx.fillStyle = `rgba(0,0,0,${alpha})`;
   ctx.fillRect(0, 0, W, H);
 
-  if(currentLevel===3){
-    // L3: crab slides in from right, centered — Sawyer/Otto stay in world-space untouched
-    const bossProg = Math.min(1, elapsed / 120);
-    const easeBoss = 1 - Math.pow(1 - bossProg, 3);
-    const bossX    = W/2 - 50 + (1 - easeBoss) * (W * 0.6);
-    const bossY    = H/2 - 40;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, bossProg * 1.8) * fadeOut;
-    // Scale up slightly for drama
-    const sc = 1.0 + easeBoss * 0.35;
-    ctx.translate(bossX + 50, bossY + 40);
-    ctx.scale(sc, sc);
-    ctx.translate(-50, -40);
-    drawCrabSimple(0, 0);
-    ctx.restore();
+  // Camera zoom-in on the boss
+  const zp   = Math.min(1, elapsed / 90);
+  const ease = 1 - Math.pow(1 - zp, 3);
+  const sc   = 1.2 + ease * 0.9;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, zp * 1.8) * fadeOut;
+  ctx.translate(W/2, H/2 + 18);
+  ctx.scale(sc, sc);
+  if(currentLevel===2){ ctx.translate(-55,-55); drawYetiSimple(0,0); }
+  else if(currentLevel===3){ ctx.translate(-50,-30); drawCrabSimple(0,0); }
+  else if(currentLevel===4){ ctx.translate(-50,-40); drawLyraSimple(0,0); }
+  else if(currentLevel===5){ ctx.translate(-32,-44); drawBaronSimple(0,0); }
+  else if(currentLevel===6){ ctx.translate(-32,-32); drawNexusSimple(0,0,elapsed); }
+  else { drawBossSimple(-48,-42); }
+  ctx.restore();
 
-    // Text
-    const textAlpha = Math.min(1, Math.max(0, (prog - 0.25) * 4)) * fadeOut;
-    ctx.save();
-    ctx.globalAlpha = textAlpha;
-    ctx.textAlign = 'center';
-    ctx.fillStyle='#8FD0A0'; ctx.font='bold 28px system-ui,sans-serif';
-    ctx.fillText('KING CRAB KRAWLEY!', W/2, 72);
-    ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF';
-    ctx.fillText('A brine-rotted relic of the deep stirs...', W/2, 106);
-    ctx.restore();
-
-  } else if(currentLevel===4){
-    // L4: Leviathan Lyra rises from the deep
-    const bossProg=Math.min(1,elapsed/130); const ease=1-Math.pow(1-bossProg,3);
-    const bossY=(H+40)+((H/2-70)-(H+40))*ease;
-    ctx.save(); ctx.globalAlpha=Math.min(1,bossProg*1.6)*fadeOut;
-    const sc=1.0+ease*0.3; ctx.translate(W/2-50,bossY); ctx.scale(sc,sc); ctx.translate(-0,-0);
-    drawLyraSimple(0,0); ctx.restore();
-    ctx.save(); ctx.globalAlpha=0.30*fadeOut; ctx.fillStyle='#FF00FF';
-    for(let i=0;i<6;i++){ const a=elapsed*0.03+i; ctx.beginPath(); ctx.arc(W/2+Math.cos(a)*60,bossY+40+Math.sin(a)*30,14-i,0,7); ctx.fill(); }
-    ctx.restore();
-    const textAlpha=Math.min(1,Math.max(0,(prog-0.25)*4))*fadeOut;
-    ctx.save(); ctx.globalAlpha=textAlpha; ctx.textAlign='center';
-    ctx.fillStyle='#00FFFF'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('LEVIATHAN LYRA!',W/2,72);
-    ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('Something vast stirs in the deep...',W/2,106);
-    ctx.restore();
-  } else if(currentLevel===5){
-    // L5: Baron Von Scream coalesces from swirling fog
-    const ap=Math.min(1,elapsed/130);
-    ctx.save(); ctx.globalAlpha=0.5*fadeOut*(1-ap*0.35);
-    for(let i=0;i<8;i++){ const a=elapsed*0.02+i*0.8, fx=W/2+Math.cos(a)*(70-ap*40), fy=H/2+Math.sin(a*1.3)*(30-ap*15);
-      ctx.fillStyle='rgba(157,78,221,0.5)'; ctx.beginPath(); ctx.arc(fx,fy,22-ap*10,0,7); ctx.fill(); }
-    ctx.restore();
-    ctx.save(); ctx.globalAlpha=ap*fadeOut; const sc=1.05+ap*0.25;
-    ctx.translate(W/2,H/2+34); ctx.scale(sc,sc); ctx.translate(-32,-44); drawBaronSimple(0,0); ctx.restore();
-    const ta=Math.min(1,Math.max(0,(prog-0.3)*4))*fadeOut;
-    ctx.save(); ctx.globalAlpha=ta; ctx.textAlign='center';
-    ctx.fillStyle='#C9A0FF'; ctx.font='bold 26px system-ui,sans-serif'; ctx.fillText('BARON VON SCREAM!',W/2,72);
-    ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('The phantom host materializes...',W/2,106);
-    ctx.restore();
-  } else if(currentLevel===6){
-    // L6: Nexus Nine boots up
-    const ap=Math.min(1,elapsed/120);
-    ctx.save(); ctx.globalAlpha=0.3*fadeOut*(1-ap);
-    ctx.strokeStyle='#00CCFF'; ctx.lineWidth=1;
-    for(let y=0;y<H;y+=6){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
-    ctx.restore();
-    ctx.save(); ctx.globalAlpha=ap*fadeOut; const sc=1.0+ap*0.3;
-    ctx.translate(W/2,H/2+30); ctx.scale(sc,sc); ctx.translate(-32,-32); drawNexusSimple(0,0,elapsed); ctx.restore();
-    const ta=Math.min(1,Math.max(0,(prog-0.3)*4))*fadeOut;
-    ctx.save(); ctx.globalAlpha=ta; ctx.textAlign='center';
-    ctx.fillStyle='#7AF0FF'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('NEXUS NINE!',W/2,72);
-    ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('Systems online. Target acquired.',W/2,106);
-    ctx.restore();
-  } else {
-    // L1 / L2: boss close-up (no Otto animation)
-    const bossProg = Math.min(1, elapsed / 80);
-    const easeBoss = 1 - Math.pow(1 - bossProg, 3);
-    const sc = 1.3 + easeBoss * 0.7;
-    const breathe = 1 + Math.sin(elapsed*0.1)*0.03;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, bossProg * 1.8) * fadeOut;
-    ctx.translate(W/2, H/2 + 26);
-    ctx.scale(sc*breathe, sc*breathe);
-    if(currentLevel===2) drawYetiSimple(-55, -55);
-    else drawBossSimple(-48, -42);
-    ctx.restore();
-
-    const textAlpha = Math.min(1, Math.max(0, (prog - 0.20) * 4)) * fadeOut;
-    ctx.save();
-    ctx.globalAlpha = textAlpha;
-    ctx.textAlign = 'center';
-    if(currentLevel===2){
-      ctx.fillStyle='#B0C4FF'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('THE YETI!',W/2,72);
-      ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('A massive Yeti blocks the way home...',W/2,106);
-    } else {
-      ctx.fillStyle='#E24B4A'; ctx.font='bold 28px system-ui,sans-serif'; ctx.fillText('RATTLER REX!',W/2,72);
-      ctx.font='16px system-ui,sans-serif'; ctx.fillStyle='#FFF'; ctx.fillText('The legendary boss is here...',W/2,106);
-    }
-    ctx.restore();
-  }
+  // Boss name
+  const NAMES = {1:'RATTLER REX!',2:'THE YETI!',3:'KING CRAB KRAWLEY!',4:'LEVIATHAN LYRA!',5:'BARON VON SCREAM!',6:'NEXUS NINE!'};
+  const COLS  = {1:'#E24B4A',2:'#B0C4FF',3:'#8FD0A0',4:'#00FFFF',5:'#C9A0FF',6:'#7AF0FF'};
+  const ta = Math.min(1, Math.max(0, (prog - 0.2) * 4)) * fadeOut;
+  ctx.save();
+  ctx.globalAlpha = ta;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLS[currentLevel] || '#FFFFFF';
+  ctx.font = 'bold 30px system-ui,sans-serif';
+  ctx.fillText(NAMES[currentLevel] || 'BOSS!', W/2, 70);
+  ctx.restore();
 }
 function drawYetiSimple(bx,by){
   ctx.save();
@@ -3618,9 +3552,23 @@ function drawVictoryAnimation(){
 
   // Portal glow backdrop
   drawEscapePortal(W/2, H*0.46, 56+prog*16, 1, prog*6);
-  // Sawyer (new sprite) celebrating on the left
-  sawyer.facing = 1;
-  drawHeroAt(sawyer, W/2-56, FLOOR-4 - bounce, 100+prog*10, 1, 0);
+  // Sawyer hero pose (photo), facing left — sprite frame is the fallback
+  {
+    const hS = window.heroSawyer;
+    const scx = W/2 - 56, feetY = FLOOR - 4 - bounce;
+    if(hS && hS.complete && hS.naturalWidth){
+      const sh = 120 + prog*12, sw = hS.naturalWidth*sh/hS.naturalHeight;
+      ctx.save();
+      ctx.fillStyle='rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.ellipse(scx, FLOOR-6, sw*0.38, 9, 0,0,7); ctx.fill();
+      ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+      ctx.drawImage(hS, 0,0, hS.naturalWidth, hS.naturalHeight*0.988, scx - sw/2, feetY - sh, sw, sh);
+      ctx.restore();
+    } else {
+      sawyer.facing = -1;
+      drawHeroAt(sawyer, scx, feetY, 100+prog*10, 1, 0);
+    }
+  }
   // Otto (confident portrait) on the right
   if(ottoConfidentImg.complete && ottoConfidentImg.naturalWidth){
     const oh=110+prog*14, ow=ottoConfidentImg.naturalWidth*oh/ottoConfidentImg.naturalHeight;
@@ -3768,7 +3716,10 @@ function drawCreditsOverlay(){
   const hS=window.heroSawyer, hO=window.heroOtto;
   if(hS && hS.complete && hS.naturalWidth){
     const h=150, w=hS.naturalWidth*h/hS.naturalHeight;
-    ctx.globalAlpha=0.92; ctx.drawImage(hS, 0, 0, hS.naturalWidth, hS.naturalHeight*0.988, 4, H-h+8, w, h); ctx.globalAlpha=1;
+    ctx.save(); ctx.globalAlpha=0.92;
+    ctx.translate(4+w, 0); ctx.scale(-1,1); // left-facing asset -> flip to face inward
+    ctx.drawImage(hS, 0, 0, hS.naturalWidth, hS.naturalHeight*0.988, 0, H-h+8, w, h);
+    ctx.restore();
   }
   if(hO && hO.complete && hO.naturalWidth){
     const h=150, w=hO.naturalWidth*h/hO.naturalHeight;
@@ -6173,6 +6124,7 @@ function drawL3Rocks(){
 }
 
 function drawSandCrab(ex,ey,e){
+  if(e._ts===undefined)e._ts=e.x*0.37+e.y*0.11; const sd=e._ts;
   const bob=Math.sin(e.phase)*1.5; ctx.save(); ctx.translate(0,bob);
   if(e.facing<0){ctx.translate(ex+e.w/2,0);ctx.scale(-1,1);ctx.translate(-(ex+e.w/2),0);}
   // jointed legs
@@ -6188,9 +6140,9 @@ function drawSandCrab(ex,ey,e){
   ctx.save(); ctx.beginPath(); ctx.ellipse(ex+14,ey+15,13,10,0,0,7); ctx.clip();
   ctx.strokeStyle='rgba(40,22,8,0.55)'; ctx.lineWidth=1;
   for(let s=-2;s<=2;s++){ ctx.beginPath(); ctx.arc(ex+14,ey+24,8+s*3,Math.PI*1.15,Math.PI*1.85); ctx.stroke(); }
-  texHatch(ex+3,ey+7,22,16,16,'rgba(30,16,6,0.5)',ex*0.3,3,0.3);
-  texSpeckle(ex+3,ey+7,22,16,10,'rgba(150,90,40,0.3)',ex*0.2,1.0);
-  barnacles(ex+5,ey+8,18,12,7,ex*0.4,'#9C8466','#C9B48E');
+  texHatch(ex+3,ey+7,22,16,16,'rgba(30,16,6,0.5)',sd*0.3,3,0.3);
+  texSpeckle(ex+3,ey+7,22,16,10,'rgba(150,90,40,0.3)',sd*0.2,1.0);
+  barnacles(ex+5,ey+8,18,12,7,sd*0.4,'#9C8466','#C9B48E');
   ctx.restore();
   // wet rim-light
   ctx.strokeStyle='rgba(210,170,120,0.5)'; ctx.lineWidth=1.4;
@@ -6218,8 +6170,8 @@ function drawSandCrab(ex,ey,e){
   ctx.quadraticCurveTo(ex+35,ey+15,ex+33,ey+14);
   ctx.quadraticCurveTo(ex+36,ey+18,ex+33,ey+21);
   ctx.quadraticCurveTo(ex+28,ey+20,ex+24,ey+18); ctx.closePath(); ctx.clip();
-  barnacles(ex+25,ey+10,12,10,5,ex*0.6,'#A88E6E','#D2BE96');
-  texSpeckle(ex+24,ey+9,14,12,8,'rgba(30,16,6,0.4)',ex*0.5,1.0);
+  barnacles(ex+25,ey+10,12,10,5,sd*0.6,'#A88E6E','#D2BE96');
+  texSpeckle(ex+24,ey+9,14,12,8,'rgba(30,16,6,0.4)',sd*0.5,1.0);
   ctx.restore();
   ctx.strokeStyle='#3A220E'; ctx.lineWidth=1; ctx.beginPath();
   ctx.moveTo(ex+33,ey+14); ctx.lineTo(ex+38,ey+12); ctx.stroke();
@@ -6227,6 +6179,7 @@ function drawSandCrab(ex,ey,e){
 }
 
 function drawWreckling(ex,ey,e){
+  if(e._ts===undefined)e._ts=e.x*0.37+e.y*0.11; const sd=e._ts;
   const bob=Math.sin(e.phase)*1.2; ctx.save(); ctx.translate(0,bob);
   if(e.facing<0){ctx.translate(ex+e.w/2,0);ctx.scale(-1,1);ctx.translate(-(ex+e.w/2),0);}
   const tucked=(e.shellTimer||0)>0;
@@ -6241,9 +6194,9 @@ function drawWreckling(ex,ey,e){
   ctx.fillStyle='#3A3A40'; ctx.beginPath(); ctx.arc(sx,sy,11,0,7); ctx.fill();
   ctx.save(); ctx.beginPath(); ctx.arc(sx,sy,11,0,7); ctx.clip();
   ctx.fillStyle='rgba(90,55,30,0.35)'; ctx.beginPath(); ctx.ellipse(sx+3,sy+4,6,5,0.3,0,7); ctx.fill();
-  texSpeckle(sx-10,sy-10,22,22,16,'rgba(20,18,18,0.5)',ex*0.3,1.4);
-  texSpeckle(sx-10,sy-10,22,22,10,'rgba(120,75,40,0.3)',ex*0.5,1.2);
-  barnacles(sx-9,sy-9,20,20,11,ex*0.4,'#A89070','#D6C29A');
+  texSpeckle(sx-10,sy-10,22,22,16,'rgba(20,18,18,0.5)',sd*0.3,1.4);
+  texSpeckle(sx-10,sy-10,22,22,10,'rgba(120,75,40,0.3)',sd*0.5,1.2);
+  barnacles(sx-9,sy-9,20,20,11,sd*0.4,'#A89070','#D6C29A');
   ctx.restore();
   ctx.strokeStyle='rgba(150,155,170,0.5)'; ctx.lineWidth=1.4;
   ctx.beginPath(); ctx.arc(sx,sy,10.5,Math.PI*1.1,Math.PI*1.8); ctx.stroke();
@@ -6258,8 +6211,8 @@ function drawWreckling(ex,ey,e){
   if(!tucked){
     ctx.fillStyle='#6E4A2A'; ctx.beginPath(); ctx.arc(ex+7,ey+12,6,0,7); ctx.fill();
     ctx.save(); ctx.beginPath(); ctx.arc(ex+7,ey+12,6,0,7); ctx.clip();
-    barnacles(ex+2,ey+7,11,10,4,ex*0.7,'#9C8466','#C9B48E');
-    texSpeckle(ex+2,ey+7,11,10,6,'rgba(30,18,8,0.4)',ex*0.6,1.0);
+    barnacles(ex+2,ey+7,11,10,4,sd*0.7,'#9C8466','#C9B48E');
+    texSpeckle(ex+2,ey+7,11,10,6,'rgba(30,18,8,0.4)',sd*0.6,1.0);
     ctx.restore();
     ctx.strokeStyle='#3A2614'; ctx.lineWidth=1.6;
     ctx.beginPath(); ctx.moveTo(ex+5,ey+8); ctx.lineTo(ex+4,ey+5); ctx.stroke();
@@ -6279,6 +6232,7 @@ function drawWreckling(ex,ey,e){
 }
 
 function drawStingray(ex,ey,e){
+  if(e._ts===undefined)e._ts=e.x*0.37+e.y*0.11; const sd=e._ts;
   const glide=Math.sin(e.phase)*2.5; ctx.save(); ctx.translate(0,glide);
   if(e.facing<0){ctx.translate(ex+e.w/2,0);ctx.scale(-1,1);ctx.translate(-(ex+e.w/2),0);}
   ctx.fillStyle='rgba(20,30,40,0.25)'; ctx.beginPath(); ctx.ellipse(ex+14,ey+18,17,7,0,0,7); ctx.fill();
@@ -6295,8 +6249,8 @@ function drawStingray(ex,ey,e){
   ctx.beginPath();
   ctx.moveTo(ex+14,ey+5); ctx.quadraticCurveTo(ex+30,ey+11,ex+27,ey+17);
   ctx.quadraticCurveTo(ex+14,ey+21,ex+1,ey+17); ctx.quadraticCurveTo(ex-2,ey+11,ex+14,ey+5); ctx.closePath(); ctx.clip();
-  texHatch(ex+2,ey+6,24,12,14,'rgba(20,28,36,0.5)',ex*0.2,3,0.4);
-  texSpeckle(ex+3,ey+6,22,11,9,'rgba(120,140,150,0.25)',ex*0.15,1.1);
+  texHatch(ex+2,ey+6,24,12,14,'rgba(20,28,36,0.5)',sd*0.2,3,0.4);
+  texSpeckle(ex+3,ey+6,22,11,9,'rgba(120,140,150,0.25)',sd*0.15,1.1);
   ctx.fillStyle='rgba(150,165,160,0.22)'; ctx.beginPath(); ctx.ellipse(ex+9,ey+11,4,2.5,-0.3,0,7); ctx.fill();
   ctx.beginPath(); ctx.ellipse(ex+19,ey+12,3.5,2,0.3,0,7); ctx.fill();
   ctx.restore();
@@ -6324,6 +6278,7 @@ function drawStingray(ex,ey,e){
 }
 
 function drawSeagullSteve(ex,ey,e){
+  if(e._ts===undefined)e._ts=e.x*0.37+e.y*0.11; const sd=e._ts;
   const bob=Math.sin(e.phase*0.7)*2; ctx.save(); ctx.translate(0,bob);
   if(e.facing<0){ctx.translate(ex+e.w/2,0);ctx.scale(-1,1);ctx.translate(-(ex+e.w/2),0);}
   // ragged wing spread (uneven, torn)
@@ -6335,8 +6290,8 @@ function drawSeagullSteve(ex,ey,e){
   // dingy oily body
   ctx.fillStyle='#B8B0A2'; ctx.beginPath(); ctx.ellipse(ex+14,ey+16,10,8,0,0,7); ctx.fill();
   ctx.save(); ctx.beginPath(); ctx.ellipse(ex+14,ey+16,10,8,0,0,7); ctx.clip();
-  texHatch(ex+5,ey+9,18,14,16,'rgba(70,64,54,0.4)',ex*0.15,3,1.2);
-  texSpeckle(ex+5,ey+9,18,14,8,'rgba(50,45,38,0.35)',ex*0.25,1.2);
+  texHatch(ex+5,ey+9,18,14,16,'rgba(70,64,54,0.4)',sd*0.15,3,1.2);
+  texSpeckle(ex+5,ey+9,18,14,8,'rgba(50,45,38,0.35)',sd*0.25,1.2);
   ctx.fillStyle='rgba(60,55,48,0.4)'; ctx.beginPath(); ctx.ellipse(ex+9,ey+18,4,2.5,0.3,0,7); ctx.fill();
   ctx.beginPath(); ctx.ellipse(ex+19,ey+17,4,2.5,-0.3,0,7); ctx.fill();
   ctx.restore();
@@ -8808,7 +8763,7 @@ function showLevelPopup(title, desc){
   let sawyerWave = 0, ottoWave = 0, ottoBounce = 0;
 
   // ── Title portrait art (embedded) ──
-  const heroSawyer = new Image(); heroSawyer.src = 'assets/hero_sawyer.webp';
+  const heroSawyer = new Image(); heroSawyer.src = 'assets/standingsawyerheropose.png';
   const heroOtto   = new Image(); heroOtto.src   = 'assets/hero_otto.webp';
   let heroLoaded = 0;
   heroSawyer.onload = ()=>{ heroLoaded++; };
@@ -8888,7 +8843,7 @@ function showLevelPopup(title, desc){
 
   let btnHover = false;
 
-  function drawHero(im, h, cx, feetY, bob){
+  function drawHero(im, h, cx, feetY, bob, flip){
     if(!im || !im.complete || !im.naturalWidth) return;
     const w = im.naturalWidth * h / im.naturalHeight;
     const x = cx - w/2, y = feetY - h + bob;
@@ -8899,7 +8854,10 @@ function showLevelPopup(title, desc){
     c.beginPath(); c.ellipse(cx, feetY-4, w*0.40, 14, 0, 0, 7); c.fill();
     c.restore();
     // Trim the bottom edge row to remove the thin light fringe under the feet
+    c.save();
+    if(flip){ c.translate(cx, 0); c.scale(-1, 1); c.translate(-cx, 0); } // face inward
     c.drawImage(im, 0, 0, im.naturalWidth, im.naturalHeight*0.988, x, y, w, h);
+    c.restore();
   }
 
   function drawMenu(){
@@ -8935,7 +8893,7 @@ function showLevelPopup(title, desc){
     // ── Heroes (bobbing) ──
     const bobS = Math.sin(mT*0.03)*3;
     const bobO = Math.sin(mT*0.03+1.1)*5;
-    drawHero(heroSawyer, 241, 232, MH-35, bobS);
+    drawHero(heroSawyer, 241, 232, MH-35, bobS, true); // left-facing asset -> flip to face inward
     drawHero(heroOtto,   225, 500, MH-33, bobO);
 
     // ── TITLE logo ──
