@@ -2892,9 +2892,24 @@ const cosmicGlow = (function(){
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
     const pulse=0.5+0.5*Math.sin(t*0.7);
     // looming hooded figure — rises from the dark, faintly backlit so the silhouette reads
-    const presence=0.32+0.68*Math.max(0,Math.sin(Date.now()*0.0005));
+    // looming figure: holds eerily still, then SNAPS bigger/smaller — slow dread, sudden jolt
+    const _T=Date.now();
+    const _seg=2600;                                   // ms per dread-beat
+    const _i=Math.floor(_T/_seg);
+    const _hash=s=>{const x=Math.sin(s*127.1)*43758.5453; return x-Math.floor(x);};
+    const _tgt=i=>0.30+0.70*_hash(i*1.7+3.0);          // resting size for a beat
+    const _a=_tgt(_i), _b=_tgt(_i+1);
+    const _lt=(_T%_seg)/_seg;                          // 0..1 within the beat
+    const _snapAt=0.58+0.34*_hash(_i*3.3);             // when the jolt fires (varies)
+    const _snapDur=0.05;                               // jolt is FAST
+    let _p;
+    if(_lt<_snapAt)               _p=_a+Math.sin(_T*0.0011+_i)*0.012;                       // barely-there drift
+    else if(_lt<_snapAt+_snapDur){const k=(_lt-_snapAt)/_snapDur,e=k*k*(3-2*k); _p=_a+(_b-_a)*e;} // snap
+    else                          _p=_b+Math.sin(_T*0.0011+_i)*0.012;                       // settle + drift
+    const presence=Math.max(0.18,Math.min(1,_p));
+    const _snapped=_lt>=_snapAt;
     {
-      const bx=W*0.5+Math.sin(Date.now()*0.0003)*W*0.18;
+      const bx=W*0.5+Math.sin(_T*0.00016)*W*0.10 + (_snapped?(_b-_a)*W*0.04:0); // mostly still, slight snap-lurch
       const by=FLOOR+8, hgt=180*presence+70;
       // cold backlight halo so the dark shape stands out
       ctx.globalCompositeOperation='lighter';
