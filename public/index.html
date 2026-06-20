@@ -311,7 +311,7 @@
   </div>
 
   <div id="game-footer">
-    <span id="score-display">Score: 0 &nbsp;|&nbsp; &#10084;&#65039; 3</span>
+    <span id="score-display">Score: 0 &nbsp;|&nbsp; &#10084;&#65039; 5</span>
     <span class="ctrls">
       <b style="color:#85B7EB">You are Sawyer:</b> <kbd>&larr;</kbd><kbd>&rarr;</kbd> move &nbsp;
       <kbd>&uarr;</kbd> jump &nbsp; <kbd>Space</kbd> throw ball
@@ -406,7 +406,7 @@ const WORLD_W = 3000;
 const BOSS_GATE = 2380;
 
 let soundOn = true;
-let score = 0, lives = 3, gameOver = false, won = false;
+let score = 0, lives = 5, gameOver = false, won = false;
 
 // High score persistence
 function getBestScore(level){
@@ -3552,20 +3552,22 @@ function drawVictoryAnimation(){
 
   // Portal glow backdrop
   drawEscapePortal(W/2, H*0.46, 56+prog*16, 1, prog*6);
-  // Sawyer hero pose (photo), facing left — sprite frame is the fallback
+  // Sawyer victory hero pose — flipped to face inward toward Otto; sprite frame is the fallback
   {
-    const hS = window.heroSawyer;
+    const hS = window.heroVictory;
     const scx = W/2 - 56, feetY = FLOOR - 4 - bounce;
     if(hS && hS.complete && hS.naturalWidth){
       const sh = 120 + prog*12, sw = hS.naturalWidth*sh/hS.naturalHeight;
       ctx.save();
+      ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.filter='none'; ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
       ctx.fillStyle='rgba(0,0,0,0.4)';
       ctx.beginPath(); ctx.ellipse(scx, FLOOR-6, sw*0.38, 9, 0,0,7); ctx.fill();
       ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
-      ctx.drawImage(hS, 0,0, hS.naturalWidth, hS.naturalHeight*0.988, scx - sw/2, feetY - sh, sw, sh);
+      ctx.translate(scx, 0); ctx.scale(-1, 1); // face right toward Otto
+      ctx.drawImage(hS, 0,0, hS.naturalWidth, hS.naturalHeight*0.988, -sw/2, feetY - sh, sw, sh);
       ctx.restore();
     } else {
-      sawyer.facing = -1;
+      sawyer.facing = 1;
       drawHeroAt(sawyer, scx, feetY, 100+prog*10, 1, 0);
     }
   }
@@ -3642,6 +3644,54 @@ function drawVictoryAnimation(){
   }
 }
 
+function heartPath(c, cx, cy, s){
+  c.beginPath();
+  c.moveTo(cx, cy + s*0.28);
+  c.bezierCurveTo(cx, cy + s*0.10, cx - s*0.50, cy - s*0.22, cx - s*0.50, cy + s*0.08);
+  c.bezierCurveTo(cx - s*0.50, cy + s*0.32, cx - s*0.20, cy + s*0.48, cx, cy + s*0.74);
+  c.bezierCurveTo(cx + s*0.20, cy + s*0.48, cx + s*0.50, cy + s*0.32, cx + s*0.50, cy + s*0.08);
+  c.bezierCurveTo(cx + s*0.50, cy - s*0.22, cx, cy + s*0.10, cx, cy + s*0.28);
+  c.closePath();
+}
+
+function drawHUD(){
+  if(gameOver || won) return;
+  const c = ctx; c.save();
+  c.shadowColor='transparent'; c.shadowBlur=0; c.filter='none'; c.globalAlpha=1;
+  const N = 5, hs = 18, gap = 23, rightX = W - 12, topY = 12;
+  // ── 5 cosmic gradient hearts (filled = remaining lives) ──
+  for(let i=0;i<N;i++){
+    const cx = rightX - 8 - (N-1-i)*gap, cy = topY;
+    const filled = i < Math.min(lives, N);
+    heartPath(c, cx, cy, hs);
+    if(filled){
+      const g = c.createLinearGradient(cx - hs/2, cy, cx + hs/2, cy + hs*0.7);
+      g.addColorStop(0,'#8A2BE2'); g.addColorStop(0.5,'#FF49C3'); g.addColorStop(1,'#3FE0FF');
+      c.fillStyle = g;
+      c.shadowColor = 'rgba(255,90,200,0.65)'; c.shadowBlur = 8;
+      c.fill();
+      c.shadowBlur = 0;
+      c.lineWidth = 1; c.strokeStyle = 'rgba(255,255,255,0.5)'; c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.40)';
+      c.beginPath(); c.ellipse(cx - hs*0.16, cy + hs*0.14, hs*0.12, hs*0.08, -0.5, 0, 7); c.fill();
+    } else {
+      c.fillStyle = 'rgba(18,14,38,0.5)'; c.fill();
+      c.lineWidth = 1.5; c.strokeStyle = 'rgba(150,120,210,0.55)'; c.stroke();
+    }
+  }
+  // ── Legible cosmic score ──
+  const sy = topY + hs + 12;
+  const txt = 'SCORE  ' + score;
+  c.textAlign = 'right'; c.font = '900 17px system-ui,-apple-system,sans-serif';
+  c.lineWidth = 4; c.lineJoin = 'round'; c.strokeStyle = 'rgba(6,4,18,0.9)';
+  c.strokeText(txt, rightX, sy);
+  const sg = c.createLinearGradient(rightX - 130, sy - 14, rightX, sy);
+  sg.addColorStop(0,'#9B6BFF'); sg.addColorStop(0.5,'#FF7AD9'); sg.addColorStop(1,'#5FE6FF');
+  c.fillStyle = sg; c.shadowColor = 'rgba(150,90,255,0.55)'; c.shadowBlur = 6;
+  c.fillText(txt, rightX, sy);
+  c.restore();
+}
+
 function drawOverlay(msg,sub){
   ctx.fillStyle='rgba(74,27,12,0.6)'; ctx.fillRect(0,0,W,H);
   ctx.fillStyle='#fff'; ctx.font='600 30px system-ui,sans-serif'; ctx.textAlign='center';
@@ -3716,10 +3766,7 @@ function drawCreditsOverlay(){
   const hS=window.heroSawyer, hO=window.heroOtto;
   if(hS && hS.complete && hS.naturalWidth){
     const h=150, w=hS.naturalWidth*h/hS.naturalHeight;
-    ctx.save(); ctx.globalAlpha=0.92;
-    ctx.translate(4+w, 0); ctx.scale(-1,1); // left-facing asset -> flip to face inward
-    ctx.drawImage(hS, 0, 0, hS.naturalWidth, hS.naturalHeight*0.988, 0, H-h+8, w, h);
-    ctx.restore();
+    ctx.globalAlpha=0.92; ctx.drawImage(hS, 0, 0, hS.naturalWidth, hS.naturalHeight*0.988, 4, H-h+8, w, h); ctx.globalAlpha=1;
   }
   if(hO && hO.complete && hO.naturalWidth){
     const h=150, w=hO.naturalWidth*h/hO.naturalHeight;
@@ -3817,7 +3864,7 @@ function drawCreditsOverlay(){
 // =========================================================================
 function restartCurrentLevel(){
   const lvl = currentLevel||1;
-  score=0; lives=3; gameOver=false; won=false; cameraX=0;
+  score=0; lives=5; gameOver=false; won=false; cameraX=0;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
@@ -3838,7 +3885,7 @@ function restartCurrentLevel(){
   showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
 }
 function jumpToLevel(n){
-  score=0; lives=3; gameOver=false; won=false; cameraX=0;
+  score=0; lives=5; gameOver=false; won=false; cameraX=0;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
@@ -3869,7 +3916,7 @@ function jumpToLevel(n){
 }
 function restart(resetLevel){
   const lvl = resetLevel ? 1 : (currentLevel||1);
-  score=0; lives=3; gameOver=false; won=false; cameraX=0;
+  score=0; lives=5; gameOver=false; won=false; cameraX=0;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
@@ -4117,14 +4164,8 @@ function loop(){
   ctx.fillStyle = '#8BA8C7';
   ctx.fillText('baby buddy', 12, 80);
   
-  // Score and lives on the right
-  ctx.textAlign = 'right';
-  ctx.font = 'bold 16px system-ui,sans-serif';
-  ctx.fillStyle = '#2C2C2A';
-  ctx.fillText('Score: ' + score, W - 12, 30);
-  ctx.font = 'bold 14px system-ui,sans-serif';
-  ctx.fillText('❤ ' + lives, W - 12, 50);
   ctx.restore();
+  drawHUD();
   
   // Draw combo indicator
   if (killCombo > 1){
@@ -4132,7 +4173,7 @@ function loop(){
     ctx.fillStyle = '#FF6B6B';
     ctx.font = 'bold 24px system-ui,sans-serif';
     ctx.textAlign = 'right';
-    ctx.fillText(killCombo + 'x COMBO!', W - 20, 40);
+    ctx.fillText(killCombo + 'x COMBO!', W - 20, 82);
     ctx.restore();
   }
   
@@ -8658,8 +8699,9 @@ function drawBossHaus(boss,bc,flash){
     g.addColorStop(0,'rgba(255,42,42,'+(0.28+Math.sin(boss.phase*4)*0.08)+')'); g.addColorStop(1,'rgba(255,42,42,0)');
     ctx.fillStyle=g; ctx.fillRect(cx-dw,feetY-dh,dw*2,dh); ctx.restore(); }
   ctx.drawImage(img2,dx,dy,dw,dh);
-  if(enraged){ ctx.save(); ctx.globalCompositeOperation='source-atop'; ctx.globalAlpha=0.18;
-    ctx.fillStyle='#FF2A2A'; ctx.fillRect(dx,dy,dw,dh); ctx.restore(); }
+  if(enraged){ ctx.save(); ctx.globalAlpha=0.20;
+    ctx.filter='brightness(0.55) sepia(1) saturate(9) hue-rotate(-25deg)';
+    ctx.drawImage(img2,dx,dy,dw,dh); ctx.restore(); }
   if(flash){ ctx.save(); ctx.filter='brightness(0) invert(1)'; ctx.drawImage(img2,dx,dy,dw,dh); ctx.restore(); }
   ctx.restore();
 }
@@ -8763,12 +8805,13 @@ function showLevelPopup(title, desc){
   let sawyerWave = 0, ottoWave = 0, ottoBounce = 0;
 
   // ── Title portrait art (embedded) ──
-  const heroSawyer = new Image(); heroSawyer.src = 'assets/standingsawyerheropose.png';
+  const heroSawyer = new Image(); heroSawyer.src = 'assets/hero_sawyer.webp';
   const heroOtto   = new Image(); heroOtto.src   = 'assets/hero_otto.webp';
+  const heroVictory = new Image(); heroVictory.src = 'assets/standingsawyerheropose.webp';
   let heroLoaded = 0;
   heroSawyer.onload = ()=>{ heroLoaded++; };
   heroOtto.onload   = ()=>{ heroLoaded++; };
-  window.heroSawyer = heroSawyer; window.heroOtto = heroOtto;
+  window.heroSawyer = heroSawyer; window.heroOtto = heroOtto; window.heroVictory = heroVictory;
   const sparks = Array.from({length:26},()=>({x:Math.random()*MW,y:Math.random()*MH,r:Math.random()*1.8+0.5,s:Math.random()*0.4+0.15,p:Math.random()*6.28}));
 
   // Start button hit area (set after first draw)
@@ -8893,7 +8936,7 @@ function showLevelPopup(title, desc){
     // ── Heroes (bobbing) ──
     const bobS = Math.sin(mT*0.03)*3;
     const bobO = Math.sin(mT*0.03+1.1)*5;
-    drawHero(heroSawyer, 241, 232, MH-35, bobS, true); // left-facing asset -> flip to face inward
+    drawHero(heroSawyer, 241, 232, MH-35, bobS);
     drawHero(heroOtto,   225, 500, MH-33, bobO);
 
     // ── TITLE logo ──
