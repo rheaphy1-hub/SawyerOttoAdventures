@@ -12,11 +12,16 @@
     width:100vw; min-height:100vh; padding:12px 0 24px; }
   #game-header{ width:100%; max-width:1200px; padding:0 16px 10px;
     display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-  h1{ font-size:22px; font-weight:600; margin:0; color:#FAC775; }
-  .sub{ font-size:12px; color:#D3D1C7; margin:0; }
+  h1{ font-size:23px; font-weight:800; margin:0; letter-spacing:0.01em;
+    background:linear-gradient(90deg,#9B6BFF,#FF7AD9,#5FE6FF);
+    -webkit-background-clip:text; background-clip:text;
+    color:transparent; -webkit-text-fill-color:transparent; }
+  .sub{ font-size:12px; color:#A9A7C4; margin:3px 0 0; }
   .bar{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-left:auto; }
-  button.tb{ font-size:13px; padding:6px 14px; border-radius:8px; border:1px solid #5F5E5A;
-    background:#3A3A38; color:#FAEEDA; cursor:pointer; }
+  button.tb{ font-size:13px; padding:6px 14px; border-radius:999px;
+    border:1px solid rgba(155,120,255,0.40); background:rgba(40,32,64,0.6); color:#EDE9FF;
+    cursor:pointer; transition:background 0.15s, border-color 0.15s, transform 0.1s; }
+  button.tb:hover{ background:rgba(70,52,110,0.7); border-color:rgba(190,140,255,0.7); }
   button.tb:active{ transform:scale(0.97); }
   #canvas-container{
     position:relative;
@@ -66,15 +71,18 @@
     touch-action:manipulation; }
   #restart-overlay-btn:active{ transform:translate(-50%,-50%) scale(0.95);
     background:#C93B3A; }
-  #game-footer{ width:100%; max-width:1200px; padding:8px 16px 0;
-    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; }
-  #score-display{ font-size:14px; color:#D3D1C7; }
-  .ctrls{ font-size:12px; color:#B4B2A9; line-height:1.7; }
-  kbd{ background:#3A3A38; border:1px solid #5F5E5A; border-radius:4px; padding:1px 6px;
-    font-size:11px; color:#FAEEDA; }
-  .legend{ width:100%; max-width:1200px; padding:10px 16px 0;
-    font-size:13px; color:#B4B2A9; line-height:1.8; }
-  .legend b{ color:#FAC775; }
+  #game-footer{ width:100%; max-width:1200px; padding:10px 16px 0;
+    display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:14px; }
+  #score-display{ display:none; }
+  .ctrls{ font-size:12px; color:#C7C4DE; line-height:1.9; }
+  kbd{ display:inline-block; min-width:20px; text-align:center;
+    background:linear-gradient(#2c2740,#211c33); border:1px solid rgba(150,120,210,0.45);
+    border-bottom-width:2px; border-radius:6px; padding:2px 7px; margin:0 1px;
+    font-size:11px; font-weight:700; color:#EDE9FF; box-shadow:0 1px 0 rgba(0,0,0,0.4); }
+  .legend{ width:100%; max-width:760px; margin:12px auto 0; padding:14px 18px;
+    border:1px solid rgba(120,95,180,0.28); border-radius:14px; background:rgba(24,20,40,0.55);
+    font-size:13px; color:#BBB8D4; line-height:1.85; }
+  .legend b{ color:#C9A0FF; }
   #canvas-container:fullscreen,
   #canvas-container:-webkit-full-screen{
     width:100vw; height:100vh; display:flex;
@@ -227,9 +235,9 @@
   <div class="popup-content theme-frost">
     <div class="popup-badge">❄️</div>
     <div class="popup-kicker">Level 2</div>
-    <h2>FROZEN PEAK</h2>
-    <p>Climb the icy slopes with Otto as avalanches rumble and frost creatures emerge from the snow.</p>
-    <p class="popup-scoring">Grab glowing ice crystals (75 pts), defeat yetis & frozen foes (100 pts), defeat the Blizzard King (+750)!</p>
+    <h2>FROZEN PEAKS</h2>
+    <p>Climb the icy slopes with Otto as the blizzard howls and frozen creatures stalk the snow.</p>
+    <p class="popup-scoring">Grab glowing ice crystals (75 pts), defeat frozen foes (100 pts), bring down the Yeti (+1 000)!</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
@@ -248,8 +256,8 @@
     <div class="popup-badge">🌊</div>
     <div class="popup-kicker">Level 4</div>
     <h2>UNDER THE SEA</h2>
-    <p>Plunge into a bioluminescent alien ocean. Dodge glowing tentacles, leap over pressure pods, and surface to face Leviathan Lyra!</p>
-    <p class="popup-scoring">Collect pearls (75–250 pts), stomp glowfish & cephalopods (100–150 pts), beat the boss (+1 000)!</p>
+    <p>Dive into a glowing deep-sea reef. Swim past darting glowfish, grasping octopi and stinging anemones, dodge the pressure-pod mines, and descend to face Leviathan Lyra!</p>
+    <p class="popup-scoring">Collect pearls (75–250 pts), strike sea creatures (100–150 pts), beat the boss (+1 000)!</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
@@ -258,25 +266,25 @@
     <div class="popup-badge">👻</div>
     <div class="popup-kicker">Level 5</div>
     <h2>SPOOKY HAUS</h2>
-    <p>You've entered a haunted German manor. Creaking floors, dancing candlelight, and spectral guardians await — survive to meet Baron Von Scream!</p>
-    <p class="popup-scoring">Grab coins & spell orbs (75–250 pts), defeat ghosts, zombies & gargoyles (100–150 pts), beat the boss (+1 000)!</p>
+    <p>You've entered a haunted German manor where a rotten feast has come alive. Creaking floors, guttering candlelight, and grotesque banquet-horrors await — survive to meet Baron Von Scream!</p>
+    <p class="popup-scoring">Grab coins & spell orbs (75–250 pts), put down the feast-horrors (100–150 pts), beat the boss (+1 000)!</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
 <div id="level6-popup" class="level-popup" style="display:none">
   <div class="popup-content theme-space">
-    <div class="popup-badge">🚀</div>
+    <div class="popup-badge">🌌</div>
     <div class="popup-kicker">Final Level</div>
     <h2>OUTER SPACE</h2>
-    <p>The final frontier. Drift through a derelict station amid drones, turrets, and radiation — then duel the AI overlord, Nexus Nine!</p>
-    <p class="popup-scoring">Collect cells (75–250 pts), defeat drones & robots (100–150 pts), beat the final boss (+1 000)!</p>
+    <p>Adrift in the void between stars. Slip past the things that watch and devour in the dark — then face the tear in reality, Nexus Nine!</p>
+    <p class="popup-scoring">Collect cells (75–250 pts), banish void entities (100–150 pts), beat the final boss (+1 000)!</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
 <div id="game-wrapper">
   <div id="game-header">
     <div>
-      <h1>Sawyer &amp; Otto: Epic Adventures &#127797;</h1>
+      <h1>Sawyer &amp; Otto: Epic Adventures</h1>
       <p class="sub">Join Sawyer and his baby brother Otto across desert dunes, icy peaks, and mysterious realms!</p>
     </div>
     <div class="bar">
@@ -313,16 +321,16 @@
   <div id="game-footer">
     <span id="score-display">Score: 0 &nbsp;|&nbsp; &#10084;&#65039; 5</span>
     <span class="ctrls">
-      <b style="color:#85B7EB">You are Sawyer:</b> <kbd>&larr;</kbd><kbd>&rarr;</kbd> move &nbsp;
-      <kbd>&uarr;</kbd> jump &nbsp; <kbd>Space</kbd> throw ball
+      <kbd>&larr;</kbd><kbd>&rarr;</kbd> Move &nbsp; <kbd>&uarr;</kbd> Jump &nbsp;
+      <kbd>&darr;</kbd> Dive &nbsp; <kbd>Space</kbd> Throw ball
     </span>
   </div>
 
   <div class="legend">
-    <b>Otto, your buddy:</b> the baby follows you on his own, hops along behind, and spits milk
-    at any critter that gets close. He can't be hurt &mdash; only Sawyer loses hearts.<br>
-    <b>How to play:</b> Grab collectibles for points, bonk or stomp enemies, defeat epic bosses to advance!<br>
-    <b>Power-ups:</b> <b>Baby Bottles</b> 🍼 grant temporary shields and boost Otto's milk-spitting power.
+    <b>You are Sawyer</b> &mdash; run, jump, and throw to clear each world. You start with 5 hearts; lose them all and it's game over.<br>
+    <b>Otto, your baby brother,</b> follows on his own, hops along behind you, and spits milk at any critter that gets close. He can't be hurt &mdash; only Sawyer loses hearts.<br>
+    <b>Goal:</b> grab collectibles for points, stomp or bonk enemies, and defeat each world's boss to advance.<br>
+    <b>Power-ups:</b> collect <b>Baby Bottles</b> to shield Sawyer and charge up Otto's giant form.
   </div>
   <div style="text-align:center;padding:6px 0 2px;font-size:11px;color:#888;letter-spacing:0.04em;">A game by <b>Activities with Ryan</b></div>
 </div>
@@ -405,7 +413,7 @@ const GRAVITY = 0.55, FLOOR = H - 56;
 const WORLD_W = 3000;
 const BOSS_GATE = 2380;
 
-let soundOn = true;
+let musicOn = true, sfxOn = true;
 let score = 0, lives = 5, gameOver = false, won = false;
 
 // High score persistence
@@ -449,7 +457,7 @@ const audioManager = {
     if (this.titleAudio) return;
     const a = new Audio('/audio/interlude.mp3');
     a.loop = true;
-    a.volume = soundOn ? this.titleVol : 0;
+    a.volume = musicOn ? this.titleVol : 0;
     a.play().catch(()=>{});
     this.titleAudio = a;
   },
@@ -488,7 +496,7 @@ const audioManager = {
       // Cancel any in-progress crossfade (previous next becomes new outgoing)
       if (this.next) {
         // Snap next to full volume and make it outgoing
-        this.next.volume = soundOn ? this.targetVol : 0;
+        this.next.volume = musicOn ? this.targetVol : 0;
         this.current.pause();
         this.current = this.next;
         this.next = null;
@@ -522,7 +530,7 @@ const audioManager = {
     // Smooth ease
     const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
 
-    const vol = soundOn ? this.targetVol : 0;
+    const vol = musicOn ? this.targetVol : 0;
 
     // Fade out current
     if (this.current) {
@@ -530,7 +538,7 @@ const audioManager = {
     }
     // Fade out title if still running
     if (this.titleAudio) {
-      this.titleAudio.volume = Math.max(0, (soundOn ? this.titleVol : 0) * (1 - ease));
+      this.titleAudio.volume = Math.max(0, (musicOn ? this.titleVol : 0) * (1 - ease));
     }
     // Fade in next
     if (this.next) {
@@ -549,11 +557,11 @@ const audioManager = {
     }
   },
 
-  // Call when soundOn toggles
+  // Call when musicOn toggles
   syncVolume() {
-    const vol = soundOn ? this.targetVol : 0;
+    const vol = musicOn ? this.targetVol : 0;
     if (this.current) this.current.volume = vol;
-    if (this.titleAudio) this.titleAudio.volume = soundOn ? this.titleVol : 0;
+    if (this.titleAudio) this.titleAudio.volume = musicOn ? this.titleVol : 0;
     if (this.next) this.next.volume = 0; // crossfade will ramp it
   }
 };
@@ -752,7 +760,7 @@ let audioCtx = null;
 //      beep/noise, sfx(), sound/pause/fullscreen, level popup
 // =========================================================================
 function beep(freq, dur, type='square', vol=0.08, slideTo=null) {
-  if (!soundOn) return;
+  if (!sfxOn) return;
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
@@ -765,7 +773,7 @@ function beep(freq, dur, type='square', vol=0.08, slideTo=null) {
   } catch(e){}
 }
 function noise(dur, vol=0.06){
-  if(!soundOn) return;
+  if(!sfxOn) return;
   try{
     if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
     const b=audioCtx.createBuffer(1,audioCtx.sampleRate*dur,audioCtx.sampleRate);
@@ -817,9 +825,10 @@ const SFX2 = {
 };
 // Helper: use SFX2 in L2, SFX in L1
 function sfx(name){ (currentLevel===2 && SFX2[name] ? SFX2[name] : SFX[name])(); }
-function toggleSound(){ 
-  soundOn = !soundOn; 
-  document.getElementById('snd').innerHTML = '&#128266; Sound: ' + (soundOn ? 'on' : 'off');
+function toggleSound(){
+  const on = !(musicOn && sfxOn);   // master: both on -> mute both; otherwise enable both
+  musicOn = on; sfxOn = on;
+  document.getElementById('snd').innerHTML = '&#128266; Sound: ' + (on ? 'on' : 'off');
   audioManager.syncVolume();
 }
 
@@ -833,7 +842,7 @@ function togglePause(){
   } else {
     btn.innerHTML = '&#9646;&#9646; Pause';
     // Resume background music
-    if(soundOn){
+    if(musicOn){
       if(audioManager.current) audioManager.current.play().catch(()=>{});
       if(audioManager.titleAudio) audioManager.titleAudio.play().catch(()=>{});
       if(audioManager.next) audioManager.next.play().catch(()=>{});
@@ -3605,8 +3614,8 @@ function drawVictoryAnimation(){
   ctx.save();
   ctx.globalAlpha = textAlpha;
   ctx.textAlign = 'center';
-  const victoryText = isL2 ? '❄ YOU WIN! ❄' : (isL3 ? '🏖️ ADVENTURE COMPLETE! 🦀' : '🌵 VICTORY! 🌵');
-  const victoryColor = isL2 ? '#B0D4F1' : (isL3 ? '#FFD700' : '#FFD700');
+  const victoryText = 'VICTORY!';
+  const victoryColor = '#FFD700';
   // Shadow
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.font = 'bold 44px "Arial Black",Impact,sans-serif';
@@ -3620,12 +3629,8 @@ function drawVictoryAnimation(){
   ctx.fillText('Final Score: ' + score, W/2, H/3+44);
   ctx.restore();
 
-  // Celebratory burst — stars for L1, snowflakes for L2, shells for L3
-  const symbols = isL2 ? ['❄','❄','✦','❄','✦'] : (isL3 ? ['🐚','⭐','🌊','⭐','🐚'] : ['⭐','🌟','⭐','🌟','⭐']);
-  const cols    = isL2
-    ? ['#B0D4F1','#E8EAF6','#6AAFE6','#C8E6FA','#FFFFFF']
-    : (isL3 ? ['#FFE066','#4ECDC4','#87CEEB','#4ECDC4','#FFE066']
-            : ['#FFD700','#FF6B6B','#4ECDC4','#FFD700','#FF6B6B']);
+  // Celebratory sparkle burst (vector stars, no emojis)
+  const sparkCols = ['#FFD700','#FF7AD9','#5FE6FF','#FFE066','#9B6BFF'];
   for(let i=0;i<5;i++){
     const pct = (prog*4 - i*0.4) % 1;
     if(pct>0 && pct<0.9){
@@ -3635,10 +3640,14 @@ function drawVictoryAnimation(){
       const y = H/2 - pct*180;
       ctx.save();
       ctx.globalAlpha = Math.max(0, 1 - pct*1.3);
-      ctx.fillStyle = cols[i];
-      ctx.font = 'bold 28px system-ui,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(symbols[i], x, y);
+      ctx.fillStyle = sparkCols[i];
+      ctx.translate(x, y);
+      const sr = 9;
+      ctx.beginPath();
+      for(let k=0;k<4;k++){ const a=k*Math.PI/2;
+        ctx.lineTo(Math.cos(a)*sr, Math.sin(a)*sr);
+        ctx.lineTo(Math.cos(a+Math.PI/4)*sr*0.38, Math.sin(a+Math.PI/4)*sr*0.38); }
+      ctx.closePath(); ctx.fill();
       ctx.restore();
     }
   }
@@ -8822,6 +8831,43 @@ function showLevelPopup(title, desc){
 
   // Start button hit area (set after first draw)
   const btn = { x: MW/2-90, y: MH-112, w:180, h:46 };
+  // Independent audio toggles (top-right)
+  const musicBtn = { x: MW-112, y:10, w:48, h:42 };
+  const sfxBtn   = { x: MW-56,  y:10, w:48, h:42 };
+  let musicHover = false, sfxHover = false;
+
+  function drawToggleBtn(r, kind, on, hover){
+    const c = mCtx;
+    c.save();
+    c.beginPath(); c.roundRect(r.x, r.y, r.w, r.h, 10);
+    c.fillStyle = on
+      ? (hover ? 'rgba(140,95,225,0.72)' : 'rgba(110,72,190,0.55)')
+      : (hover ? 'rgba(52,46,72,0.85)'   : 'rgba(28,24,44,0.65)');
+    c.fill();
+    c.lineWidth = 1.4;
+    c.strokeStyle = on ? 'rgba(195,155,255,0.95)' : 'rgba(120,110,150,0.55)';
+    c.stroke();
+    const cx = r.x + r.w/2, iy = r.y + 17;
+    const col = on ? '#F1EAFF' : '#827D98';
+    c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 2; c.lineCap='round'; c.lineJoin='round';
+    if(kind==='music'){
+      c.beginPath(); c.ellipse(cx-6, iy+5, 3.1, 2.3, -0.3, 0, 7); c.fill();
+      c.beginPath(); c.ellipse(cx+4, iy+3, 3.1, 2.3, -0.3, 0, 7); c.fill();
+      c.beginPath(); c.moveTo(cx-3, iy+5); c.lineTo(cx-3, iy-6); c.lineTo(cx+7, iy-8); c.lineTo(cx+7, iy+3); c.stroke();
+    } else {
+      c.beginPath();
+      c.moveTo(cx-8, iy+1); c.lineTo(cx-4, iy+1); c.lineTo(cx, iy-3);
+      c.lineTo(cx, iy+9); c.lineTo(cx-4, iy+5); c.lineTo(cx-8, iy+5); c.closePath(); c.fill();
+      c.beginPath(); c.arc(cx, iy+3, 5, -0.9, 0.9); c.stroke();
+      c.beginPath(); c.arc(cx, iy+3, 8, -0.9, 0.9); c.stroke();
+    }
+    if(!on){ c.strokeStyle='#E2566E'; c.lineWidth=2.4;
+      c.beginPath(); c.moveTo(r.x+11, r.y+9); c.lineTo(r.x+r.w-11, r.y+27); c.stroke(); }
+    c.fillStyle = on ? '#E7DEFF' : '#7C7792';
+    c.font = '800 9px system-ui,sans-serif'; c.textAlign = 'center';
+    c.fillText(kind==='music' ? 'MUSIC' : 'SFX', cx, r.y + r.h - 6);
+    c.restore();
+  }
 
   function rr(c,x,y,w,h,r,fill){
     c.beginPath(); c.roundRect(x,y,w,h,r);
@@ -8948,42 +8994,70 @@ function showLevelPopup(title, desc){
     // ── TITLE logo ──
     c.save();
     c.textAlign='center';
-    c.font='900 italic 46px "Arial Black",Impact,system-ui,sans-serif';
-    // glow
-    c.shadowColor='rgba(255,120,40,0.6)'; c.shadowBlur=18;
-    // outline
-    c.lineWidth=6; c.strokeStyle='#160a04'; c.lineJoin='round';
-    c.strokeText('SAWYER & OTTO', MW/2, 50);
-    const tg=c.createLinearGradient(0,18,0,56);
-    tg.addColorStop(0,'#FFD27A'); tg.addColorStop(0.5,'#FF9A2E'); tg.addColorStop(1,'#FF6B1E');
-    c.fillStyle=tg; c.fillText('SAWYER & OTTO', MW/2, 50);
+    // soft glow halo behind the logo
+    const halo=c.createRadialGradient(MW/2,54,8,MW/2,54,160);
+    halo.addColorStop(0,'rgba(255,180,90,0.30)');
+    halo.addColorStop(0.55,'rgba(255,90,180,0.13)');
+    halo.addColorStop(1,'rgba(0,0,0,0)');
+    c.fillStyle=halo; c.fillRect(0,0,MW,124);
+
+    // main title — heavy, layered, warm heroic gradient
+    c.font='900 italic 50px Impact,"Arial Black",system-ui,sans-serif';
+    c.lineJoin='round';
+    c.shadowColor='rgba(255,120,40,0.65)'; c.shadowBlur=22;
+    c.lineWidth=9; c.strokeStyle='#150a04';
+    c.strokeText('SAWYER & OTTO', MW/2, 52);
     c.shadowBlur=0;
-    c.font='800 italic 23px "Arial Black",Impact,system-ui,sans-serif';
-    c.lineWidth=4; c.strokeStyle='#160a04';
-    c.strokeText('ADVENTURES', MW/2, 79);
-    c.fillStyle='#FF5BA6'; c.fillText('ADVENTURES', MW/2, 79);
+    const tg=c.createLinearGradient(0,14,0,60);
+    tg.addColorStop(0,'#FFE9A8'); tg.addColorStop(0.45,'#FFB13D'); tg.addColorStop(1,'#FF6B1E');
+    c.fillStyle=tg; c.fillText('SAWYER & OTTO', MW/2, 52);
+    c.lineWidth=1.2; c.strokeStyle='rgba(255,255,255,0.5)';
+    c.strokeText('SAWYER & OTTO', MW/2, 52);   // crisp top highlight
+
+    // subtitle — EPIC ADVENTURES in a cosmic gradient
+    c.font='900 italic 27px Impact,"Arial Black",system-ui,sans-serif';
+    c.shadowColor='rgba(120,90,255,0.6)'; c.shadowBlur=14;
+    c.lineWidth=6; c.strokeStyle='#140a14';
+    c.strokeText('EPIC ADVENTURES', MW/2, 87);
+    c.shadowBlur=0;
+    const sg=c.createLinearGradient(MW/2-160,72,MW/2+160,92);
+    sg.addColorStop(0,'#B79CFF'); sg.addColorStop(0.5,'#FF7AD9'); sg.addColorStop(1,'#6FE6FF');
+    c.fillStyle=sg; c.fillText('EPIC ADVENTURES', MW/2, 87);
+
+    // vector star accents flanking the subtitle
+    const subW=c.measureText('EPIC ADVENTURES').width;
+    const starAt=(sx,sy,rad)=>{ c.save(); c.translate(sx,sy); c.fillStyle='#FFE08A';
+      c.beginPath();
+      for(let k=0;k<4;k++){ const a=k*Math.PI/2;
+        c.lineTo(Math.cos(a)*rad,Math.sin(a)*rad);
+        c.lineTo(Math.cos(a+Math.PI/4)*rad*0.4,Math.sin(a+Math.PI/4)*rad*0.4); }
+      c.closePath(); c.fill(); c.restore(); };
+    starAt(MW/2 - subW/2 - 16, 80, 5);
+    starAt(MW/2 + subW/2 + 16, 80, 5);
     c.restore();
 
-    // ── START button (pulsing) ──
+    // ── START button — neon outline to match the level-start cards ──
     const bx=btn.x, by=btn.y, bw=btn.w, bh=btn.h;
+    const neon='#FF8A2B';
     const pulse=0.5+0.5*Math.sin(mT*0.08);
     c.save();
-    // glow ring
-    c.shadowColor='rgba(255,140,60,'+(0.5+0.4*pulse).toFixed(3)+')';
-    c.shadowBlur=18+10*pulse;
-    c.fillStyle='rgba(0,0,0,0.35)';
-    c.beginPath(); c.roundRect(bx+3,by+5,bw,bh,14); c.fill();
+    c.textAlign='center';
+    // translucent card-like interior (brighter on hover, like .play-btn:hover)
+    c.fillStyle = btnHover ? 'rgba(255,138,43,0.16)' : 'rgba(8,7,12,0.50)';
+    c.beginPath(); c.roundRect(bx,by,bw,bh,7); c.fill();
+    // neon glowing border (gently pulsing)
+    c.shadowColor=neon; c.shadowBlur=(btnHover?16:10)+8*pulse;
+    c.lineWidth=2; c.strokeStyle=neon;
+    c.beginPath(); c.roundRect(bx,by,bw,bh,7); c.stroke();
+    c.stroke();                       // second pass deepens the glow
     c.shadowBlur=0;
-    const bg2=c.createLinearGradient(bx,by,bx,by+bh);
-    bg2.addColorStop(0, btnHover?'#FFA257':'#FF8636');
-    bg2.addColorStop(1, btnHover?'#FA8E1E':'#F2700E');
-    c.fillStyle=bg2;
-    c.beginPath(); c.roundRect(bx,by,bw,bh,14); c.fill();
-    c.strokeStyle='rgba(255,235,200,0.85)'; c.lineWidth=2;
-    c.beginPath(); c.roundRect(bx+1.5,by+1.5,bw-3,bh-3,12); c.stroke();
-    c.fillStyle='#fff';
-    c.font='800 19px system-ui,sans-serif'; c.textAlign='center';
-    c.fillText('\u25B6  START GAME', bx+bw/2, by+bh/2+7);
+    // neon uppercase label with glow + letter-spacing
+    c.shadowColor=neon; c.shadowBlur=7;
+    c.fillStyle=neon;
+    c.font='700 16px system-ui,sans-serif';
+    if('letterSpacing' in c) c.letterSpacing='2px';
+    c.fillText('▶  START GAME', bx+bw/2, by+bh/2+6);
+    if('letterSpacing' in c) c.letterSpacing='0px';
     c.restore();
 
     // ── Footer credit (neon sign, subtle flicker) ──
@@ -8997,6 +9071,10 @@ function showLevelPopup(title, desc){
     c.fillText('Music by Activities with Ryan', MW/2, MH-15);
     c.shadowBlur=0; c.globalAlpha=1;
     c.restore();
+
+    // ── Independent audio toggles ──
+    drawToggleBtn(musicBtn, 'music', musicOn, musicHover);
+    drawToggleBtn(sfxBtn,   'sfx',   sfxOn,   sfxHover);
   }
 
   function menuLoop(){
@@ -9015,15 +9093,23 @@ function showLevelPopup(title, desc){
     const r=mCanvas.getBoundingClientRect();
     const scaleX=MW/r.width, scaleY=MH/r.height;
     const mx=(e.clientX-r.left)*scaleX, my=(e.clientY-r.top)*scaleY;
-    const hit = mx>btn.x && mx<btn.x+btn.w && my>btn.y && my<btn.y+btn.h;
-    if(hit!==btnHover){ btnHover=hit; mCanvas.style.cursor=hit?'pointer':'default'; }
+    const inR=(b)=> mx>b.x && mx<b.x+b.w && my>b.y && my<b.y+b.h;
+    const hit = inR(btn);
+    musicHover = inR(musicBtn); sfxHover = inR(sfxBtn);
+    if(hit!==btnHover){ btnHover=hit; }
+    mCanvas.style.cursor = (hit||musicHover||sfxHover) ? 'pointer' : 'default';
   });
 
   mCanvas.addEventListener('click', function(e){
     const r=mCanvas.getBoundingClientRect();
     const scaleX=MW/r.width, scaleY=MH/r.height;
     const mx=(e.clientX-r.left)*scaleX, my=(e.clientY-r.top)*scaleY;
-    if(mx>btn.x && mx<btn.x+btn.w && my>btn.y && my<btn.y+btn.h){
+    const inR=(b)=> mx>b.x && mx<b.x+b.w && my>b.y && my<b.y+b.h;
+    const _snd=()=>{ const sb=document.getElementById('snd'); if(sb) sb.innerHTML='&#128266; Sound: '+((musicOn||sfxOn)?'on':'off'); };
+    // Audio toggles take priority and do NOT start the game
+    if(inR(musicBtn)){ musicOn=!musicOn; audioManager.syncVolume(); _snd(); return; }
+    if(inR(sfxBtn)){ sfxOn=!sfxOn; _snd(); if(sfxOn) beep(680,0.07,'square',0.08); return; }
+    if(inR(btn)){
       menuRunning=false;
       audioManager.stopTitle();
       mScreen.style.opacity='0';
