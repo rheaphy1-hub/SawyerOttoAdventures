@@ -304,6 +304,7 @@
       </div>
     </div>
     <button id="restart-overlay-btn" onclick="restartCurrentLevel()">&#8635; Play Again</button>
+    <button id="next-level-btn" onclick="advanceFromVictory()" style="display:none;position:absolute;left:50%;bottom:20px;transform:translateX(-50%);z-index:30;padding:11px 30px;font:bold 16px system-ui,sans-serif;color:#241433;background:linear-gradient(#ffe27a,#ffb327);border:2px solid #fff;border-radius:30px;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.55)">Next Level &#9654;</button>
   </div>
 
   <div id="game-footer">
@@ -428,8 +429,13 @@ const audioManager = {
   current: null,       // currently playing Audio element
   next: null,          // incoming Audio element (crossfading in)
   titleAudio: null,
-  crossfadeFrames: 90, // ~1.5s at 60fps
+  crossfadeFrames: 90, // ~1.5s at 60fps default
   crossfadeTimer: 0,   // counts down from crossfadeFrames
+  startDelayFrames: 90,// 1.5s delay before a newly-triggered track begins
+  delayTimer: 0,       // counts down the pre-roll delay
+  pendingLevel: null,  // level whose track will start when delay ends
+  pendingFade: 90,     // crossfade length to use for the pending track
+  activeFade: 90,      // crossfade length currently in progress
   targetVol: 0.4,
   titleVol: 0.38,
   tracks: {
@@ -467,38 +473,26 @@ const audioManager = {
     incoming.play().catch(()=>{});
     if (this.next) { this.next.pause(); this.next = null; }
     this.next = incoming;
+    this.activeFade = this.crossfadeFrames;
     this.crossfadeTimer = this.crossfadeFrames;
   },
 
-  // Fade title out smoothly then play level music
-  play(level) {
+  // Queue level music: waits `delayFrames` (default 1.5s) then crossfades in over `fadeFrames`.
+  play(level, fadeFrames, delayFrames) {
     if (!this.tracks[level]) return;
-    // Build the incoming track at volume 0
-    const incoming = new Audio(this.tracks[level]);
-    incoming.loop = true;
-    incoming.volume = 0;
-    incoming.play().catch(()=>{});
-
-    // If something is already playing, crossfade from it
-    if (this.current) {
-      // Cancel any in-progress crossfade (previous next becomes new outgoing)
-      if (this.next) {
-        // Snap next to full volume and make it outgoing
-        this.next.volume = soundOn ? this.targetVol : 0;
-        this.current.pause();
-        this.current = this.next;
-        this.next = null;
-      }
-      this.next = incoming;
-      this.crossfadeTimer = this.crossfadeFrames;
-    } else {
-      // Nothing playing — just fade in
-      this.next = incoming;
-      this.crossfadeTimer = this.crossfadeFrames;
-      // current stays null; update() will handle ramp-up
+    // Settle any half-finished crossfade so the outgoing track is `current`.
+    if (this.next) {
+      this.next.volume = soundOn ? this.targetVol : 0;
+      if (this.current) this.current.pause();
+      this.current = this.next;
+      this.next = null;
+      this.crossfadeTimer = 0;
     }
-
-    // Title fade-out happens via update()
+    this.pendingLevel = level;
+    this.pendingFade  = fadeFrames || this.crossfadeFrames;
+    this.delayTimer   = (delayFrames != null ? delayFrames : this.startDelayFrames);
+    // Outgoing track keeps playing at full through the delay; update() spawns the
+    // incoming track and starts the crossfade once the delay elapses.
   },
 
   stop() {
@@ -506,15 +500,31 @@ const audioManager = {
     if (this.next) { this.next.pause(); this.next = null; }
     if (this.current) { this.current.pause(); this.current = null; }
     this.crossfadeTimer = 0;
+    this.delayTimer = 0;
+    this.pendingLevel = null;
     this.creditsStarted = false;
     drawCreditsOverlay.t = 0;
   },
 
   // Called every frame from the game loop
   update() {
+    // Pre-roll delay: hold the outgoing track, then spawn incoming + begin crossfade.
+    if (this.delayTimer > 0) {
+      this.delayTimer--;
+      if (this.delayTimer === 0 && this.pendingLevel != null) {
+        const incoming = new Audio(this.tracks[this.pendingLevel]);
+        incoming.loop = true; incoming.volume = 0; incoming.play().catch(()=>{});
+        if (this.next) this.next.pause();
+        this.next = incoming;
+        this.activeFade = this.pendingFade;
+        this.crossfadeTimer = this.pendingFade;
+        this.pendingLevel = null;
+      }
+      return;
+    }
     if (this.crossfadeTimer <= 0) return;
     this.crossfadeTimer--;
-    const t = 1 - this.crossfadeTimer / this.crossfadeFrames; // 0→1
+    const t = 1 - this.crossfadeTimer / this.activeFade; // 0→1
     // Smooth ease
     const ease = t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
 
@@ -702,6 +712,7 @@ function drawBottles(){
 
 // Victory animation
 let victoryActive = false, victoryTimer = 0;
+let victoryWaiting = false, victoryAnimT = 0; // count-up + wait-for-button state
 
 const keys = {};
 
@@ -857,7 +868,25 @@ document.addEventListener('webkitfullscreenchange', () => {
   if (!document.webkitFullscreenElement) btn.innerHTML = '&#x26F6;';
 });
 
+function hideNextLevelBtn(){
+  const b=document.getElementById('next-level-btn'); if(b) b.style.display='none';
+  victoryWaiting=false; victoryAnimT=0;
+}
+function showNextLevelBtn(){
+  if(victoryWaiting) return;
+  victoryWaiting=true;
+  const b=document.getElementById('next-level-btn');
+  if(b){ b.textContent = (currentLevel>=6 ? 'Finish ▶' : 'Next Level ▶'); b.style.display='block'; }
+}
+function advanceFromVictory(){
+  hideNextLevelBtn();
+  victoryActive=false; won=false; victoryTimer=0;
+  const nx = ({1:2,2:3,3:4,4:5,5:6})[currentLevel];
+  if(nx){ goToLevel(nx); }           // goToLevel crossfades audio (1.5s delay built in)
+  else { finishCardActive=true; finishCardTimer=240; }
+}
 function closeLevelPopup(){
+  hideNextLevelBtn();
   ['level-popup','level2-popup','level3-popup','level4-popup','level5-popup','level6-popup'].forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
@@ -1513,18 +1542,7 @@ function update(){
   // L1 Victory timer — transition to L2
   if (victoryActive){
     victoryTimer--;
-    if (victoryTimer <= 0){
-      victoryActive = false; won = false;
-      currentLevel = 2;
-      cameraX = 0; projectiles = []; venom = []; particles = []; killCombo = 0;
-      cutsceneActive = false;
-      buildPlayers();
-      buildLevel2Enemies();
-      buildLevel2Rocks();
-      buildYeti();
-      buildIcicles();
-      audioManager.play(2);
-    }
+    if (victoryTimer <= 0){ victoryTimer = 0; showNextLevelBtn(); }
     // Lock Sawyer in place during victory
     s.vx = 0;
   }
@@ -2900,44 +2918,40 @@ const cosmicGlow = (function(){
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
     const pulse=0.5+0.5*Math.sin(t*0.7);
     // looming hooded figure — rises from the dark, faintly backlit so the silhouette reads
-    const presence=0.32+0.68*Math.max(0,Math.sin(Date.now()*0.0005));
+    const presence=0.46+0.46*Math.max(0,Math.sin(Date.now()*0.00016));
     {
-      const bx=W*0.5+Math.sin(Date.now()*0.0003)*W*0.14;
-      const by=FLOOR+8, hgt=210*presence+80;
-      const breathe=Math.sin(Date.now()*0.0011)*0.04;
-      const reach=Math.max(0,Math.sin(Date.now()*0.00037));
-      const tilt=Math.sin(Date.now()*0.0004)*0.12, lean=tilt*hgt*0.12;
+      const bx=W*0.5+Math.sin(Date.now()*0.00006)*W*0.09;
+      const by=FLOOR+8, hgt=300, breathe=Math.sin(Date.now()*0.00035)*hgt*0.005;
       // cold backlight halo so the dark shape reads
       ctx.globalCompositeOperation='lighter';
-      const halo=ctx.createRadialGradient(bx,by-hgt*0.72,0,bx,by-hgt*0.72,hgt);
-      halo.addColorStop(0,'rgba(80,100,140,'+(0.15*presence)+')'); halo.addColorStop(1,'rgba(80,100,140,0)');
-      ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(bx,by-hgt*0.72,hgt,0,7); ctx.fill();
+      const halo=ctx.createRadialGradient(bx,by-hgt*0.7,0,bx,by-hgt*0.7,hgt*0.95);
+      halo.addColorStop(0,'rgba(80,100,140,'+(0.14*presence)+')'); halo.addColorStop(1,'rgba(80,100,140,0)');
+      ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(bx,by-hgt*0.7,hgt*0.95,0,7); ctx.fill();
       ctx.globalCompositeOperation='source-over';
-      // tall gaunt faceless body, slightly leaning — wrongness in the proportions
-      ctx.globalAlpha=Math.min(1,presence*1.25); ctx.fillStyle='#03040A';
+      // non-descript tall faceless figure — looming and still, only slowly creeping
+      ctx.globalAlpha=Math.min(1,presence*1.2); ctx.fillStyle='#03040A';
+      const hw=hgt*0.13;
       ctx.beginPath();
-      ctx.moveTo(bx-hgt*0.085,by);
-      ctx.quadraticCurveTo(bx-hgt*0.11,by-hgt*0.5,bx-hgt*0.05+lean,by-hgt*0.82);
-      ctx.quadraticCurveTo(bx+lean,by-hgt*0.9,bx+hgt*0.05+lean,by-hgt*0.82);
-      ctx.quadraticCurveTo(bx+hgt*0.11,by-hgt*0.5,bx+hgt*0.085,by);
+      ctx.moveTo(bx-hw,by);
+      ctx.quadraticCurveTo(bx-hw,by-hgt*0.55,bx-hw*0.5,by-hgt*0.8);
+      ctx.quadraticCurveTo(bx,by-hgt*0.96-breathe,bx+hw*0.5,by-hgt*0.8);
+      ctx.quadraticCurveTo(bx+hw,by-hgt*0.55,bx+hw,by);
       ctx.closePath(); ctx.fill();
-      // small bowed/tilted head, no face
-      const hx=bx+lean+tilt*hgt*0.1, hy=by-hgt*(0.86+breathe);
-      ctx.beginPath(); ctx.ellipse(hx,hy,hgt*0.05,hgt*0.07,tilt,0,7); ctx.fill();
-      // one impossibly long arm that rises and reaches, very slowly
-      ctx.strokeStyle='#03040A'; ctx.lineWidth=Math.max(2,hgt*0.022); ctx.lineCap='round';
-      const sh=bx+hgt*0.06+lean, shy=by-hgt*0.66;
-      const elbX=bx+hgt*0.18, elbY=by-hgt*(0.5+reach*0.2);
-      const hndX=bx+hgt*0.26+reach*hgt*0.06, hndY=by-hgt*(0.5+reach*0.42);
-      ctx.beginPath(); ctx.moveTo(sh,shy); ctx.quadraticCurveTo(elbX,elbY,hndX,hndY); ctx.stroke();
-      // splayed, too-long fingers
-      ctx.lineWidth=Math.max(1,hgt*0.008);
-      for(let f=0;f<5;f++){ const fa=-0.4-f*0.34; ctx.beginPath(); ctx.moveTo(hndX,hndY); ctx.lineTo(hndX+Math.cos(fa)*hgt*0.07,hndY+Math.sin(fa)*hgt*0.07); ctx.stroke(); }
-      // faint pale rim so the shape is legible without being lit
-      ctx.globalAlpha=presence*0.38; ctx.lineWidth=1.2; ctx.strokeStyle='rgba(150,165,200,0.6)';
-      ctx.beginPath(); ctx.moveTo(hx-hgt*0.05,hy+hgt*0.02); ctx.quadraticCurveTo(hx,hy-hgt*0.06,hx+hgt*0.05,hy+hgt*0.02); ctx.stroke();
-      // a barely-there pale face-smear, only near peak presence (subtle dread)
-      if(presence>0.72){ ctx.globalAlpha=(presence-0.72)*0.6; ctx.fillStyle='rgba(190,195,210,0.5)'; ctx.beginPath(); ctx.ellipse(hx,hy+hgt*0.005,hgt*0.012,hgt*0.03,tilt,0,7); ctx.fill(); }
+      const hx=bx, hy=by-hgt*0.82-breathe;
+      // faint pale rim on the hood crown so the silhouette is legible without being lit
+      ctx.globalAlpha=presence*0.3; ctx.lineWidth=1.2; ctx.strokeStyle='rgba(150,165,200,0.5)';
+      ctx.beginPath(); ctx.moveTo(bx-hw*0.5,by-hgt*0.8); ctx.quadraticCurveTo(bx,by-hgt*0.96-breathe,bx+hw*0.5,by-hgt*0.8); ctx.stroke();
+      // periodic dead eyes — tiny dim dots that only surface for a moment, then gone
+      const eyeCyc=(Date.now()*0.00013)%1;
+      const eyeOn=eyeCyc<0.14?(1-Math.abs(eyeCyc-0.07)/0.07):0;
+      if(eyeOn>0.02){
+        ctx.globalCompositeOperation='lighter';
+        const ea=eyeOn*presence*0.7;
+        for(const s of [-1,1]){ const ex=hx+s*hgt*0.018, ey=hy-hgt*0.004;
+          ctx.globalAlpha=ea*0.4; ctx.fillStyle='#7A1020'; ctx.beginPath(); ctx.arc(ex,ey,1.8,0,7); ctx.fill();
+          ctx.globalAlpha=ea; ctx.fillStyle='#C03040'; ctx.beginPath(); ctx.arc(ex,ey,0.9,0,7); ctx.fill(); }
+        ctx.globalCompositeOperation='source-over';
+      }
       ctx.globalAlpha=1;
     }
     // deep desaturated dread breathing in (almost-black crimson, not bright red)
@@ -3546,8 +3560,10 @@ function drawBossSimple(bx,by){
 }
 
 function drawVictoryAnimation(){
-  const maxT = currentLevel===2 ? 220 : 220;
-  const prog = 1 - (victoryTimer / maxT);
+  if(victoryActive) victoryAnimT++;
+  if(victoryActive && victoryAnimT>150) showNextLevelBtn();
+  const maxT = 220;
+  const prog = Math.min(1, victoryAnimT/130);
   const isL2 = currentLevel===2;
   const isL3 = currentLevel===3;
 
@@ -3610,10 +3626,16 @@ function drawVictoryAnimation(){
   // Main text
   ctx.fillStyle = victoryColor;
   ctx.fillText(victoryText, W/2, H/3);
-  // Score
-  ctx.font = 'bold 20px system-ui,sans-serif';
+  // Score — animated count-up
+  const _cu=Math.min(1,victoryAnimT/110), _eu=1-Math.pow(1-_cu,3);
+  ctx.font = 'bold 22px system-ui,sans-serif';
   ctx.fillStyle = '#fff';
-  ctx.fillText('Final Score: ' + score, W/2, H/3+44);
+  ctx.fillText('Score: ' + Math.round(score*_eu), W/2, H/3+44);
+  if(victoryWaiting){
+    const _pl=0.55+0.45*Math.sin(performance.now()*0.006);
+    ctx.globalAlpha=_pl; ctx.fillStyle='#FFD700'; ctx.font='bold 14px system-ui,sans-serif';
+    ctx.fillText('▶  PRESS NEXT LEVEL', W/2, H/3+72); ctx.globalAlpha=1;
+  }
   ctx.restore();
 
   // Celebratory burst — stars for L1, snowflakes for L2, shells for L3
@@ -3811,6 +3833,7 @@ function drawCreditsOverlay(){
 //      restart, jumpToLevel, loop()
 // =========================================================================
 function restartCurrentLevel(){
+  hideNextLevelBtn();
   const lvl = currentLevel||1;
   score=0; lives=3; gameOver=false; won=false; cameraX=0;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
@@ -3833,6 +3856,7 @@ function restartCurrentLevel(){
   showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
 }
 function jumpToLevel(n){
+  hideNextLevelBtn();
   score=0; lives=3; gameOver=false; won=false; cameraX=0;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
@@ -3862,7 +3886,9 @@ function jumpToLevel(n){
   });
   if(!gameRunning){ gameRunning=true; loop(); }
 }
-function restart(resetLevel){
+function restart(resetLevel, opts){
+  opts = opts || {};
+  hideNextLevelBtn();
   const lvl = resetLevel ? 1 : (currentLevel||1);
   score=0; lives=3; gameOver=false; won=false; cameraX=0;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
@@ -3872,7 +3898,7 @@ function restart(resetLevel){
   currentLevel=lvl;
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   
-  audioManager.stop();
+  if(!opts.silentAudio) audioManager.stop();
   
   buildPlayers();
   if(currentLevel===2){
@@ -3886,11 +3912,15 @@ function restart(resetLevel){
   }
   buildBottles();
   
-  console.log(`[GAME] Restart called, playing audio for level ${currentLevel}`);
-  audioManager.play(currentLevel);
+  audioManager.play(currentLevel, opts.audioFade, opts.audioDelay);
   levelPaused = true;
   const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'SANDY SHORES',4:'UNDER THE SEA',5:'SPOOKY HAUS',6:'OUTER SPACE'};
-  showLevelPopup(popupTitles[currentLevel],'');
+  if(opts.deferPopupMs){
+    const _lv=currentLevel;
+    setTimeout(()=>{ if(currentLevel===_lv) showLevelPopup(popupTitles[_lv],''); }, opts.deferPopupMs);
+  } else {
+    showLevelPopup(popupTitles[currentLevel],'');
+  }
 }
 function loop(){
   if(gamePaused){
@@ -4698,18 +4728,7 @@ function updateLevel2(){
   // L2 victory timer
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){
-      victoryActive=false; won=false;
-      currentLevel=3;
-      cameraX=0; projectiles=[]; venom=[]; particles=[]; killCombo=0;
-      cutsceneActive=false;
-      buildPlayers();
-      buildLevel3Enemies();
-      buildLevel3Rocks();
-      buildKingCrab();
-      buildL3Waves();
-      audioManager.play(3);
-    }
+    if(victoryTimer<=0){ victoryTimer=0; showNextLevelBtn(); }
     s.vx=0;
   }
 
@@ -4907,10 +4926,7 @@ function updateLevel3(){
   // Victory countdown — L3 now transitions to L4 (UNDER THE SEA)
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){
-      victoryActive=false; won=false;
-      goToLevel(4);
-    }
+    if(victoryTimer<=0){ victoryTimer=0; showNextLevelBtn(); }
     s.vx=0;
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
     return;
@@ -6660,11 +6676,7 @@ function updateGen(){
   }
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){
-      victoryActive=false; won=false;
-      if(lv.next){ goToLevel(lv.next); }
-      else { finishCardActive=true; finishCardTimer=240; }
-    }
+    if(victoryTimer<=0){ victoryTimer=0; showNextLevelBtn(); }
     s.vx=0;
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
     return;
@@ -7097,7 +7109,7 @@ function updateSwim(){
   }
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){ victoryActive=false; won=false; if(lv.next){ goToLevel(lv.next); } else { finishCardActive=true; finishCardTimer=240; } }
+    if(victoryTimer<=0){ victoryTimer=0; showNextLevelBtn(); }
     s.vx*=0.9; s.vy*=0.9; s.x+=s.vx; s.y+=s.vy;
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
     return;
@@ -8368,6 +8380,7 @@ function buildLevelContent(n){
   buildBottles();
 }
 function goToLevel(n){
+  hideNextLevelBtn();
   currentLevel=n; cameraX=0;
   projectiles=[]; venom=[]; particles=[]; killCombo=0;
   cutsceneActive=false; victoryActive=false; victoryTimer=0;
@@ -8628,11 +8641,13 @@ function showLevelPopup(title, desc){
     const mx=(e.clientX-r.left)*scaleX, my=(e.clientY-r.top)*scaleY;
     if(mx>btn.x && mx<btn.x+btn.w && my>btn.y && my<btn.y+btn.h){
       menuRunning=false;
-      audioManager.stopTitle();
-      mScreen.style.opacity='0';
+      // 5-second cinematic hand-off: title screen fades while the music crossfades.
+      mScreen.style.transition='opacity 5s ease';
       mScreen.style.pointerEvents='none';
-      setTimeout(()=>{ mScreen.style.display='none'; }, 500);
-      restart(true);
+      requestAnimationFrame(()=>{ mScreen.style.opacity='0'; });
+      setTimeout(()=>{ mScreen.style.display='none'; }, 5000);
+      // Build L1 paused; keep title music for the crossfade; reveal popup after the fade.
+      restart(true, { silentAudio:true, audioFade:210, audioDelay:90, deferPopupMs:5000 });
       setupHiDPI();
       gameRunning=true;
       loop();
