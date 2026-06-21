@@ -1,3 +1,90 @@
+
+Sawyer & Otto Activities 2
+Continuation of this game development.
+
+
+
+Type / for skills
+
+
+Portal visual effects enhancement
+Last message just now
+Boss arena redesign with dynamic visuals and platforms
+Last message 2 minutes ago
+Sky seam fix on level 1
+Last message 4 hours ago
+Refactoring code into multiple files
+Last message 6 hours ago
+Boss stage environment and platform design
+Last message 6 hours ago
+Level 1 design corrections and artifact gating
+Last message 6 hours ago
+Integrate "The Drifter" boss sprite sheet into desert level
+Last message 17 hours ago
+Wave 3 haus presentation
+Last message 18 hours ago
+Game completion leaderboard setup
+Last message 18 hours ago
+Game UI and animation fixes
+Last message yesterday
+Code file updates for project
+Last message yesterday
+Haunted Haus boss sprite implementation
+Last message yesterday
+Creating a new boss sprite in haunted haus
+Last message yesterday
+King crab improvements
+Last message yesterday
+Sandy Shores crab boss rework scope
+Last message yesterday
+Restoring lost enemy code changes
+Last message yesterday
+Level 2 enemy design
+Last message 2 days ago
+Creating more intimidating antagonists
+Last message 2 days ago
+Redesigning enemies for a sinister overhaul
+Last message 2 days ago
+Sawyer and Otto victory screen design
+Last message 2 days ago
+Memory
+Only you
+Purpose & context Hotline is building "Sawyer and Otto Adventures" — a single-file HTML5 canvas 2D platformer with six themed levels (Texas desert, frozen peaks, sandy shores, underwater, haunted German manor, outer space), each with unique enemies and boss fights. The game is deployed statically via Vercel from a GitHub repo (public/index.html), developed iteratively with Claude across many sessions. The project's aesthetic direction is dark and unsettling — a "Coraline register" of stylized menace without gore or blood. Enemy art has been progressively overhauled across waves to match this tone. Active constraints include: no split/build pipeline (single HTML file is a hard preference), assets externalized to public/assets/ (images as .webp files, not embedded base64), and a CODENAVCHEATSHEET.md in the repo for navigation reference. Current state Level 1 (desert) is the active focus. Recent work completed: Platform layout redesigned as a clean five-platform symmetric pyramid arc with artifact at the apex Boss stage restructured with three dodge ledges, extended world width, and boss repositioned Physical boss gate replaced with a conditional spawn/render system gated on artifactCollected, plus a pulsing red "FIND THE ARTIFACT / TO ESCAPE" warning when entering the boss zone without the relic Baby bottle pickup, heart-drop system, geyser telegraph (neon synthwave aesthetic), and dynamic platform visuals (sandstone ledge reskins, crumble platform, sliding platforms, tumbleweeds, squash-and-settle landing effect) all implemented Background reverted to original after a visual-style correction (see Key Learnings) Enemy art overhaul waves completed: L1: Husk Crawler (scorpion), Bonecoil (snake), Effigy Boar (javelina) L2: The Hollow (owl), Rime-Husk (ice crab), Frost-Wretch (goblin), Gaunt Yeti (boss) L3: Sandcrab, Stingray, Seagull ("Steve"), The Wreckling (replaces hermit crab); King Crab Krawley boss overhauled with burrow/erupt ambush and sandcrab summoning L4: Void-horror enemies (The Veil, Lantern-Maw, Eye-Pod, The Grasper, Ribbon-Wraith, boss Lyra) L5: Haunted Haus enemies (Grub-Wurst, Mold Brute, Wraith Stein, Gibbet Knot, Bile Spitter); Baron Von Scream boss with full sprite animation (12 frames across walk/roar/magic), themed "screaming soul bolt" projectile, and spectral visual effects L6: Void-horror space enemies (Gazer, Devourer, Watcher, Rift, boss Nexus Nine) On the horizon Leaderboard: Tabled until level-lock is implemented (players must complete all six levels sequentially with a single running score). When ready: lock level selection, replace per-level score resets with carry-forward total, then build Upstash Redis leaderboard on top (two serverless functions in /api, no structural HTML changes) Haunted Haus Wave 3 enemy overhaul (Haus enemies, separate from Baron): queued after Level 1 work Shadow figure "hold-then-snap" animation (long stillness → sudden rapid grow/shrink + lateral jumps, replacing smooth sine-wave breathing): flagged but not yet implemented Yeti's roar telegraph (yeti.roarTell) has art support but is not wired into updateLevel2 behavior logic — deferred follow-up Key learnings & principles Never alter background/rendering visual style: If a background seam or visual issue exists, extend the original look to fix it — do not rewrite the gradient or change the aesthetic. Hotline explicitly rejected a rewrite and required byte-for-byte revert. Asset paths: Baron sprites live at assets/baron/ (must be public/assets/baron/ in repo to resolve correctly relative to index.html). All assets follow this pattern. Headless canvas for diagnosis: @napi-rs/canvas (prebuilt, no native cairo needed) works in this environment; the canvas npm package does not. Used for PNG previews and rendering diagnostics. Score variable: Currently resets to zero at each level transition — intentional until leaderboard prerequisites are met. Hero images: heroVictory (processed, background-removed) is used only on victory screens; herosawyer.webp is for intro/menu only. Do not swap these. Music/SFX: Split into separate musicOn and sfxOn flags (previously a single soundOn). Approach & patterns Hotline gives terse, numbered fix lists and expects all items handled in one output Preview-then-approve gate for major visual work: render PNG preview via Node.js harness → get approval → integrate → ship For iterative improvements to existing systems, direct implementation without preview is preferred Changes validated with node --check (extract largest <script> block via regex) before every ship Edit workflow: read working copy at /home/claude/gamework.html (source at /mnt/project/ is read-only) → Python str.replace scripts with assert s.count(old)==1 guards → validate → output to /mnt/user-data/outputs/sawyerandottoadventures.html Hotline deploys manually by committing to public/index.html in GitHub, triggering Vercel Corrections to over-reach are given promptly and directly — watch for scope creep beyond the stated request Tools & resources Environment: single HTML file, vanilla JS, HTML5 Canvas; Vercel static deployment; GitHub repo CODENAVCHEATSHEET.md: line-number navigation reference (kept current) Bash tools: grep -n to locate, sed -n 'START,ENDp' to read, Python splice scripts to edit @napi-rs/canvas: headless canvas rendering for previews and diagnostics Shared canvas helpers in codebase: tRand, texSpeckle, texHatch, texGrain, texCracks, barnacles(), weed(), aGlow, aEye, aDrip, _aRim Upstash Redis (Vercel Marketplace): planned for leaderboard when prerequisites are met
+
+Last updated 15 hours ago
+
+Instructions
+You will use the most concise language possible in responses to optimize claude usage and production efficiency. # SAWYER & OTTO ADVENTURES — Project Guide & Code Map ## Quick Start Rules 1. **Overwite** /rainsawyer_and_otto_adventures.html on each render hwich sequential version numbering assigned to the file name 2. **Work on** `/home/claude/game_work.html` (copy original, modify) 3. **Output to** `/mnt/user-data/outputs/sawyer_and_otto_adventures.html` in sequential order 4. **Deploy**: Commit `public/index.html` to GitHub → Vercel auto-deploys 5. **Validate**: Extract script → `node --check check.js` → grep landmarks → copy to output 6. **Use Shortcuts** Reference /CODE_NAV_CHEATSHEET.md BEFORE searching full code file. ## Game Constants ``` Canvas: W=680, H=360, FLOOR=304 Physics: GRAVITY=0.55 Audio: SFX keys, SFX2 (level-specific), sfx() dispatcher ``` ## Levels Overview | Level | Name | Boss | Status | |-------|------|------|--------| | 1 | Desert Dash | Rattler Rex | ✓ Complete | | 2 | Frozen Peaks | Yeti | ✓ Complete | | 3 | Sandy Shores | King Crab | ✓ Complete | | 4 | Under the Sea | Leviathan Lyra | Partial (swim physics + enemies) | | 5 | Spooky Haus | Baron Von Scream | Partial (German theme pending) | | 6 | Outer Space | Nexus Nine | ✓ Complete (L6 overhaul done) | ## Code Sections (Line Numbers) ### Core Setup & Audio (lines 1–700) | Section | Lines | Purpose | |---------|-------|---------| | Head/Styles | 1–289 | Layout, touch controls, media queries | | setupHiDPI | 290 | Canvas scale for retina | | Scoring (getBestScore, saveBestScore) | 323–480 | LocalStorage persistence | | Bottle system | 481–603 | Giant Otto charge-up mechanic | | Touch controls driver | 604–631 | Mobile d-pad + action buttons | | **Audio & SFX** | 632–703 | beep(), noise(), sfx() dispatcher | | **UI Controls** | 704–742 | toggleSound(), togglePause(), toggleFullscreen() | ### Character & Collision Physics (lines 757–1500) | Section | Lines | Purpose | |---------|-------|---------| | buildPlayers | 757–773 | Sawyer + Otto spawn | | makePlatform | 774–798 | Platform data structure | | makeEnemy | 799–807 | Enemy spawn factory | | buildEnemies | 808–832 | Level 1–3 enemy pools | | buildRocks | 833–880 | Collectible rocks | | buildBoss | 881–898 | Boss spawn | | **resolve(p)** | 899–918 | **Collision with platforms (critical)** | | **groundAhead(p, dir)** | 919–927 | **Check ground below (A.I., jump logic)** | | fireAttack(p) | 928–950 | Projectile firing | | nearestThreat() | 951–964 | Enemy detection radius | | **updateOtto()** | 965–1028 | **Baby AI: pathfinding, boost, giant form** | | **update()** | 1029–1406 | **Main per-frame logic (gravity, input, damage)** | | safeRespawnX | 1407–1428 | Respawn position selection | | respawnSpot(p) | 1429–1439 | Checkpoint / respawn | | hurt(p) | 1440–1452 | Damage state machine | ### Textures & Sprites (lines 1453–1800) | Section | Lines | Purpose | |---------|-------|---------| | rr() helper | 1453–1458 | Rounded rect utility | | **Deterministic texture generators** | 1464–1520 | tRand(), texSpeckle(), texGrain(), texCracks(), texHatch() | | **Character costume selection** | 1537–1583 | charCostume(), sprite sequences, animation frames | | **Sprite drawing** | 1593–1640 | drawCharSprite() (uses animated atlas) | | Dev sprite tuner | 1646–1772 | Press ` to live-edit character animation | | **drawPlayer()** | 1772–1824 | **Main character render** | | drawBoy() | 1825–1916 | Sawyer detail art | | drawBaby() | 1917–2021 | Otto detail art | ### Game Rendering (lines 2022–3500) | Section | Lines | Purpose | |---------|-------|---------| | drawProjectiles() | 2022–2054 | Fire/venom balls | | drawVenom() | 2055–2065 | Venom trail effect | | drawCheckpoint() | 2066–2083 | Checkpoint flag art | | drawRocks() | 2084–2231 | Collectible rocks w/ shimmer | | **drawScorpion()** | 2232–2256 | **Level 1 enemy art** | | **drawSnake()** | 2257–2283 | **Level 1 enemy art** | | **drawJavelina()** | 2284–2380 | **Level 1 enemy art** | | **drawEnemies()** | 2381–2424 | **Level 1–3 enemy dispatch** | | **drawBoss()** | 2425–2501 | **Boss render dispatch** | | drawCactus() | 2502–2530 | Environmental detail | | drawPitVoids() | 2531–2570 | Pit edges + shadows | | **drawPlatforms()** | 2571–2631 | **Platform render w/ textures** | | **cosmicGlow()** | 2632–2873 | **Procedural glow shader cache (L6)** | | **drawBg()** | 2874–2988 | **Background parallax per level** | | **drawBike()** | 2989–3104 | **Getaway bike w/ rocket thruster (L6)** | | drawEscapePortal() | 3105–3161 | Portal animation | | drawHeroAt() | 3162–3172 | Hero pose for cutscenes | | drawBikeEscapeRiders() | 3173–3206 | Sawyer + Otto on bike | | **drawCutscene()** | 3207–3326 | **Boss intro / transitions** | | drawYetiSimple(), drawCrabSimple(), drawBossSimple() | 3327–3394 | Simple boss art for portraits | | **drawVictoryAnimation()** | 3395–3489 | **Win state (dust clouds, hero pose)** | | drawOverlay(), drawFinishCard(), drawCreditsOverlay() | 3490–3654 | UI overlays | | **loop()** | 3736–3976 | **Main game loop (calls update + draw)** | ### Level 2: Frozen Peaks (lines 4009–4240) | Section | Lines | Purpose | |---------|-------|---------| | buildLevel2Enemies() | 4009–4043 | Penguin, ice elemental, frozen dog | | buildLevel2Rocks() | 4044–4059 | Snow-covered rocks | | **buildYeti()** | 4060–4074 | **Yeti boss spawn** | | initSnowflakes() | 4075–4094 | Falling snow animation | | **buildIcicles()** | 4095–4240 | **Icicle hazards** | ### Level 3: Sandy Shores (lines 4148–6165) | Section | Lines | Purpose | |---------|-------|---------| | buildLevel3Enemies() | 4148–4181 | Crabs, stingray, seagull | | buildLevel3Rocks() | 4182–4240 | Sand rocks | | buildL3Waves() | 4241–4287 | Wave animation | | **resolveL3()** | 4288–... | **Level 3 collision (sand platforms)** | | **groundAheadL3()** | ... | **Level 3 ground check** | | **updateLevel3()** | ... | **Level 3 main update** | | drawL3Enemies() | 6002–6022 | Enemy render dispatch | | **drawKingCrab()** | 6023–6159 | **King Crab boss art** | | drawL3Flag() | 6160–6164 | Finish flag | ### Levels 4–6: Config-Driven Engine (lines 6166–8055) | Section | Lines | Purpose | |---------|-------|---------| | **LV[] config object** | ~6180–6230 | **Per-level theme, enemy types, platform layout** | | genPlatforms() | 6170–6230 | Procedural platform builder | | curLV() | 6231–6235 | Current level config accessor | | **buildLevelGen()** | 6236–6275 | **Generic level builder for L4/L5/L6** | | buildGenRocks() | 6276–6288 | Generic rock spawner | | **buildGenBoss()** | 6289–6297 | **Generic boss spawner** | | buildLevel4() → buildSwimLevel() | 6298–6299 | Underwater level init | | **buildHausLevel()** | 6329–6343 | **German house level init** | | buildLevel5() | 6344–6345 | Wrap Haus + boss | | **buildSpaceLevel()** | 6365–6384 | **Space level init** | | buildLevel6() | 6385–6386 | Wrap Space + boss | | **resolveGen()** | 6388–6402 | **Generic collision (all levels)** | | **groundAheadGen()** | 6403–6409 | **Generic ground check** | | **updateOttoGen()** | 6410–6452 | **Generic Otto AI** | | **updateGen()** | 6457–6805 | **Main generic update loop** | ### Level 4: Under the Sea (lines 6806–7476) | Section | Lines | Purpose | |---------|-------|---------| | **buildSwimLevel()** | 6813–6872 | **Kelp obstacles, currents, enemies, pearls** | | **buildSwimBoss()** | 6873–6879 | **Leviathan Lyra spawn** | | **resolveSwim()** | 6881–6896 | **Swim collision (weave through kelp)** | | **applyCurrents()** | 6897–6911 | **Current push physics** | | **updateOttoSwim()** | 6912–6925 | **Otto AI in swim mode** | | **updateSwim()** | 6926–7142 | **Main swim-mode update (4-dir movement, pearls, boss)** | | drawSwimBg() | 7144–7168 | Ocean background | | drawSwimCurrents() | 7169–7186 | Current visualization | | drawSwimTerrain() | 7187–7265 | Kelp + reef art | | drawSwimHazards() | 7266–7276 | Urchin beds | | drawSwimPearls() | 7288–7298 | Collectible pearls | | drawSwimEnemies() | 7299–7390 | Underwater creature render | | drawSwimInk() | 7391–7399 | Boss ink attack | | **drawSwimBossLyra()** | 7400–7454 | **Leviathan Lyra boss art** | | drawSwimMurk() | 7455–7463 | Murk effect (phase 2) | ### Levels 4–6: Generic Theme Drawing (lines 7477–8020) | Section | Lines | Purpose | |---------|-------|---------| | drawHausDarkness() | 7479–7504 | German house fog/shadow | | **drawGenBg()** | 7505–7566 | **Themed background (sea/haus/space)** | | drawBoostPads() | 7567–7581 | Speed boost pad art | | drawGenPitVoids() | 7582–7593 | Generic pit edges | | **drawGenPlatforms()** | 7594–7667 | **Themed platform render** | | drawGenRocks() | 7668–7682 | Themed collectibles | | drawGenRings() | 7683–7713 | Space ring bonus collectibles | | **drawGenEnemies()** | 7714–7763 | **Enemy dispatch (sea/haus/space)** | | drawSeaEnemy(), drawHausEnemy(), drawSpaceEnemy() | 7764–7901 | Themed enemy art | | drawGenShockwaves() | 7902–7909 | Shockwave effect | | **drawGenBoss()** | 7910–8016 | **Boss render dispatch** | | drawBossSea(), drawBossHaus(), drawBossSpace() | 7943–8016 | Themed boss art | | drawGenFlag() | 8017–8020 | Finish flag | ### Level Transitions & Menu (lines 8021–8352) | Section | Lines | Purpose | |---------|-------|---------| | buildLevel4to6Jump() | 8022–8022 | Alias for buildLevelContent | | **buildLevelContent()** | 8023–8031 | **Dispatch to correct level builder** | | **goToLevel()** | 8032–8041 | **Load level + init UI** | | showLevelPopup() | 8043–8055 | Level intro card | | **HTML footer** | ~8056+ | Menu buttons, canvas, touch controls, scripts | --- ## Common Patterns & Fixes ### Adding a new enemy 1. Add spawn in `buildLevelNEnemies()` → `makeEnemy(platform, 'typename')` 2. Add draw in `drawNEnemies()` → dispatch to `drawTypeName()` 3. Update in `updateLevel()` → apply A.I. + collision 4. Validate `sfx()` calls against `SFX`/`SFX2` keys ### Boss fight issues - **Camera lock**: `if(boss.state==='fight') { ...pan to fixed center... }` - **Velocity cap**: `Math.min(vy + GRAVITY, 12)` prevents cutscene jitter - **Platform positioning**: Use `boss.y = FLOOR - 60` after resolve calls ### Texture shimmer (deterministic noise) - Use `tRand(seed)` with world coordinates → same output every frame - Call `texSpeckle(sx, sy, w, h, count, color, seed, maxR)` - Never re-seed per-frame or use `Math.random()` in draw calls ### Sound validation - All `sfx('name')` must exist in `SFX` or `SFX2` - L2-specific: check `SFX2['icecreak']` before calling - Use grep: `grep -n "sfx(" game_work.html` → cross-check against SFX object ### Mobile touch controls - `#touch-controls` hidden on desktop (`@media (pointer: coarse)`) - d-pad sets `keys.up/down/left/right` - Action buttons set `keys.jump/attack/charge` - Uses `setPointerCapture()` for stable tracking --- ## Workflow Checklist - [ ] Copy original → `/home/claude/game_work.html` - [ ] Make targeted edits (Python `rep()` if bulk replacements) - [ ] Extract largest `<script>` → `check.js` - [ ] Run: `node --check check.js` (syntax validation) - [ ] Grep for landmarks: `grep -n "function.*{" check.js` - [ ] Copy corrected script back into full HTML - [ ] Copy to output: `/mnt/user-data/outputs/sawyer_and_otto_adventures.html` - [ ] Commit to GitHub `public/index.html` → Vercel redeploys - [ ] Test on device (desktop + mobile if possible) --- ## Key Files & Paths | File | Purpose | |------|---------| | `/mnt/project/sawyer_and_otto_adventures_FINAL_FINAL.html` | **Original (READ-ONLY)** | | `/home/claude/game_work.html` | **Working copy (EDIT HERE)** | | `/mnt/user-data/outputs/sawyer_and_otto_adventures.html` | **Deliverable** | | `/mnt/transcripts/journal.txt` | Session history / context | | `public/index.html` (GitHub) | Deployed via Vercel | --- ## Credit "Activities with Ryan"
+
+Files
+13% of project capacity used
+Search mode
+
+sawyer_and_otto_adventures_v002.html
+10,292 lines
+
+html
+
+
+
+LEVEL_DESIGN_PRINCIPLES.md
+75 lines
+
+md
+
+
+
+PROJECT_GUIDE.md
+227 lines
+
+md
+
+
+
+sawyer_and_otto_adventures_v002.html
+
+
+Syntax highlighting has been disabled due to code size.
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -4347,55 +4434,120 @@ function drawEscapePortal(cx, cy, R, open01, t){
   if(open01<=0) return;
   const o=Math.max(0,Math.min(1,open01)); const rr=R*o;
   const c=ctx; c.save();
+
+  // ===== Outer shockwave rings expanding & fading =====
   c.globalCompositeOperation='lighter';
-  // Outer aura bloom — wide additive glow that breathes
-  const breathe=1+0.08*Math.sin(t*2.4);
-  let ag=c.createRadialGradient(cx,cy,rr*0.1,cx,cy,rr*2.1*breathe);
-  ag.addColorStop(0,'rgba(170,110,255,0.45)'); ag.addColorStop(0.45,'rgba(120,60,220,0.20)');
-  ag.addColorStop(0.8,'rgba(70,30,140,0.08)'); ag.addColorStop(1,'rgba(0,0,0,0)');
-  c.fillStyle=ag; c.beginPath(); c.arc(cx,cy,rr*2.1*breathe,0,7); c.fill();
+  for(let w=0; w<3; w++){
+    const wp=((t*0.45 + w/3)%1);
+    const wr=rr*(0.9+wp*2.4);
+    c.globalAlpha=(1-wp)*0.5*o;
+    c.strokeStyle=['rgba(150,180,255,1)','rgba(220,120,255,1)','rgba(90,230,255,1)'][w];
+    c.lineWidth=Math.max(1, rr*0.05*(1-wp));
+    c.beginPath(); c.ellipse(cx,cy,wr,wr*1.12,0,0,7); c.stroke();
+  }
+  c.globalAlpha=1;
+
+  // ===== Wide aura bloom — breathing, double-layer =====
+  const breathe=1+0.10*Math.sin(t*2.4);
+  let ag=c.createRadialGradient(cx,cy,rr*0.1,cx,cy,rr*2.4*breathe);
+  ag.addColorStop(0,'rgba(190,130,255,0.55)'); ag.addColorStop(0.4,'rgba(130,70,235,0.26)');
+  ag.addColorStop(0.78,'rgba(70,30,150,0.10)'); ag.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=ag; c.beginPath(); c.arc(cx,cy,rr*2.4*breathe,0,7); c.fill();
+
+  // ===== God-ray beams sweeping out of the portal =====
+  c.save(); c.translate(cx,cy); c.rotate(t*0.6);
+  for(let b=0;b<10;b++){
+    c.rotate(Math.PI*2/10);
+    const flick=0.18+0.16*(0.5+0.5*Math.sin(t*4+b*1.7));
+    const len=rr*(1.8+0.5*Math.sin(t*1.3+b));
+    let rg=c.createLinearGradient(0,0,0,-len);
+    rg.addColorStop(0,`rgba(210,170,255,${flick})`); rg.addColorStop(1,'rgba(180,140,255,0)');
+    c.fillStyle=rg; c.beginPath();
+    c.moveTo(-rr*0.08,0); c.lineTo(rr*0.08,0); c.lineTo(rr*0.02,-len); c.lineTo(-rr*0.02,-len); c.closePath(); c.fill();
+  }
+  c.restore();
   c.globalCompositeOperation='source-over';
-  // Dark event-horizon disc
-  c.fillStyle='#070218'; c.beginPath(); c.ellipse(cx,cy,rr,rr*1.12,0,0,7); c.fill();
-  // Inner depth gradient (sense of a tunnel)
-  let dg=c.createRadialGradient(cx,cy,rr*0.05,cx,cy,rr);
-  dg.addColorStop(0,'rgba(40,10,90,0.0)'); dg.addColorStop(0.6,'rgba(60,20,120,0.35)'); dg.addColorStop(1,'rgba(120,60,220,0.55)');
-  c.fillStyle=dg; c.beginPath(); c.ellipse(cx,cy,rr,rr*1.12,0,0,7); c.fill();
-  // Spiraling energy arms (more arms, additive)
-  c.save(); c.translate(cx,cy); c.rotate(t*1.4); c.globalCompositeOperation='lighter';
-  for(let a=0;a<4;a++){
-    c.rotate(Math.PI*2/4);
-    const col=['rgba(120,150,255,0.8)','rgba(200,110,255,0.8)','rgba(90,220,255,0.7)','rgba(255,140,230,0.7)'][a];
-    c.strokeStyle=col; c.lineWidth=Math.max(1.5,rr*0.06); c.lineCap='round'; c.beginPath();
-    for(let i=0;i<70;i++){ const f=i/70; const ang=f*6.0; const rad=rr*0.96*Math.pow(f,0.8);
+
+  // ===== Dark event-horizon disc =====
+  c.fillStyle='#050214'; c.beginPath(); c.ellipse(cx,cy,rr,rr*1.12,0,0,7); c.fill();
+
+  // ===== Swirling tunnel interior (concentric warped bands) =====
+  c.save();
+  c.beginPath(); c.ellipse(cx,cy,rr*0.97,rr*1.09,0,0,7); c.clip();
+  c.globalCompositeOperation='lighter';
+  for(let ring=0; ring<7; ring++){
+    const depth=ring/7;
+    const spin=t*(1.2+depth*2.4)*(ring%2?1:-1);
+    const rad=rr*(0.95-depth*0.82);
+    c.save(); c.translate(cx,cy); c.rotate(spin);
+    c.strokeStyle=`rgba(${120+ring*18},${70+ring*22},255,${0.16+depth*0.4})`;
+    c.lineWidth=Math.max(1, rr*0.05);
+    c.beginPath();
+    for(let i=0;i<=40;i++){ const a=i/40*7; const wob=1+0.12*Math.sin(a*5+t*3);
+      const x=Math.cos(a)*rad*wob, y=Math.sin(a)*rad*1.1*wob; if(i===0)c.moveTo(x,y); else c.lineTo(x,y); }
+    c.stroke(); c.restore();
+  }
+  c.restore();
+
+  // ===== Multi-arm spiral vortex =====
+  c.save(); c.translate(cx,cy); c.rotate(t*1.6); c.globalCompositeOperation='lighter';
+  const ARMS=6;
+  for(let a=0;a<ARMS;a++){
+    c.rotate(Math.PI*2/ARMS);
+    const col=['rgba(140,170,255,0.85)','rgba(210,120,255,0.85)','rgba(90,225,255,0.75)','rgba(255,150,235,0.75)','rgba(170,255,210,0.7)','rgba(255,210,140,0.7)'][a];
+    c.strokeStyle=col; c.lineWidth=Math.max(1.5,rr*0.055); c.lineCap='round'; c.beginPath();
+    for(let i=0;i<80;i++){ const f=i/80; const ang=f*7.2; const rad=rr*0.96*Math.pow(f,0.8);
       const x=Math.cos(ang)*rad, y=Math.sin(ang)*rad*1.1; if(i===0)c.moveTo(x,y); else c.lineTo(x,y); }
     c.stroke();
   }
   c.restore();
-  // Bright pulsing core
-  const corePulse=0.5+0.12*Math.sin(t*6);
+
+  // ===== Bright pulsing core with chromatic flicker =====
+  const corePulse=0.5+0.16*Math.sin(t*6);
   c.globalCompositeOperation='lighter';
-  let cg=c.createRadialGradient(cx,cy,0,cx,cy,rr*corePulse*1.2);
-  cg.addColorStop(0,'rgba(255,245,255,0.95)'); cg.addColorStop(0.4,'rgba(220,170,255,0.55)'); cg.addColorStop(1,'rgba(120,60,220,0)');
-  c.fillStyle=cg; c.beginPath(); c.arc(cx,cy,rr*corePulse*1.2,0,7); c.fill();
-  // Crackling rim arcs
-  c.strokeStyle='rgba(230,160,255,0.95)'; c.lineWidth=2; c.lineCap='round';
-  for(let k=0;k<9;k++){
-    const a0=t*2.2 + k*0.7; const seg=5; c.beginPath();
-    for(let s=0;s<=seg;s++){ const a=a0+s*0.1; const jit=(Math.sin(a*11+k)*0.5+0.5)*rr*0.14;
+  let cg=c.createRadialGradient(cx,cy,0,cx,cy,rr*corePulse*1.3);
+  cg.addColorStop(0,'rgba(255,250,255,0.98)'); cg.addColorStop(0.35,'rgba(225,180,255,0.6)'); cg.addColorStop(1,'rgba(130,70,235,0)');
+  c.fillStyle=cg; c.beginPath(); c.arc(cx,cy,rr*corePulse*1.3,0,7); c.fill();
+  // tiny cyan core wink
+  c.fillStyle=`rgba(160,235,255,${0.4+0.3*Math.sin(t*9)})`;
+  c.beginPath(); c.arc(cx,cy,rr*0.10,0,7); c.fill();
+
+  // ===== Forked lightning bolts arcing across =====
+  for(let k=0;k<4;k++){
+    if((Math.sin(t*5+k*2.1))>0.55){
+      const a0=t*1.3+k*1.9; const x0=cx+Math.cos(a0)*rr*0.95, y0=cy+Math.sin(a0)*rr*1.06;
+      const x1=cx+Math.cos(a0+Math.PI)*rr*0.95, y1=cy+Math.sin(a0+Math.PI)*rr*1.06;
+      c.strokeStyle='rgba(225,235,255,0.9)'; c.lineWidth=1.6; c.lineCap='round'; c.beginPath();
+      const steps=8; c.moveTo(x0,y0);
+      for(let s=1;s<=steps;s++){ const f=s/steps; const jx=(Math.sin(f*30+k*7+t*10))*rr*0.12*(1-Math.abs(f-0.5)*2);
+        const jy=(Math.cos(f*26+k*5+t*9))*rr*0.12*(1-Math.abs(f-0.5)*2);
+        c.lineTo(x0+(x1-x0)*f+jx, y0+(y1-y0)*f+jy); }
+      c.stroke();
+    }
+  }
+
+  // ===== Crackling rim arcs (electric edge) =====
+  c.strokeStyle='rgba(235,170,255,0.95)'; c.lineWidth=2; c.lineCap='round';
+  for(let k=0;k<11;k++){
+    const a0=t*2.2 + k*0.6; const seg=5; c.beginPath();
+    for(let s=0;s<=seg;s++){ const a=a0+s*0.1; const jit=(Math.sin(a*11+k)*0.5+0.5)*rr*0.16;
       const rad=rr*1.02+jit*(s%2?1:-1); const x=cx+Math.cos(a)*rad, y=cy+Math.sin(a)*rad*1.12;
       if(s===0)c.moveTo(x,y); else c.lineTo(x,y); }
     c.stroke();
   }
   c.globalCompositeOperation='source-over';
-  // Sparkle motes being pulled inward
-  for(let d=0;d<14;d++){
-    const seed=d*0.66; const orbit=((t*0.5+seed)%1);          // 1->0 as pulled in
-    const rad=rr*(1.6 - orbit*0.9); const a=seed*5.3 + t*1.1;
+
+  // ===== Sparkle motes & streaking debris pulled inward =====
+  for(let d=0;d<22;d++){
+    const seed=d*0.66; const orbit=((t*0.55+seed)%1);          // 1->0 as pulled in
+    const rad=rr*(1.9 - orbit*1.2); const a=seed*5.3 + t*1.3;
     const x=cx+Math.cos(a)*rad, y=cy+Math.sin(a)*rad*1.12;
-    const s=Math.max(1, rr*0.04*(0.5+orbit));
-    c.globalAlpha=0.85*orbit; c.fillStyle= d%3? '#E8D4FF':'#9FE0FF';
-    c.beginPath(); c.moveTo(x,y-s); c.lineTo(x+s,y); c.lineTo(x,y+s); c.lineTo(x-s,y); c.closePath(); c.fill();
+    const sz=Math.max(1, rr*0.045*(0.5+orbit));
+    // motion streak toward centre
+    c.globalAlpha=0.5*orbit; c.strokeStyle= d%3? '#E8D4FF':'#9FE0FF'; c.lineWidth=1.4;
+    c.beginPath(); c.moveTo(x,y); c.lineTo(cx+Math.cos(a)*rad*0.82, cy+Math.sin(a)*rad*0.82*1.12); c.stroke();
+    c.globalAlpha=0.9*orbit; c.fillStyle= d%3? '#E8D4FF':'#9FE0FF';
+    c.beginPath(); c.moveTo(x,y-sz); c.lineTo(x+sz,y); c.lineTo(x,y+sz); c.lineTo(x-sz,y); c.closePath(); c.fill();
   }
   c.globalAlpha=1;
   c.restore();
@@ -4605,9 +4757,7 @@ function drawVictoryAnimation(){
   const ottoDrawX   = W/2 + 10;
   const ottoDrawY   = FLOOR - 26 - bounce*1.2;
 
-  // Portal glow backdrop
-  drawEscapePortal(W/2, H*0.46, 56+prog*16, 1, prog*6);
-  // Sawyer victory hero pose — flipped to face inward toward Otto; sprite frame is the fallback
+  // Sawyer victory hero pose — faces left; sprite frame is the fallback
   {
     const hS = window.heroVictory;
     const scx = W/2 - 56, feetY = FLOOR - 4 - bounce;
@@ -4618,11 +4768,10 @@ function drawVictoryAnimation(){
       ctx.fillStyle='rgba(0,0,0,0.4)';
       ctx.beginPath(); ctx.ellipse(scx, FLOOR-6, sw*0.38, 9, 0,0,7); ctx.fill();
       ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
-      ctx.translate(scx, 0); ctx.scale(-1, 1); // face right toward Otto
-      ctx.drawImage(hS, 0,0, hS.naturalWidth, hS.naturalHeight*0.988, -sw/2, feetY - sh, sw, sh);
+      ctx.drawImage(hS, 0,0, hS.naturalWidth, hS.naturalHeight*0.988, scx-sw/2, feetY - sh, sw, sh);
       ctx.restore();
     } else {
-      sawyer.facing = 1;
+      sawyer.facing = -1;
       drawHeroAt(sawyer, scx, feetY, 100+prog*10, 1, 0);
     }
   }
