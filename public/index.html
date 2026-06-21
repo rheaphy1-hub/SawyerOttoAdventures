@@ -2028,6 +2028,9 @@ function update(){
       buildLevel2Rocks();
       buildYeti();
       buildIcicles();
+      buildEmberStone();
+      snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0};
+      for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}}
       audioManager.play(2);
     }
     // Lock Sawyer in place during victory
@@ -2680,6 +2683,28 @@ function drawProjectiles(){
   for (const pr of projectiles){
     const x=pr.x-cameraX, y=pr.y;
     if (pr.type==='ball'){
+      if(pr.flame){
+        ctx.save(); ctx.globalCompositeOperation='lighter';
+        const tnow=performance.now(), fl=0.65+0.35*Math.sin(tnow*0.03+pr.x*0.12), fl2=0.5+0.5*Math.sin(tnow*0.05+pr.y*0.2);
+        // wide outer corona
+        const og=ctx.createRadialGradient(x,y,1,x,y,pr.r*3.6);
+        og.addColorStop(0,'rgba(255,200,110,'+(0.55*fl)+')'); og.addColorStop(0.4,'rgba(255,110,30,'+(0.42*fl)+')'); og.addColorStop(1,'rgba(255,70,20,0)');
+        ctx.fillStyle=og; ctx.beginPath(); ctx.arc(x,y,pr.r*3.6*(0.92+0.12*fl2),0,7); ctx.fill();
+        // long trailing fire licks behind travel direction (tapered tongue)
+        const ang=Math.atan2(pr.vy||0,pr.vx||0.001);
+        for(let k=1;k<=6;k++){ const tx=x-(pr.vx||0)*k*0.95, ty=y-(pr.vy||0)*k*0.95;
+          const rr=pr.r*(1.25-k*0.16)*(0.8+0.4*Math.sin(tnow*0.04+k));
+          if(rr<=0) break;
+          ctx.fillStyle='rgba(255,'+Math.round(120+k*16)+','+Math.round(30+k*8)+','+(0.42/k)+')';
+          ctx.beginPath(); ctx.arc(tx,ty,rr,0,7); ctx.fill(); }
+        // bright inner flame body
+        const ig=ctx.createRadialGradient(x,y,0.5,x,y,pr.r*1.5);
+        ig.addColorStop(0,'rgba(255,255,235,'+(0.95*fl)+')'); ig.addColorStop(0.45,'rgba(255,210,120,0.8)'); ig.addColorStop(1,'rgba(255,140,50,0)');
+        ctx.fillStyle=ig; ctx.beginPath(); ctx.arc(x,y,pr.r*1.5,0,7); ctx.fill();
+        // hot white core
+        ctx.fillStyle='rgba(255,255,255,'+(0.6+0.3*fl)+')'; ctx.beginPath(); ctx.arc(x,y,pr.r*0.5,0,7); ctx.fill();
+        ctx.restore();
+      }
       ctx.save(); ctx.translate(x,y); ctx.rotate(pr.spin);
       // Soccer ball: white base
       ctx.beginPath(); ctx.arc(0,0,pr.r,0,7);
@@ -3759,17 +3784,22 @@ const cosmicGlow = (function(){
   // L2 — frozen night: deepen contrast, bloom the aurora + moon
   function gradeFrozen(){
     ctx.save();
+    // HP-linked enrage ramp: arctic blue (phase 1) → deep glacial violet / black-ice bruise (phase 2)
+    const enr = (typeof l2BossEnrage!=='undefined') ? l2BossEnrage : 0;
+    const mix=(a,b)=>Math.round(a+(b-a)*enr);
     const g=ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,'rgba(6,12,40,0.50)'); g.addColorStop(0.5,'rgba(10,28,60,0.28)'); g.addColorStop(1,'rgba(20,50,80,0.10)');
-    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    g.addColorStop(0,'rgba('+mix(6,18)+','+mix(12,4)+','+mix(40,30)+','+(0.50+0.30*enr)+')');
+    g.addColorStop(0.5,'rgba('+mix(10,28)+','+mix(28,8)+','+mix(60,40)+','+(0.28+0.30*enr)+')');
+    g.addColorStop(1,'rgba('+mix(20,30)+','+mix(50,16)+','+mix(80,52)+','+(0.10+0.24*enr)+')');
+    ctx.fillStyle=g; ctx.fillRect(0,-380,W,H+380);
     ctx.globalCompositeOperation='lighter';
     const auT=Date.now()/2600;
     for(let b=0;b<2;b++){ const col=b?gGreen:gMoon;
       for(let x=0;x<=W;x+=64){ const y=46+b*26+Math.sin(x*0.012+auT+b*1.7)*16; const sz=52;
-        ctx.globalAlpha=0.10; ctx.drawImage(col,x-sz/2,y-sz/2,sz,sz); } }
-    ctx.globalAlpha=0.4; const ms=130; ctx.drawImage(gMoon,(W-100)-ms/2,55-ms/2,ms,ms);
+        ctx.globalAlpha=0.10*(1-enr*0.6); ctx.drawImage(col,x-sz/2,y-sz/2,sz,sz); } }
+    ctx.globalAlpha=0.4*(1-enr*0.5); const ms=130; ctx.drawImage(gMoon,(W-100)-ms/2,55-ms/2,ms,ms);
     ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
-    vignette(0.32);
+    vignette(0.32+0.20*enr);
     ctx.restore();
   }
 
@@ -4989,7 +5019,7 @@ function restartCurrentLevel(){
   currentLevel=lvl;
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   buildPlayers();
-  if(currentLevel===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); }
+  if(currentLevel===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
   else if(currentLevel===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); }
   else if(currentLevel>=4&&currentLevel<=6){ buildLevelContent(currentLevel); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
@@ -5016,7 +5046,7 @@ function jumpToLevel(n){
   if(menu){menu.style.opacity='0';menu.style.pointerEvents='none';menu.style.display='none';}
   audioManager.stop();
   buildPlayers();
-  if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); }
+  if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
   else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); }
   else if(n>=4&&n<=6){ buildLevel4to6Jump(n); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
@@ -5045,7 +5075,7 @@ function restart(resetLevel){
   
   buildPlayers();
   if(currentLevel===2){
-    buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles();
+    buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}}
   } else if(currentLevel===3){
     buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves();
   } else if(currentLevel>=4&&currentLevel<=6){
@@ -5104,13 +5134,15 @@ function loop(){
   ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);
   ctx.imageSmoothingEnabled = true;
   ctx.save();
-  ctx.translate(shakeX, shakeY - ((currentLevel===6||currentLevel===1)?cameraY:0));
+  ctx.translate(shakeX, shakeY - ((currentLevel===6||currentLevel===1||currentLevel===2)?cameraY:0));
   let _cutPrevCamX = null;
   if (cutsceneActive){ _cutPrevCamX = applyCutsceneCam(); }
   
   if(currentLevel===2){
-    drawL2Bg(); cosmicGlow(); drawL2Platforms(); drawL2Flag(); drawL2Rocks();
-    drawL2Enemies(); drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawIcicles(); drawProjectiles(); drawCheckpoint();
+    drawL2Bg(); cosmicGlow(); drawL2Platforms(); drawL2Flag(); drawL2Rocks(); drawEmberStone(); drawL2Artifact();
+    drawL2Enemies(); drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawL2Stals(); drawIcicles(); drawProjectiles(); drawCheckpoint();
+    if(snowWall>0.01) drawSnowWall();
+    drawL2BossWarning();
   } else if(currentLevel===3){
     drawL3Bg(); cosmicGlow(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
     drawL3Enemies(); drawL3Waves(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawCheckpoint();
@@ -5303,49 +5335,72 @@ function loop(){
 // =========================================================================
 //  16. LEVEL 2 — FROZEN PEAKS
 // =========================================================================
-const L2_WORLD_W = 3200;
-const L2_BOSS_GATE = 2500;
-const L2_FLAG = { x: L2_WORLD_W - 140, y: FLOOR };
+const L2_WORLD_W = 3500;
+const L2_BOSS_GATE = 2820;          // cutscene trigger, inside the whiteout approach
+const L2_GAP_START = 2400;          // empty no-enemy crossing begins; blizzard starts to swallow
+const L2_ARENA_X0  = 2900;          // left edge of the isolated frozen arena
+const L2_ARENA_X1  = 3400;          // right edge (escape flag sits here)
+const L2_FLAG = { x: L2_ARENA_X1 - 24, y: FLOOR };
 const L2_FLOOR = FLOOR; // same floor height
 
+// snowWall: blizzard whiteout that rises to swallow the arena (themed L1 sandWall).
+// l2BossEnrage: 0→1 HP-linked grade ramp for the Yeti's phase-2 bruise.
+let snowWall = 0, l2BossEnrage = 0;
+let l2Arena = { active:false, spawnT:0, deathBurst:0 };
+let l2PlatTimer = 0;
+
 const l2Platforms = [
-  // Ground with pits
+  // ---- Ground with pits (always-safe path) ----
   makePlatform(0, FLOOR, 420),
   makePlatform(480, FLOOR, 460),
-  makePlatform(980, FLOOR, 500),
-  makePlatform(1530, FLOOR, 440),
-  makePlatform(2020, FLOOR, L2_WORLD_W-2020),
-  makePlatform(180, FLOOR-100, 120),
-  makePlatform(370, FLOOR-160, 90),
-  makePlatform(520, FLOOR-80, 110),
-  makePlatform(690, FLOOR-170, 80),
-  makePlatform(860, FLOOR-110, 130),
-  makePlatform(1060, FLOOR-150, 100),
-  makePlatform(1230, FLOOR-80, 110),
-  makePlatform(1430, FLOOR-170, 90),
-  makePlatform(1620, FLOOR-120, 120),
-  makePlatform(1840, FLOOR-160, 100),
-  makePlatform(2020, FLOOR-100, 110),
-  makePlatform(2230, FLOOR-155, 100),
-  makePlatform(2420, FLOOR-170, 90),
-  makePlatform(2650, FLOOR-160, 100),
+  makePlatform(980, FLOOR, 520),
+  makePlatform(1560, FLOOR, 420),
+  makePlatform(2040, FLOOR, L2_WORLD_W-2040),
+  // ---- MID track: sparse, varied patrol shelves (first stretch) ----
+  {...makePlatform(240,  FLOOR-90, 100), mid:true, shape:'disc'},
+  {...makePlatform(470,  FLOOR-150, 90), mid:true, shape:'rock'},
+  {...makePlatform(700,  FLOOR-100, 110), mid:true, shape:'slab'},
+  {...makePlatform(960,  FLOOR-160, 90), mid:true, shape:'rock'},
+  {...makePlatform(1140, FLOOR-110, 100), mid:true, shape:'disc'},
+  // ---- CLIMB THE FALLS: asymmetric switchback cascade up the frozen waterfall (~x=1500) ----
+  {...makePlatform(1360, FLOOR-72,  92), cascade:true, shape:'rock'},                 // ascent 1
+  {...makePlatform(1296, FLOOR-142, 84), cascade:true, shape:'slab'},                 // ascent 2 (switchback left)
+  {...makePlatform(1404, FLOOR-208, 84), cascade:true, shape:'rock'},                 // ascent 3 (switchback right)
+  {...makePlatform(1468, FLOOR-272, 120), cascade:true, shape:'slab', apex:true},     // CREST — Ember Stone frozen in the ice
+  // ---- ICE-SLIDE CHUTE: slick stepped ramp riding back down to ground ----
+  {...makePlatform(1632, FLOOR-208, 96), cascade:true, shape:'slab', slick:true},     // chute 1
+  {...makePlatform(1754, FLOOR-132, 96), cascade:true, shape:'slab', slick:true},     // chute 2
+  {...makePlatform(1872, FLOOR-62,  96), cascade:true, shape:'slab', slick:true},     // chute 3 → ground
+  // ---- SKY ascent: optional loot route climbing above the ceiling (camera follows) ----
+  {...makePlatform(300,  FLOOR-200, 100), sky:true, shape:'disc'},
+  {...makePlatform(480,  FLOOR-245, 100), sky:true, shape:'rock'},
+  {...makePlatform(660,  FLOOR-285, 100), sky:true, shape:'slab', kind:'slide', dyn:true, x0:660, range:60, speed:0.016, phase:0},
+  {...makePlatform(840,  FLOOR-330, 100), sky:true, shape:'disc'},
+  {...makePlatform(1020, FLOOR-360, 100), sky:true, shape:'rock'},                     // peak
+  {...makePlatform(900,  FLOOR-405, 130), sky:true, shape:'slab', artifactPerch:true}, // TOPMOST: holds the ice-frozen artifact (boss key)
+  // ---- FROZEN BOSS ARENA: glacier ledges, HIDDEN until the fight; bob on staggered sines; shatter on Yeti death ----
+  // Floating ice floes on the frozen arena sea — asymmetric sizes/heights, each drifts
+  // horizontally AND bobs vertically on its own phase (buoy-like), so dodging means real traversal.
+  {...makePlatform(2944, FLOOR-104, 116), bossPlatform:true, floe:true, baseX:2944, baseY:FLOOR-104, bob:16, bobSpeed:0.020, bobPhase:0.0, driftX:20, driftSpeed:0.011, driftPhase:0.5, hidden:true},
+  {...makePlatform(3150, FLOOR-180, 68),  bossPlatform:true, floe:true, baseX:3150, baseY:FLOOR-180, bob:30, bobSpeed:0.026, bobPhase:1.7, driftX:30, driftSpeed:0.015, driftPhase:2.2, hidden:true},
+  {...makePlatform(3306, FLOOR-134, 92),  bossPlatform:true, floe:true, baseX:3306, baseY:FLOOR-134, bob:22, bobSpeed:0.017, bobPhase:3.3, driftX:14, driftSpeed:0.013, driftPhase:4.0, hidden:true},
 ];
 
 let l2Enemies = [];
 function buildLevel2Enemies(){
   l2Enemies = [];
-  // Elevated platform enemies — indices 5-18 are elevated
-  const elevTypes2 = ['icecrab','snowowl','frostgoblin','icecrab','snowowl','frostgoblin','icecrab','snowowl','frostgoblin','icecrab','snowowl','frostgoblin','icecrab'];
-  for(let i=0;i<13;i++){
-    const plat = l2Platforms[i+5];
-    if(!plat) break;
+  const elevTypes2 = ['icecrab','snowowl','frostgoblin','icecrab','snowowl'];
+  // Patrol enemies ride the MID shelves only (cascade/sky/arena stay clear)
+  let mi=0;
+  for(const plat of l2Platforms){
+    if(!plat.mid) continue;
     const e = { x:plat.x+30, y:plat.y-26, w:28, h:26, vx:0.9, facing:1,
-                alive:true, plat, type:elevTypes2[i], phase:Math.random()*6 };
-    l2Enemies.push(e);
+                alive:true, plat, type:elevTypes2[mi%elevTypes2.length], phase:Math.random()*6 };
+    l2Enemies.push(e); mi++;
   }
-  // Ground enemies — spread across L2 world
-  const groundTypes2 = ['icecrab','snowowl','frostgoblin','icecrab','snowowl'];
-  const groundXs2 = [300, 720, 1250, 1750, 2400];
+  // Ground enemies — kept BEFORE the long empty run (none past x=2300)
+  const groundTypes2 = ['icecrab','frostgoblin','snowowl','icecrab','frostgoblin'];
+  const groundXs2 = [300, 720, 1120, 1660, 2120];
   groundXs2.forEach((gx,i)=>{
     let gPlat = l2Platforms[0];
     for(const pl of l2Platforms){
@@ -5369,14 +5424,15 @@ const l2RockTypes = [
 let l2Rocks = [];
 function buildLevel2Rocks(){
   l2Rocks = [];
-  const groundPos = [130, 300, 620, 830, 1030, 1320, 1530, 1740];
+  const groundPos = [130, 360, 640, 880, 1180, 1900, 2160];
   groundPos.forEach((px,i)=>{
     const rt = l2RockTypes[i%l2RockTypes.length];
     l2Rocks.push({ x:px, y:l2Platforms[0].y-26, got:false, type:rt.type, points:rt.points, hue:rt.color });
   });
-  for(let i=1;i<l2Platforms.length;i++){
-    const p=l2Platforms[i];
-    const rt=l2RockTypes[(i+2)%l2RockTypes.length];
+  let ri=2;
+  for(const p of l2Platforms){
+    if(p.y===FLOOR || p.bossPlatform || p.apex) continue;  // no rocks on ground/arena/ember crest
+    const rt=l2RockTypes[ri%l2RockTypes.length]; ri++;
     l2Rocks.push({ x:p.x+Math.floor(p.w/2)-9, y:p.y-24, got:false, type:rt.type, points:rt.points, hue:rt.color });
   }
 }
@@ -5385,13 +5441,15 @@ function buildLevel2Rocks(){
 let yeti = null;
 function buildYeti(){
   yeti = {
-    x:2740, y:FLOOR-130, w:120, h:130,
+    x:3120, y:FLOOR-130, w:120, h:130,
     hp:18, maxHp:18, vx:1.2, facing:-1,
     alive:true, active:false, hitFlash:0,
     spitTimer:60, phase:0, dieTimer:0, lungeTimer:160,
     currentPhase:1, // 1 or 2
     stomp:0, // stomp shockwave timer
     cryTimer:0, // post-death cry animation
+    roarTell:0, // wind-up telegraph before lunge/special
+    stalTimer:90, // anti-camp stalactite cadence
     spreadShot:false
   };
 }
@@ -5412,6 +5470,179 @@ initSnowflakes();
 
 // Shockwave array (from yeti stomp)
 let shockwaves = [];
+let l2Stals = [];   // anti-camp ice stalactites (Level 2)
+
+// ── EMBER STONE (Level 2) ───────────────────────────────────
+// Frozen in the ice at the crest of the falls. Collecting it grants Sawyer
+// flaming soccer balls — the only thing that melts (damages) the Yeti.
+let emberStone = null, emberCollected = false, l2BossWarnT = 0;
+let l2Portal = { open:0, state:'closed' };   // escape portal — hidden until the Yeti is defeated
+// Frozen artifact (boss key): sits on the topmost platform, encased in ice. Fire soccer balls
+// (granted by the Ember Stone) chip the ice away; once freed and collected, the boss is unlocked.
+let l2Artifact = null, l2ArtifactCollected = false;
+function buildL2Artifact(){
+  const perch = l2Platforms.find(p=>p.artifactPerch);
+  l2Artifact = perch ? { x:perch.x+perch.w/2-14, y:perch.y-46, w:28, h:38, iceHp:4, freed:false, got:false, bobT:0, hitFlash:0 } : null;
+  l2ArtifactCollected = false;
+}
+function buildEmberStone(){
+  const apex = l2Platforms.find(p=>p.apex);
+  emberStone = apex ? { x:apex.x+apex.w/2-12, y:apex.y-40, w:24, got:false, bobT:0 } : null;
+  emberCollected = false; l2BossWarnT = 0;
+  l2Portal = { open:0, state:'closed' };
+  if(apex){ apex.meltState=false; apex.melted=false; apex.meltT=0; apex.alpha=1; }  // reset melt on replay
+  buildL2Artifact();
+}
+function updateEmberStone(){
+  if(!emberStone || emberStone.got) return;
+  emberStone.bobT += 0.05;
+  const ay = emberStone.y + Math.sin(emberStone.bobT)*4;
+  for(const p of [sawyer,otto]){
+    if(p && p.x+p.w>emberStone.x-6 && p.x<emberStone.x+emberStone.w+6 && p.y+p.h>ay-6 && p.y<ay+44){
+      emberStone.got=true; emberCollected=true; score+=300; sfx('win'); shakeIntensity=Math.max(shakeIntensity,8);
+      // grabbing the fire melts the ice it was frozen in — the whole apex platform melts away
+      const apex=l2Platforms.find(pp=>pp.apex); if(apex){ apex.meltState=true; apex.meltT=0; apex.alpha=1;
+        for(const ic of icicles){ if(ic.plat===apex && !ic.dissolved){ ic.dissolving=true; ic.dissolveT=0; } } }
+      // ice shatters, ember flares out
+      for(let i=0;i<30;i++) particles.push({x:emberStone.x+12, y:ay+12, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#FF8A2A':'#FFD27A'});
+      for(let i=0;i<12;i++) particles.push({x:emberStone.x+12, y:ay+12, vx:(Math.random()-.5)*5, vy:-1-Math.random()*3, life:24, maxLife:24, type:'snow', color:'#CFE6FF'});
+    }
+  }
+}
+function drawEmberStone(){
+  if(!emberStone || emberStone.got) return;
+  const ax=emberStone.x-cameraX, ay=emberStone.y+Math.sin(emberStone.bobT)*4, cx=ax+12, cy=ay+14;
+  const t=performance.now()*0.001, pulse=0.5+0.5*Math.sin(emberStone.bobT*2);
+  ctx.save();
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  // warm beacon burning UP through the blue ice — spotted across the level
+  const bg=ctx.createLinearGradient(cx,cy-220,cx,cy+10);
+  bg.addColorStop(0,'rgba(255,150,60,0)'); bg.addColorStop(1,'rgba(255,150,60,'+(0.20+0.14*pulse)+')');
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(cx-7,cy); ctx.lineTo(cx+7,cy); ctx.lineTo(cx+3,cy-220); ctx.lineTo(cx-3,cy-220); ctx.closePath(); ctx.fill();
+  const g=ctx.createRadialGradient(cx,cy,2,cx,cy,40+pulse*12);
+  g.addColorStop(0,'rgba(255,180,90,'+(0.65+0.3*pulse)+')'); g.addColorStop(0.5,'rgba(255,120,40,0.22)'); g.addColorStop(1,'rgba(255,120,40,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,40+pulse*12,0,7); ctx.fill();
+  ctx.restore();
+  ctx.translate(cx,cy);
+  // encasing block of blue ice (the stone is locked inside)
+  ctx.fillStyle='rgba(150,200,240,0.30)';
+  ctx.beginPath(); ctx.roundRect(-15,-19,30,38,5); ctx.fill();
+  ctx.strokeStyle='rgba(220,245,255,0.55)'; ctx.lineWidth=1.4; ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.30)'; ctx.fillRect(-12,-16,5,30); // ice highlight
+  // the ember stone — molten faceted gem
+  const grd=ctx.createRadialGradient(0,0,1,0,0,13);
+  grd.addColorStop(0,'#FFE6A8'); grd.addColorStop(0.45,'#FF8A2A'); grd.addColorStop(1,'#A8350A');
+  ctx.fillStyle=grd; ctx.strokeStyle='#6E2206'; ctx.lineWidth=1.1;
+  ctx.beginPath(); ctx.moveTo(0,-12); ctx.lineTo(10,-3); ctx.lineTo(6,11); ctx.lineTo(-6,11); ctx.lineTo(-10,-3); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='rgba(110,34,6,0.55)'; ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.moveTo(-10,-3); ctx.lineTo(10,-3); ctx.moveTo(0,-12); ctx.lineTo(0,11); ctx.stroke();
+  // inner glow flicker
+  ctx.globalCompositeOperation='lighter';
+  ctx.fillStyle='rgba(255,210,120,'+(0.4+0.4*pulse)+')'; ctx.beginPath(); ctx.arc(0,0,4+pulse*2,0,7); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#7A3A10'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
+  ctx.fillText('EMBER STONE', cx, cy-30); ctx.restore();
+}
+// "FIND THE EMBER STONE / TO MELT THE YETI" — pulsing red warning at the boss zone
+function drawL2BossWarning(){
+  if (l2BossWarnT<=0 || l2ArtifactCollected) return;
+  l2BossWarnT--;
+  const fade = Math.min(1, l2BossWarnT/24) * Math.min(1, (100-l2BossWarnT)/12);
+  const t = performance.now()*0.001, pulse = 0.5 + 0.5*Math.sin(t*4);
+  // contextual hint: get the Ember Stone first, then free the frozen artifact
+  let l1,l2t;
+  if(!emberCollected){ l1='FIND THE EMBER STONE'; l2t='TO LIGHT YOUR SHOTS'; }
+  else { l1='FREE THE FROZEN ARTIFACT'; l2t='ATOP THE PEAK TO ENTER'; }
+  ctx.save();
+  ctx.fillStyle='rgba(20,2,2,'+(0.42*fade)+')'; ctx.fillRect(0,0,W,H);
+  const jx=(Math.random()-0.5)*2.2, jy=(Math.random()-0.5)*2.2;
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.font='900 26px Georgia,"Times New Roman",serif';
+  const cx=W/2+jx, cy=H/2+jy;
+  ctx.shadowColor='rgba(255,40,30,'+(0.9*fade)+')'; ctx.shadowBlur=18+pulse*14;
+  ctx.fillStyle='rgba(120,6,6,'+fade+')';
+  ctx.fillText(l1, cx, cy-18); ctx.fillText(l2t, cx, cy+18);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,196,150,'+(fade*(0.65+0.35*pulse))+')';
+  ctx.fillText(l1, cx, cy-18); ctx.fillText(l2t, cx, cy+18);
+  ctx.restore();
+}
+
+// Update: the frozen artifact bobs; once the ice is melted away it can be collected → unlocks the boss.
+function updateL2Artifact(){
+  if(!l2Artifact || l2Artifact.got) return;
+  l2Artifact.bobT += 0.05;
+  if(l2Artifact.hitFlash>0) l2Artifact.hitFlash--;
+  if(!l2Artifact.freed) return;                 // still encased — must be melted by fire first
+  const ay = l2Artifact.y + Math.sin(l2Artifact.bobT)*4;
+  for(const p of [sawyer,otto]){
+    if(p && p.x+p.w>l2Artifact.x-6 && p.x<l2Artifact.x+l2Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+l2Artifact.h+8){
+      l2Artifact.got=true; l2ArtifactCollected=true; score+=400; sfx('win'); shakeIntensity=Math.max(shakeIntensity,9);
+      for(let i=0;i<32;i++) particles.push({x:l2Artifact.x+14, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#7DD9FF':'#FFF1C0'});
+    }
+  }
+}
+// A fire soccer ball melting the ice (called from the projectile loop)
+function meltArtifactIce(pr){
+  if(!l2Artifact || l2Artifact.freed || l2Artifact.got) return false;
+  const ax=l2Artifact.x, ay=l2Artifact.y+Math.sin(l2Artifact.bobT)*4;
+  if(pr.x>ax-6 && pr.x<ax+l2Artifact.w+6 && pr.y>ay-6 && pr.y<ay+l2Artifact.h+6){
+    l2Artifact.iceHp--; l2Artifact.hitFlash=8; shakeIntensity=Math.max(shakeIntensity,4);
+    for(let i=0;i<10;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*4,vy:-1-Math.random()*2.5,life:22,maxLife:22,type:'snow',color:'#EAF4FF'});
+    for(let i=0;i<6;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*3,vy:-1-Math.random()*2,life:18,maxLife:18,type:'spark',color:i%2?'#FF8A2A':'#FFD27A'});
+    if(l2Artifact.iceHp<=0){ l2Artifact.freed=true; sfx('win'); shakeIntensity=Math.max(shakeIntensity,7);
+      for(let i=0;i<22;i++) particles.push({x:ax+l2Artifact.w/2,y:ay+l2Artifact.h/2,vx:(Math.random()-.5)*6,vy:-1-Math.random()*4,life:30,maxLife:30,type:'snow',color:'#CFE6FF'}); }
+    return true;
+  }
+  return false;
+}
+function drawL2Artifact(){
+  if(!l2Artifact || l2Artifact.got) return;
+  const ax=l2Artifact.x-cameraX, ay=l2Artifact.y+Math.sin(l2Artifact.bobT)*4, cx=ax+l2Artifact.w/2, cy=ay+l2Artifact.h/2;
+  if(ax+l2Artifact.w<-40||ax>W+40) return;
+  const t=performance.now()*0.001, pulse=0.5+0.5*Math.sin(l2Artifact.bobT*2);
+  ctx.save();
+  // cyan beacon so it's spotted from across the level
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const bg=ctx.createLinearGradient(cx,cy-240,cx,cy+10);
+  bg.addColorStop(0,'rgba(120,220,255,0)'); bg.addColorStop(1,'rgba(120,220,255,'+(0.18+0.14*pulse)+')');
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(cx-7,cy); ctx.lineTo(cx+7,cy); ctx.lineTo(cx+3,cy-240); ctx.lineTo(cx-3,cy-240); ctx.closePath(); ctx.fill();
+  const g=ctx.createRadialGradient(cx,cy,2,cx,cy,42+pulse*12);
+  g.addColorStop(0,'rgba(150,235,255,'+(0.55+0.3*pulse)+')'); g.addColorStop(0.5,'rgba(120,200,255,0.2)'); g.addColorStop(1,'rgba(120,200,255,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,42+pulse*12,0,7); ctx.fill();
+  ctx.restore();
+  // the artifact gem (golden relic)
+  ctx.save(); ctx.translate(cx,cy);
+  const grd=ctx.createLinearGradient(0,-16,0,16); grd.addColorStop(0,'#FFF3C4'); grd.addColorStop(0.5,'#F6C84B'); grd.addColorStop(1,'#C9881A');
+  ctx.fillStyle=grd; ctx.strokeStyle='#8A5E12'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(10,-2); ctx.lineTo(0,15); ctx.lineTo(-10,-2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='rgba(120,80,20,0.5)'; ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.moveTo(-10,-2); ctx.lineTo(10,-2); ctx.moveTo(0,-16); ctx.lineTo(0,15); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(4,-8); ctx.lineTo(0,-5); ctx.lineTo(-3,-9); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // encasing ice block (shown until melted) — cracks reveal melt progress
+  if(!l2Artifact.freed){
+    const flash=l2Artifact.hitFlash>0&&Math.floor(l2Artifact.hitFlash/2)%2===0;
+    ctx.save(); ctx.translate(cx,cy);
+    ctx.fillStyle=flash?'rgba(220,245,255,0.55)':'rgba(150,200,240,0.42)';
+    ctx.beginPath(); ctx.roundRect(-l2Artifact.w/2-3,-l2Artifact.h/2-3,l2Artifact.w+6,l2Artifact.h+6,5); ctx.fill();
+    ctx.strokeStyle='rgba(225,248,255,0.7)'; ctx.lineWidth=1.4; ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.30)'; ctx.fillRect(-l2Artifact.w/2+1,-l2Artifact.h/2,5,l2Artifact.h); // ice highlight
+    // progressive cracks as iceHp drops (4 → 0)
+    const cracks=4-l2Artifact.iceHp;
+    ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1;
+    for(let k=0;k<cracks;k++){ const a=k*1.7; ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*3,Math.sin(a)*3); ctx.lineTo(Math.cos(a)*13,Math.sin(a)*15); ctx.stroke(); }
+    ctx.restore();
+    // hint label
+    ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#BFE4FF'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
+    ctx.fillText('MELT WITH FIRE', cx, cy-l2Artifact.h/2-12); ctx.restore();
+  } else {
+    ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#FFE9A8'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
+    ctx.fillText('ARTIFACT', cx, cy-l2Artifact.h/2-10); ctx.restore();
+  }
+  ctx.restore();
+}
 
 
 // ── PLATFORM ICICLES (Level 2) ──────────────────────────────
@@ -5421,21 +5652,17 @@ let icicles = [];
 function buildIcicles(){
   icicles = [];
   for(const pl of l2Platforms){
-    if(pl.y === FLOOR) continue; // skip ground segments
+    if(pl.y === FLOOR || pl.bossPlatform) continue; // skip ground + hidden arena ledges
     const count = Math.floor(pl.w / 14);
     for(let k=0;k<count;k++){
-      const wx = pl.x + 7 + k*14;
-      const len = 8 + Math.sin(k*2.3)*5; // vary lengths 3-13px
+      const offX = 7 + k*14;            // offset from the platform's left edge (rides the platform)
+      const len = 8 + Math.sin(k*2.3)*5;
       icicles.push({
-        platX: wx,           // world-x anchor on platform bottom
-        platY: pl.y + pl.h + 14, // y of platform bottom
-        wx: wx,              // current world-x (drifts when falling)
-        wy: pl.y + pl.h + 14, // current world-y tip
-        len: len,
-        wobble: 0,           // lateral wobble angle
-        falling: false,
-        vy: 0,
-        life: 1              // 1=alive, 0=dead
+        plat: pl, offX: offX,
+        platX: pl.x+offX, platY: pl.y + pl.h + 14,
+        wx: pl.x+offX, wy: pl.y + pl.h + 14,
+        len: len, wobble: 0, falling: false, vy: 0,
+        gone:false, respawn:0, life: 1
       });
     }
   }
@@ -5541,43 +5768,56 @@ function buildKingCrab(){
     tell:0, tellMax:0, pending:null, actionTimer:90, clawRaise:0, onGround:true, vy:0
   };
 }
+const ICICLE_RESPAWN = 900;   // 15s @ 60fps — fallen icicles reform on their platform
+function killIcicle(ic){
+  // shatter, vanish, and schedule a respawn at the original anchor
+  for(let i=0;i<5;i++) particles.push({x:ic.wx,y:Math.min(ic.wy,FLOOR),vx:(Math.random()-.5)*4,vy:-1-Math.random()*2,life:14,maxLife:14,type:'snow',color:'#B0D4F1'});
+  ic.gone=true; ic.respawn=ICICLE_RESPAWN; ic.falling=false; ic.vy=0; ic.wobble=0;
+}
 function updateIcicles(s){
   const ox = otto.x + otto.w/2;
   const oy = otto.y + otto.h/2;
   for(const ic of icicles){
-    if(ic.life===0) continue;
+    if(ic.dissolved) continue;
+    if(ic.dissolving){
+      ic.dissolveT++; ic.len*=0.90; ic.wy+=0.4;   // shrink + sag as it melts
+      if(Math.random()<0.6) particles.push({x:ic.wx,y:ic.wy+ic.len,vx:(Math.random()-.5)*0.5,vy:0.8+Math.random()*1.4,life:22,maxLife:22,type:'snow',color:'#9FD4FF'});
+      if(ic.dissolveT>26 || ic.len<1.2){ ic.dissolved=true; }
+      continue;   // no hazard while melting away
+    }
+    if(ic.gone){
+      ic.respawn--;
+      if(ic.respawn<=0){ ic.gone=false; ic.falling=false; ic.vy=0; ic.wobble=0; ic.wx=ic.platX; ic.wy=ic.platY;
+        for(let i=0;i<4;i++) particles.push({x:ic.platX,y:ic.platY,vx:(Math.random()-.5)*1.2,vy:0.4+Math.random()*0.8,life:18,maxLife:18,type:'snow',color:'#CFE6FF'}); }
+      continue;
+    }
     if(!ic.falling){
+      // ride the platform (handles the sliding sky ledge) so icicles never detach visually
+      if(ic.plat){ ic.platX = ic.plat.x + ic.offX; ic.platY = ic.plat.y + ic.plat.h + 14; ic.wx = ic.platX; ic.wy = ic.platY; }
       const dist = Math.hypot(ic.wx - ox, ic.wy - oy);
       if(dist < 60){
         ic.falling = true; // detach!
         sfx('icecreak');
       } else if(dist < 120){
-        // wobble
         ic.wobble = Math.sin(Date.now()/80) * 0.18 * (1 - dist/120);
       } else {
         ic.wobble *= 0.9;
       }
     } else {
-      // falling physics
       ic.vy += 0.4;
       ic.wy += ic.vy;
-      // hit ground
-      if(ic.wy > FLOOR){
-        ic.life = 0;
-        for(let i=0;i<5;i++) particles.push({x:ic.wx,y:FLOOR,vx:(Math.random()-.5)*4,vy:-1-Math.random()*2,life:14,maxLife:14,type:'snow',color:'#B0D4F1'});
-        continue;
-      }
-      // hit Sawyer
+      if(ic.wy > FLOOR){ killIcicle(ic); continue; }
       const tipX = ic.wx, tipY = ic.wy + ic.len;
       if(s.invincible===0 && Math.abs(tipX-(s.x+s.w/2))<s.w/2+4 && tipY>s.y && tipY<s.y+s.h){
-        hurt(s); ic.life=0;
+        hurt(s); killIcicle(ic);
       }
     }
   }
-  icicles = icicles.filter(ic=>ic.life===1);
 }
 function drawIcicles(){
   for(const ic of icicles){
+    if(ic.gone || ic.dissolved) continue;
+    if(ic.dissolving) ctx.globalAlpha=Math.max(0,Math.min(1,ic.len/8));
     const sx = ic.wx - cameraX;
     if(sx < -30 || sx > W+30) continue;
     ctx.save();
@@ -5604,6 +5844,7 @@ function drawIcicles(){
     ctx.fillStyle='rgba(160,210,245,0.7)';
     ctx.beginPath();ctx.arc(0,0,w/2+0.5,0,Math.PI*2);ctx.fill();
     ctx.restore();
+    ctx.globalAlpha=1;
   }
 }
 // ── END ICICLES ──────────────────────────────────────────────────
@@ -5616,6 +5857,11 @@ function updateLevel2(){
     cutsceneTimer--;
     if(cutsceneTimer<=0){
       cutsceneActive=false; yeti.active=true; otto.cower=120; SFX.rattle();
+      // The frozen arena rises: glacier ledges erupt as the fight begins
+      l2Arena.active=true; l2Arena.spawnT=0; shakeIntensity=Math.max(shakeIntensity,9);
+      for(const pl of l2Platforms){ if(pl.bossPlatform){ pl.hidden=false; pl.y=pl.baseY; pl.spawnPop=1;
+        for(let i=0;i<18;i++){ const a=Math.random()*7, sp=1.5+Math.random()*4;
+          particles.push({x:pl.x+pl.w/2,y:pl.baseY+pl.h,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-2.5,life:30,maxLife:30,type:'snow',color:'#CFE6FF'}); } } }
     }
     s.vx=0; s.vy=Math.min(s.vy+GRAVITY,12); resolveL2(s);
     if(s.y+s.h>FLOOR){s.y=FLOOR-s.h;s.vy=0;}
@@ -5646,7 +5892,10 @@ function updateLevel2(){
 
   if(keys['ArrowLeft']){s.vx=-speed;s.facing=-1;}
   else if(keys['ArrowRight']){s.vx=speed;s.facing=1;}
-  else s.vx*=0.72; // no ice slide — that would be too frustrating as discussed
+  else if(s.onSlick) s.vx = s.vx*0.96 + s.facing*0.25;   // ice-slide chute: slick downhill glide (intentional reward ride)
+  if(s.onSlick && Math.abs(s.vx)>1.2 && Math.random()<0.5)   // skid spray kicks up off slick ice — reinforces the hazard
+    particles.push({x:s.x+s.w/2-s.facing*4,y:s.y+s.h,vx:-s.facing*(0.5+Math.random()),vy:-0.3-Math.random()*0.9,life:14,maxLife:14,type:'snow',color:'#EAF6FF'});
+  else s.vx*=0.72;
 
   if(s.onGround){s.coyoteTimer=6;s.wasOnGround=true;}
   else s.coyoteTimer--;
@@ -5656,6 +5905,7 @@ function updateLevel2(){
   const sawyerShot=keys['Space']&&s.attackCooldown<=0;
   if(sawyerShot){
     s.attackTimer=10;s.attackCooldown=20;fireAttack(s);
+    if(emberCollected){ for(const pr of projectiles){ if(pr.owner===s && pr.type==='ball' && !pr.flame){ pr.flame=true; pr.r=9; } } }
     if(otto.attackCooldown<=0){
       otto.attackTimer=10;otto.attackCooldown=34;
       if(ottoPower===2){
@@ -5673,7 +5923,21 @@ function updateLevel2(){
   if(s.y>H+60) hurt(s);
 
   updateOttoL2();
+  updateL2Platforms();
+  updateEmberStone();
+  updateL2Artifact();
   updateBottles(s); updateHearts(s);
+
+  // Blizzard whiteout swallow: eases in as the player crosses the empty run toward the arena
+  { const target = Math.max(0, Math.min(1, (s.x - L2_GAP_START) / (L2_ARENA_X0 - L2_GAP_START)));
+    snowWall += (target - snowWall) * 0.06; }
+  // HP-linked enrage grade ramp (phase 2)
+  { const et = (yeti && yeti.alive && yeti.active && yeti.currentPhase===2) ? 1 : 0;
+    l2BossEnrage += (et - l2BossEnrage) * 0.05; }
+  // Escape portal animates open only after the Yeti is defeated
+  if(l2Portal.state==='opening'){ l2Portal.open=Math.min(1,l2Portal.open+0.022); if(l2Portal.open>=1)l2Portal.state='open'; }
+  // Boss-zone warning if approaching without the Ember Stone
+  if(!l2ArtifactCollected && l2BossWarnT<=0 && s.x>L2_GAP_START-40 && s.x<L2_GAP_START+30){ l2BossWarnT=100; }
 
   updateGiantOttoCharge(l2Enemies);
   if(ottoPower===3){
@@ -5696,6 +5960,10 @@ function updateLevel2(){
   cameraX += (camTarget2 - cameraX) * 0.06;
   cameraX = Math.max(0, Math.min(cameraX, L2_WORLD_W - W));
   cameraX = Math.round(cameraX);
+  // Vertical camera: follow Sawyer up the sky route so he never climbs off the ceiling
+  const camTargetY2 = Math.max(-300, Math.min(0, s.y - 150));
+  cameraY += (camTargetY2 - cameraY) * 0.10;
+  if (Math.abs(cameraY) < 0.5) cameraY = 0;
   if(false && !checkpoint && s.x > 1500){
     checkpoint={x:1500,y:FLOOR};
     for(let i=0;i<16;i++) particles.push({x:1500-cameraX,y:FLOOR-20,vx:(Math.random()-0.5)*5,vy:-3-Math.random()*3,life:28,maxLife:28,type:'spark',color:'#7DD9FF'});
@@ -5756,7 +6024,15 @@ function updateLevel2(){
   for(const pr of projectiles){
     if(pr.type==='ball'){pr.vy+=0.32;pr.spin+=0.4;}
     pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
-    if(pr.type==='ball'&&pr.y+pr.r>=FLOOR){pr.y=FLOOR-pr.r;pr.vy*=-0.5;pr.vx*=0.7;}
+    if(pr.flame){
+      // streaming ember trail + heat-shimmer sparks
+      for(let q=0;q<2;q++) particles.push({x:pr.x-pr.vx*(0.3+q*0.4),y:pr.y-pr.vy*(0.3+q*0.4),vx:(Math.random()-.5)*1.4-pr.vx*0.12,vy:(Math.random()-.5)*1.4-pr.vy*0.12-0.3,life:16+Math.random()*8,maxLife:24,type:'spark',color:Math.random()<0.5?'#FF8A2A':(Math.random()<0.5?'#FFD27A':'#FF5018')});
+      if(Math.random()<0.5) particles.push({x:pr.x+(Math.random()-.5)*6,y:pr.y+(Math.random()-.5)*6,vx:(Math.random()-.5)*0.8,vy:-0.6-Math.random()*1.2,life:20,maxLife:20,type:'snow',color:'#FFE6B0'});
+    }
+    if(pr.type==='ball'&&pr.y+pr.r>=FLOOR){pr.y=FLOOR-pr.r;pr.vy*=-0.5;pr.vx*=0.7;
+      if(pr.flame){ for(let i=0;i<8;i++) particles.push({x:pr.x,y:FLOOR,vx:(Math.random()-.5)*5,vy:-1-Math.random()*3,life:20,maxLife:20,type:'spark',color:i%2?'#FF8A2A':'#FFD27A'}); } }
+    // flaming ball chips the ice encasing the topmost artifact
+    if(pr.flame && meltArtifactIce(pr)){ pr.life=0; }
     for(const e of l2Enemies){
       if(!e.alive)continue;
       if(pr.x>e.x-4&&pr.x<e.x+e.w+4&&pr.y>e.y-4&&pr.y<e.y+e.h+4){
@@ -5766,11 +6042,28 @@ function updateLevel2(){
     }
     if(yeti&&yeti.alive&&yeti.active){
       if(pr.x>yeti.x+14&&pr.x<yeti.x+yeti.w-14&&pr.y>yeti.y&&pr.y<yeti.y+yeti.h){
-        yeti.hp--;yeti.hitFlash=8;shakeIntensity=5;
-        score+=pr.type==='milk'?15:40;
-        SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
-        if(yeti.hp===9&&yeti.currentPhase===1){yeti.currentPhase=2;shakeIntensity=12;SFX.rattle();}
-        if(yeti.hp<=0){yeti.alive=false;yeti.dieTimer=120;yeti.cryTimer=120;score+=750;shakeIntensity=16;SFX.bossDie();}
+        if(!pr.flame){
+          // ice Yeti shrugs off un-charmed shots — a frozen fizzle, no damage
+          pr.life=0; SFX.bossHit?SFX.bossHit():0;
+          for(let i=0;i<5;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*2.5,vy:-0.5-Math.random()*1.5,life:14,maxLife:14,type:'snow',color:'#CFE6FF'});
+        } else {
+          yeti.hp--;yeti.hitFlash=8;shakeIntensity=5; score+=50;
+          SFX.bossHit();pr.life=0;
+          // melt steam burst on the flaming impact
+          for(let i=0;i<10;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*4,vy:-1-Math.random()*2.5,life:22,maxLife:22,type:'snow',color:'#EAF4FF'});
+          for(let i=0;i<6;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*3,vy:-1-Math.random()*2,life:18,maxLife:18,type:'spark',color:i%2?'#FF8A2A':'#FFD27A'});
+          if(yeti.hp===9&&yeti.currentPhase===1){yeti.currentPhase=2;shakeIntensity=12;SFX.rattle();}
+          if(yeti.hp<=0){yeti.alive=false;yeti.dieTimer=120;yeti.cryTimer=120;score+=750;shakeIntensity=16;SFX.bossDie();
+            if(l2Portal.state==='closed'){ l2Portal.state='opening'; SFX.win(); }
+            // arena shatters: glacier ledges burst and vanish as the Yeti falls
+            l2Arena.active=false; l2Arena.deathBurst=24;
+            for(const pl of l2Platforms){ if(pl.bossPlatform && !pl.hidden){ pl.hidden=true;
+              for(let i=0;i<24;i++){ const a=Math.random()*7, sp=1+Math.random()*5;
+                particles.push({x:pl.x+Math.random()*pl.w,y:pl.y+Math.random()*pl.h,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1,life:34,maxLife:34,type:'snow',color:'#DCEEFF'}); }
+              for(let i=0;i<6;i++) particles.push({x:pl.x+pl.w/2,y:pl.y+pl.h/2,vx:(Math.random()-.5)*6,vy:-1-Math.random()*4,life:26,maxLife:26,type:'spark',color:'#9CD2FF'});
+            }}
+          }
+        }
       }
     }
   }
@@ -5790,29 +6083,36 @@ function updateLevel2(){
 
   // Yeti boss
   if(yeti&&yeti.alive){
-    if(!yeti.active&&!cutsceneActive&&s.x>L2_BOSS_GATE){
+    if(!yeti.active&&!cutsceneActive&&s.x>L2_BOSS_GATE&&l2ArtifactCollected){
       cutsceneActive=true;cutsceneTimer=240;
       s.invincible=260; s.vx=0; s.vy=0;
-      projectiles=[]; venom=[];
+      projectiles=[]; venom=[]; l2Stals=[];
     }
     if(yeti.active){
       yeti.phase+=0.06;
       yeti.facing=s.x<yeti.x?-1:1;
       const spd=yeti.currentPhase===2?1.7:1.1;
       yeti.x+=yeti.vx;
-      if(yeti.x<2560||yeti.x>2990)yeti.vx*=-1;
+      if(yeti.x<L2_ARENA_X0+10||yeti.x>L2_ARENA_X1-yeti.w-10)yeti.vx*=-1;
       if(yeti.hitFlash>0)yeti.hitFlash--;
-      // Lunge
-      yeti.lungeTimer--;
-      if(yeti.lungeTimer<=0){
-        yeti.vx=spd*2.8*yeti.facing;
-        yeti.lungeTimer=140+Math.random()*80;
-        SFX.rattle();
-        // Phase 2 stomp shockwave
-        if(yeti.currentPhase===2){
-          shockwaves.push({x:yeti.x+yeti.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:yeti.facing});
+      // Lunge — telegraphed with a roar wind-up (roarTell) before the charge fires
+      if(yeti.roarTell>0){
+        yeti.roarTell--;
+        if(yeti.roarTell===0){
+          yeti.vx=spd*2.8*yeti.facing;
+          SFX.rattle();
+          if(yeti.currentPhase===2){
+            shockwaves.push({x:yeti.x+yeti.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:yeti.facing});
+          }
         }
-      } else if(Math.abs(yeti.vx)>spd)yeti.vx*=0.95;
+      } else {
+        yeti.lungeTimer--;
+        if(yeti.lungeTimer<=0){
+          yeti.roarTell = yeti.currentPhase===2 ? 22 : 30;   // wind-up beat the player can read
+          yeti.lungeTimer = 140+Math.random()*80;
+          SFX.bossSpit();
+        } else if(Math.abs(yeti.vx)>spd) yeti.vx*=0.95;
+      }
 
       // Ice boulder spit — phase 2 fires spread of 3
       yeti.spitTimer--;
@@ -5828,6 +6128,18 @@ function updateLevel2(){
         }
         SFX.bossSpit();
       }
+
+      // --- ANTI-CAMP ICE STALACTITE: punishes hiding on an arena ledge (telegraphed) ---
+      const elevated2 = (s.y+s.h) < FLOOR-46;
+      if(elevated2){
+        yeti.stalTimer = (yeti.stalTimer||0) - 1;
+        if(yeti.stalTimer<=0){
+          yeti.stalTimer = (yeti.currentPhase===2?70:120) + Math.random()*40;
+          const gx = Math.max(cameraX+20, Math.min(cameraX+W-20, s.x+s.w/2));
+          l2Stals.push({ x:gx, warn:46, life:46+90, vy:0, ph:yeti.currentPhase===2, seed:Math.random()*99 });
+          SFX.rattle();
+        }
+      } else { yeti.stalTimer = Math.min(yeti.stalTimer||90, 90); }
       // Body contact
       if(s.invincible===0&&s.x+s.w>yeti.x+16&&s.x<yeti.x+yeti.w-16&&s.y+s.h>yeti.y+16&&s.y<yeti.y+yeti.h)hurt(s);
     }
@@ -5851,9 +6163,25 @@ function updateLevel2(){
 
   for(const sw of shockwaves){
     sw.w+=14;sw.life--;
-    // shockwave is purely visual — no damage (removed per design)
+    // ground threat: hurts the player when they're standing on the floor inside the crack ring
+    if(s.invincible===0 && (s.y+s.h)>=FLOOR-6){
+      const d=Math.abs((s.x+s.w/2)-sw.x);
+      if(d>sw.w-18 && d<sw.w+18){ hurt(s); }
+    }
   }
   shockwaves=shockwaves.filter(sw=>sw.life>0);
+
+  // Ice stalactites (anti-camp): telegraph column → drop from the ceiling
+  for(const st of l2Stals){
+    if(st.warn>0){ st.warn--; }
+    else { st.vy += 0.55; st.y = (st.y||0) + st.vy; }
+    st.life--;
+    const sty = (st.warn>0) ? 0 : (st.y||0);
+    if(st.warn<=0 && s.invincible===0 && Math.abs((s.x+s.w/2)-st.x)<s.w/2+8 && (s.y < sty+30 && s.y+s.h > sty-30)){ hurt(s); st.life=0; }
+    if(st.warn<=0 && sty>=FLOOR){ st.life=0;
+      for(let i=0;i<6;i++) particles.push({x:st.x,y:FLOOR,vx:(Math.random()-.5)*3,vy:-1-Math.random()*2,life:14,maxLife:14,type:'snow',color:'#DCEEFF'}); }
+  }
+  l2Stals = l2Stals.filter(st=>st.life>0);
 
   updateIcicles(s);
   // Update snowflakes
@@ -5864,7 +6192,7 @@ function updateLevel2(){
   }
 
   // L2 flag check — yeti must be defeated; portal warp replaces bike
-  if(!victoryActive && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
+  if(!victoryActive && l2Portal.open>0.55 && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
     if(!yeti || !yeti.alive){
       saveBestScore(currentLevel,score);
       victoryActive = true; victoryTimer = 220;
@@ -5934,8 +6262,11 @@ function updateOttoL2(){
 }
 
 function resolveL2(p){
-  p.onGround=false;
+  p.onGround=false; p.standPlat=null; p.onSlick=false;
   for(const pl of l2Platforms){
+    if(pl.bossPlatform && pl.hidden) continue;                 // arena ledges dormant until the fight
+    if(pl.melted) continue;                                    // melted apex platform — no footing
+    if(pl.kind==='crumble' && (pl.state==='gone' || (pl.state==='falling'&&pl.fallT>2))) continue;
     const inX=p.x+p.w>pl.x&&p.x<pl.x+pl.w;
     const wasAbove=(p.y+p.h-p.vy)<=pl.y+2;
     if(inX&&wasAbove&&p.y+p.h>=pl.y&&p.y+p.h<=pl.y+pl.h+10){
@@ -5944,7 +6275,8 @@ function resolveL2(p){
         for(let i=0;i<6;i++) particles.push({x:p.x+p.w/2+Math.random()*12-6,y:p.y+p.h,vx:Math.random()*3-1.5,vy:-0.5-Math.random()*1.5,life:14,maxLife:14,type:'snow'});
       }
       if(!p.onGround && p.vy > 3){ p.landTimer = 8; }
-      p.vy=0;p.onGround=true;
+      p.vy=0;p.onGround=true; p.standPlat=pl; if(pl.slick) p.onSlick=true;
+      if(pl.kind==='crumble' && pl.state==='solid'){ pl.state='shaking'; pl.crackT=0; }
     }
   }
 }
@@ -5952,9 +6284,59 @@ function resolveL2(p){
 function groundAheadL2(p,dir){
   const probeX=p.x+p.w/2+dir*26, footY=p.y+p.h;
   for(const pl of l2Platforms){
+    if(pl.bossPlatform && pl.hidden) continue;
+    if(pl.melted) continue;
+    if(pl.kind==='crumble' && pl.state!=='solid') continue;
     if(probeX>pl.x&&probeX<pl.x+pl.w&&footY>=pl.y-4&&footY<=pl.y+30)return true;
   }
   return false;
+}
+
+// Drives L2 dynamic platforms: arena bob (staggered sines), sky slide/crumble, snow trickle.
+function updateL2Platforms(){
+  l2PlatTimer++;
+  for(const pl of l2Platforms){
+    pl.dx=0; pl.dy=0;
+    if(pl.meltState && !pl.melted){
+      pl.meltT++;
+      pl.alpha = Math.max(0, 1 - pl.meltT/90);
+      // running meltwater drips off the underside
+      if(pl.meltT%2===0) particles.push({x:pl.x+Math.random()*pl.w, y:pl.y+pl.h+6, vx:(Math.random()-.5)*0.6, vy:1+Math.random()*1.8, life:24, maxLife:24, type:'snow', color:'#9FD4FF'});
+      // hissing steam rising as fire meets ice
+      if(Math.random()<0.5) particles.push({x:pl.x+Math.random()*pl.w, y:pl.y, vx:(Math.random()-.5)*0.5, vy:-0.7-Math.random()*1.3, life:30, maxLife:30, type:'snow', color:'rgba(255,255,255,0.55)'});
+      if(Math.random()<0.3) particles.push({x:pl.x+Math.random()*pl.w, y:pl.y, vx:(Math.random()-.5)*1.5, vy:-0.5-Math.random()*1.5, life:18, maxLife:18, type:'spark', color:'#FF9A3A'});
+      if(pl.meltT>90){ pl.melted=true; pl.meltState=false;
+        for(let i=0;i<10;i++) particles.push({x:pl.x+Math.random()*pl.w, y:pl.y+pl.h, vx:(Math.random()-.5)*2, vy:1+Math.random()*2, life:20, maxLife:20, type:'snow', color:'#BFE4FF'}); }
+    }
+    if(pl.bossPlatform){
+      if(pl.hidden) continue;
+      const ny = pl.baseY - Math.sin(l2PlatTimer*pl.bobSpeed + pl.bobPhase)*pl.bob;
+      pl.dy = ny - pl.y; pl.y = ny;
+      if(pl.driftX){ const nx = pl.baseX + Math.sin(l2PlatTimer*pl.driftSpeed + pl.driftPhase)*pl.driftX;
+        pl.dx = nx - pl.x; pl.x = nx; }
+      if(pl.spawnPop>0) pl.spawnPop = Math.max(0, pl.spawnPop-0.05);
+      if(Math.random()<0.06){ const ex = pl.x + (Math.random()<0.5?4:pl.w-4);
+        particles.push({x:ex, y:pl.y+pl.h, vx:(Math.random()-.5)*0.4, vy:0.5+Math.random()*0.8, life:26, maxLife:26, type:'snow'}); }
+      continue;
+    }
+    if(pl.kind==='slide'){
+      const nx = pl.x0 + Math.sin(l2PlatTimer*pl.speed + pl.phase)*pl.range;
+      pl.dx = nx - pl.x; pl.x = nx;
+    } else if(pl.kind==='crumble'){
+      if(pl.state==='shaking'){ pl.crackT++; if(pl.crackT>34){ pl.state='falling'; pl.fallT=0; pl.fallVy=1; } }
+      else if(pl.state==='falling'){ pl.fallT++; pl.fallVy+=0.4; pl.y+=pl.fallVy; pl.alpha=Math.max(0,1-pl.fallT/26);
+        if(Math.random()<0.6) particles.push({x:pl.x+Math.random()*pl.w, y:pl.y+pl.h, vx:(Math.random()-.5)*2, vy:1+Math.random()*2, life:20, maxLife:20, type:'snow'});
+        if(pl.fallT>28){ pl.state='gone'; pl.goneT=110; } }
+      else if(pl.state==='gone'){ pl.goneT--; if(pl.goneT<=0){ pl.state='solid'; pl.x=pl.bx; pl.y=pl.by; pl.alpha=1; pl.crackT=0; } }
+    }
+    if(pl.y!==FLOOR && !pl.bossPlatform && !(pl.kind==='crumble'&&pl.state!=='solid') && Math.random()<0.03){
+      const ex = pl.x + (Math.random()<0.5?3:pl.w-3);
+      particles.push({x:ex, y:pl.y+pl.h, vx:(Math.random()-.5)*0.4, vy:0.5+Math.random()*0.7, life:24, maxLife:24, type:'snow'});
+    }
+  }
+  for(const p of [sawyer,otto]){
+    if(p && p.onGround && p.standPlat && (p.standPlat.dx||p.standPlat.dy)){ p.x+=p.standPlat.dx; p.y+=p.standPlat.dy; }
+  }
 }
 
 // ── LEVEL 3 WAVE HAZARD ──────────────────────────────────────────────────────
@@ -6423,11 +6805,89 @@ function groundAheadL3(p,dir){
 }
 
 // ── L2 DRAW ──
+// Towering blizzard whiteout that rises from the horizon to isolate the frozen arena.
+// Height + opacity scale with snowWall (0..1). Bruises violet once the Yeti enrages.
+function drawSnowWall(){
+  const k = snowWall;
+  const t = performance.now()*0.001;
+  const wallH = (H*0.95) * k;
+  const wallTop = FLOOR - wallH;
+  const enr = l2BossEnrage;
+  // arctic white-blue → deep glacial violet / black-ice bruise (darkens, not brightens)
+  const cR = Math.round(206 - enr*120), cG = Math.round(224 - enr*150), cB = Math.round(246 - enr*44);
+  const dim = 1 - enr*0.18;   // the swallowing mass darkens as the Yeti enrages
+  ctx.save();
+  const g = ctx.createLinearGradient(0, wallTop, 0, FLOOR);
+  g.addColorStop(0,   'rgba('+Math.round(cR*dim)+','+Math.round(cG*dim)+','+Math.round(cB*dim)+',0)');
+  g.addColorStop(0.18,'rgba('+Math.round(cR*dim)+','+Math.round(cG*dim)+','+Math.round(cB*dim)+','+(0.42*k)+')');
+  g.addColorStop(0.5, 'rgba('+Math.round(cR*0.85*dim)+','+Math.round(cG*0.85*dim)+','+Math.round(cB*0.92*dim)+','+(0.80*k)+')');
+  g.addColorStop(1,   'rgba('+Math.round(cR*0.7*dim)+','+Math.round(cG*0.72*dim)+','+Math.round(cB*0.82*dim)+','+(0.95*k)+')');
+  ctx.fillStyle=g;
+  ctx.beginPath(); ctx.moveTo(0,FLOOR); ctx.lineTo(0,wallTop);
+  for(let x=0;x<=W;x+=24){
+    const crest = wallTop + Math.sin(x*0.018 + t*1.4)*22*k + Math.sin(x*0.05 + t*2.3)*10*k;
+    ctx.lineTo(x, crest);
+  }
+  ctx.lineTo(W,FLOOR); ctx.closePath(); ctx.fill();
+  // horizontal blowing snow streaks inside the wall
+  ctx.globalCompositeOperation='lighter';
+  ctx.strokeStyle='rgba(255,255,255,'+(0.10*k)+')'; ctx.lineWidth=2;
+  for(let i=0;i<10;i++){
+    const y = wallTop + 30 + ((i*53 + t*120*(0.6+i*0.05)) % Math.max(40,wallH));
+    ctx.beginPath(); let xx=0; ctx.moveTo(0,y);
+    for(;xx<=W;xx+=40){ ctx.lineTo(xx, y + Math.sin(xx*0.02 + t*3 + i)*4); }
+    ctx.stroke();
+  }
+  // smothered moon glow being swallowed
+  if(k<0.98){
+    const mg = ctx.createRadialGradient(W*0.80, FLOOR-60, 4, W*0.80, FLOOR-60, 90);
+    mg.addColorStop(0, 'rgba(220,235,255,'+(0.28*(1-k))+')'); mg.addColorStop(1, 'rgba(220,235,255,0)');
+    ctx.fillStyle=mg; ctx.beginPath(); ctx.arc(W*0.80, FLOOR-60, 90, 0, 7); ctx.fill();
+  }
+  ctx.globalCompositeOperation='source-over';
+  ctx.restore();
+}
+
+// Anti-camp ice stalactites: a telegraph danger-column, then a falling spike.
+function drawL2Stals(){
+  const t = performance.now()*0.001;
+  for(const st of l2Stals){
+    const x = st.x - cameraX;
+    if(x<-20||x>W+20) continue;
+    if(st.warn>0){
+      // neon danger column warning above the player
+      const a = (0.30+0.30*Math.sin(t*16)) * Math.min(1, st.warn/12);
+      ctx.save(); ctx.globalCompositeOperation='lighter';
+      const g=ctx.createLinearGradient(x,0,x,FLOOR);
+      g.addColorStop(0,'rgba(150,210,255,0)'); g.addColorStop(1,'rgba(150,210,255,'+a+')');
+      ctx.fillStyle=g; ctx.fillRect(x-9,0,18,FLOOR);
+      ctx.strokeStyle='rgba(220,245,255,'+(a*1.3)+')'; ctx.lineWidth=1.4;
+      ctx.beginPath(); ctx.moveTo(x-9,0); ctx.lineTo(x-9,FLOOR); ctx.moveTo(x+9,0); ctx.lineTo(x+9,FLOOR); ctx.stroke();
+      ctx.restore();
+    } else {
+      const y = st.y||0;
+      ctx.save();
+      const grd=ctx.createLinearGradient(x,y-4,x,y+26);
+      grd.addColorStop(0,'rgba(220,245,255,0.95)'); grd.addColorStop(1,'rgba(120,180,230,0.9)');
+      ctx.fillStyle=grd; ctx.strokeStyle='rgba(70,120,170,0.7)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(x-7,y-4); ctx.lineTo(x+7,y-4); ctx.lineTo(x,y+26); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.fillRect(x-3,y-2,2,18);
+      ctx.restore();
+    }
+  }
+}
+
 function drawL2Bg(){
-  const g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#0D1B3E');g.addColorStop(0.4,'#1A3A5C');
-  g.addColorStop(0.7,'#2E6E9E');g.addColorStop(1,'#B0D0E8');
-  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  // Gradient spans the full vertical range the camera can reveal up the sky route.
+  // Mapping is chosen so y=0..H is byte-identical to the original; only darker night sky is added above.
+  const L2_SKYTOP=-380;
+  const g=ctx.createLinearGradient(0,L2_SKYTOP,0,H);
+  g.addColorStop(0.000,'#070F26');   // high-altitude night (extends original look upward)
+  g.addColorStop(0.514,'#0D1B3E');   // == original y=0
+  g.addColorStop(0.708,'#1A3A5C');   // == original y=0.4*H
+  g.addColorStop(0.854,'#2E6E9E');   // == original y=0.7*H
+  g.addColorStop(1.000,'#B0D0E8');   // == original y=H
+  ctx.fillStyle=g;ctx.fillRect(0,L2_SKYTOP,W,H-L2_SKYTOP);
 
   // Moon
   ctx.fillStyle='rgba(240,240,255,0.9)';ctx.beginPath();ctx.arc(W-100,55,38,0,7);ctx.fill();
@@ -6440,6 +6900,15 @@ function drawL2Bg(){
 
   // Aurora borealis — slow drifting ribbons of light
   const auT = Date.now()/2600;
+  // high-altitude faint ribbons up the sky route (continuation for the climb)
+  for(let band=0;band<2;band++){
+    ctx.fillStyle=['rgba(90,200,170,0.06)','rgba(150,130,235,0.05)'][band];
+    const baseY=-300+band*70;
+    ctx.beginPath(); ctx.moveTo(0, baseY);
+    for(let x=0;x<=W;x+=44){ ctx.lineTo(x, baseY + Math.sin(x*0.01+auT*0.8+band*2)*26); }
+    for(let x=W;x>=0;x-=44){ ctx.lineTo(x, baseY+46 + Math.sin(x*0.01+auT*0.8+band*2)*26); }
+    ctx.closePath(); ctx.fill();
+  }
   for(let band=0;band<3;band++){
     const cols=['rgba(80,220,160,0.10)','rgba(120,140,255,0.09)','rgba(190,110,230,0.08)'];
     ctx.fillStyle=cols[band];
@@ -6455,12 +6924,15 @@ function drawL2Bg(){
     }
     ctx.closePath(); ctx.fill();
   }
-  // Twinkling stars (seeded, stable positions)
-  for(let i=0;i<40;i++){
-    const sxp=tRand(i*3.1)*W, syp=tRand(i*5.7)*FLOOR*0.5;
-    const tw=0.4+0.6*Math.abs(Math.sin(auT*3+i));
+  // Twinkling stars — distributed across the FULL climbable sky so the field continues
+  // upward when the camera follows Sawyer up the route (no empty void above).
+  for(let i=0;i<80;i++){
+    const sxp=tRand(i*3.1)*W;
+    const syp=L2_SKYTOP+10 + tRand(i*5.7)*((FLOOR*0.5)-(L2_SKYTOP+10));
+    const tw=0.35+0.6*Math.abs(Math.sin(auT*3+i));
+    const sz=0.9+tRand(i*2.2)*1.0;
     ctx.fillStyle='rgba(255,255,255,'+tw.toFixed(2)+')';
-    ctx.fillRect(sxp,syp,1.4,1.4);
+    ctx.fillRect(sxp,syp,sz,sz);
   }
 
   // Distant snow-capped peaks — varied sizes & spacing
@@ -6755,11 +7227,76 @@ function drawL2PitVoids(){
     ctx.fillStyle='rgba(100,180,255,0.08)';ctx.fillRect(rx,FLOOR,lx-rx,4);
   }
 }
+// Builds an ice-shelf silhouette path (subtle crystalline top, angled facet sides,
+// jagged broken-ice underside) so platforms read as ice chunks, not squares. Deterministic by seed.
+function iceShelfPath(px, topY, w, bodyH, seed){
+  const n=Math.max(3,Math.floor(w/24));      // top facets
+  const m=Math.max(3,Math.floor(w/26));      // underside breaks
+  const lean=3+tRand(seed*1.3)*4;            // sideways facet lean
+  ctx.beginPath();
+  ctx.moveTo(px-lean*0.4, topY+2);
+  // crystalline top — gentle shards so footing stays clean
+  for(let i=0;i<=n;i++){
+    const fx=px+(i/n)*w;
+    ctx.lineTo(fx, topY - (1+tRand(seed+i)*3));
+    if(i<n) ctx.lineTo(px+((i+0.5)/n)*w, topY + 1 + tRand(seed+i*2)*2);
+  }
+  ctx.lineTo(px+w+lean*0.4, topY+2);
+  // right face leans out toward the base
+  ctx.lineTo(px+w+lean, topY+bodyH-3);
+  // jagged broken-ice underside
+  for(let i=m;i>=0;i--){
+    const fx=px+(i/m)*w + (i/m-0.5)*lean*0.6;
+    ctx.lineTo(fx, topY+bodyH + (2+tRand(seed+i*5)*10));
+    if(i>0) ctx.lineTo(px+((i-0.5)/m)*w, topY+bodyH-2);
+  }
+  ctx.lineTo(px-lean, topY+bodyH-3);
+  ctx.closePath();
+}
 function drawL2Platforms(){
   drawL2PitVoids();
   for(const p of l2Platforms){
+    if(p.bossPlatform && p.hidden) continue;                 // arena ledges hidden until the fight
+    if(p.melted) continue;
+    if(p.kind==='crumble' && p.state==='gone') continue;
     const px=p.x-cameraX;
     if(px+p.w<0||px>W)continue;
+    // ---- FROZEN ARENA LEDGE: distinct black-ice / glacier slab (spawn-pop + bob) ----
+    if(p.bossPlatform){
+      ctx.save();
+      // frozen-sea reflection on the floor below the floe (sells the floating-on-ice read)
+      { const cxf=px+p.w/2, ry=FLOOR-2, rw=p.w*0.55, gloT=performance.now()*0.002;
+        ctx.save(); ctx.globalCompositeOperation='lighter';
+        const rg=ctx.createRadialGradient(cxf,ry,2,cxf,ry,rw);
+        rg.addColorStop(0,'rgba(130,200,255,'+(0.16+0.05*Math.sin(gloT+p.x))+')'); rg.addColorStop(1,'rgba(130,200,255,0)');
+        ctx.fillStyle=rg; ctx.beginPath(); ctx.ellipse(cxf,ry,rw,7,0,0,7); ctx.fill(); ctx.restore(); }
+      const pop=p.spawnPop||0;
+      if(pop>0){ const sc=1+pop*0.25; ctx.translate(px+p.w/2,p.y+p.h/2); ctx.scale(sc,2-sc); ctx.translate(-(px+p.w/2),-(p.y+p.h/2)); ctx.globalAlpha=1-pop*0.3; }
+      // dark glacial body as a jagged ice floe
+      const bH=p.h+16;
+      const floeSeed=(p.baseX!==undefined?p.baseX:p.x)*0.11+7;
+      iceShelfPath(px,p.y,p.w,bH,floeSeed);
+      const gg=ctx.createLinearGradient(px,p.y-4,px,p.y+bH+8);
+      gg.addColorStop(0,'#8FCDF2'); gg.addColorStop(0.4,'#2E6A9E'); gg.addColorStop(1,'#0E2038');
+      ctx.fillStyle=gg; ctx.fill();
+      ctx.save(); ctx.clip();
+      const fSeed=(p.baseX!==undefined?p.baseX:p.x);
+      texCracks(px+4,p.y,p.w-8,bH,'rgba(180,230,255,0.5)',fSeed*0.6,3,0.7);
+      texCracks(px+8,p.y,p.w-10,bH,'rgba(20,60,100,0.5)',fSeed*0.9+5,2,0.6);
+      texSpeckle(px,p.y,p.w,bH,Math.floor(p.w/9),'rgba(220,245,255,0.45)',fSeed*0.2,1.1);
+      // big internal facet lines
+      ctx.strokeStyle='rgba(200,235,255,0.3)'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(px+p.w*0.35,p.y); ctx.lineTo(px+p.w*0.5,p.y+bH); ctx.moveTo(px+p.w*0.7,p.y); ctx.lineTo(px+p.w*0.6,p.y+bH); ctx.stroke();
+      ctx.restore();
+      iceShelfPath(px,p.y,p.w,bH,floeSeed);
+      ctx.strokeStyle='rgba(150,210,250,0.5)'; ctx.lineWidth=1; ctx.stroke();
+      // frosted crystalline top lip
+      ctx.fillStyle='rgba(225,245,255,0.9)'; ctx.fillRect(px+3,p.y-1,p.w-6,3);
+      // (no hanging teeth — fallable icicles are the only droppable-looking spikes in the level)
+      ctx.restore();
+      continue;
+    }
+    if(p.alpha!==undefined && (p.kind==='crumble' || p.meltState)) ctx.globalAlpha=p.alpha;
     if(p.y===FLOOR){
       // Snow ground segment
       ctx.fillStyle='#C8DDEF';ctx.fillRect(px,p.y,p.w,H-p.y);
@@ -6781,27 +7318,54 @@ function drawL2Platforms(){
       ctx.fillStyle='#4A8AC0';ctx.fillRect(px+p.w-5,p.y,5,H-p.y);
       ctx.fillStyle='#EAF4FF';ctx.fillRect(px+p.w-5,p.y,5,8);
     } else {
-      // Ice platform block
-      ctx.fillStyle='#6AAFE6';ctx.fillRect(px,p.y,p.w,p.h+14);
-      // internal cracks + frosted speckle
-      ctx.save();
-      ctx.beginPath(); ctx.rect(px,p.y,p.w,p.h+14); ctx.clip();
-      texCracks(px+4, p.y, p.w-8, p.h+14, 'rgba(255,255,255,0.4)', p.x*0.6, Math.max(2,Math.floor(p.w/40)), 0.6);
-      texCracks(px+10, p.y, p.w-12, p.h+14, 'rgba(46,110,168,0.35)', p.x*0.9+3, 2, 0.5);
-      texSpeckle(px, p.y, p.w, p.h+14, Math.floor(p.w/8), 'rgba(255,255,255,0.4)', p.x*0.2, 1.0);
+      // Ice platform — jagged crystalline shelf silhouette
+      // seed from a STABLE x (x0 for sliding platforms) so the silhouette never morphs as it moves
+      const seedX=(p.x0!==undefined?p.x0:(p.bx!==undefined?p.bx:p.x));
+      const bH=p.h+14, seed=seedX*0.13+3;
+      iceShelfPath(px,p.y,p.w,bH,seed);
+      const ig=ctx.createLinearGradient(px,p.y-4,px,p.y+bH+6);
+      ig.addColorStop(0,'#9AD2F2'); ig.addColorStop(0.5,'#5FA6E0'); ig.addColorStop(1,'#3A78B6');
+      ctx.fillStyle=ig; ctx.fill();
+      ctx.save(); ctx.clip();
+      texCracks(px+4, p.y, p.w-8, bH, 'rgba(255,255,255,0.4)', seedX*0.6, Math.max(2,Math.floor(p.w/40)), 0.6);
+      texCracks(px+10, p.y, p.w-12, bH, 'rgba(46,110,168,0.35)', seedX*0.9+3, 2, 0.5);
+      texSpeckle(px, p.y, p.w, bH, Math.floor(p.w/8), 'rgba(255,255,255,0.4)', seedX*0.2, 1.0);
+      // internal facet lines for a faceted crystal read
+      ctx.strokeStyle='rgba(210,238,255,0.32)'; ctx.lineWidth=1.1;
+      ctx.beginPath(); ctx.moveTo(px+p.w*0.3,p.y); ctx.lineTo(px+p.w*0.44,p.y+bH); ctx.moveTo(px+p.w*0.68,p.y); ctx.lineTo(px+p.w*0.56,p.y+bH); ctx.stroke();
       ctx.restore();
-      ctx.fillStyle='rgba(220,245,255,0.7)';ctx.fillRect(px+2,p.y+1,p.w-4,4);
+      iceShelfPath(px,p.y,p.w,bH,seed);
+      ctx.strokeStyle='rgba(180,225,255,0.5)'; ctx.lineWidth=1; ctx.stroke();
+      // frosted crystalline top
+      ctx.fillStyle='rgba(225,248,255,0.75)';ctx.fillRect(px+3,p.y-1,p.w-6,3);
       // glossy diagonal streak
-      ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=2;
-      ctx.beginPath(); ctx.moveTo(px+p.w*0.3,p.y+2); ctx.lineTo(px+p.w*0.3+8,p.y+p.h+10); ctx.stroke();
-      ctx.fillStyle='rgba(0,0,0,0.12)';ctx.fillRect(px,p.y+p.h,p.w,4);
-      // Decorative icicle stubs on underside (static, small)
-      ctx.fillStyle='rgba(180,220,255,0.8)';
-      for(let k=0;k<Math.floor(p.w/12);k++){
-        const ix=px+6+k*12, ilen=5+Math.sin(k*1.7)*3;
-        ctx.beginPath();ctx.moveTo(ix,p.y+p.h+14);ctx.lineTo(ix+3,p.y+p.h+14+ilen);ctx.lineTo(ix+6,p.y+p.h+14);ctx.fill();
+      ctx.save(); ctx.clip ? 0:0; ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(px+p.w*0.3,p.y+2); ctx.lineTo(px+p.w*0.3+8,p.y+p.h+8); ctx.stroke(); ctx.restore();
+      // SLICK ICE-SLIDE CHUTE — make the slippery surface unmistakable:
+      // (1) bright glossy/wet top, (2) a shine band that sweeps across, (3) twinkling glints, (4) cyan hazard rim.
+      if(p.slick){
+        const tt=performance.now()*0.001;
+        ctx.save(); ctx.globalCompositeOperation='lighter';
+        // (1) glossy mirror surface — clearly wetter/shinier than the matte ice platforms
+        const gl=ctx.createLinearGradient(px,p.y-2,px,p.y+p.h+6);
+        gl.addColorStop(0,'rgba(200,245,255,0.6)'); gl.addColorStop(0.5,'rgba(130,205,255,0.20)'); gl.addColorStop(1,'rgba(130,205,255,0)');
+        ctx.fillStyle=gl; ctx.fillRect(px+2,p.y-1,p.w-4,p.h+6);
+        // (2) sweeping shine band — light gliding across slick ice
+        const sweep=((tt*0.5)%1), sx0=px+sweep*p.w;
+        const sg=ctx.createLinearGradient(sx0-24,0,sx0+24,0);
+        sg.addColorStop(0,'rgba(255,255,255,0)'); sg.addColorStop(0.5,'rgba(255,255,255,0.55)'); sg.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.fillStyle=sg; ctx.fillRect(px+2,p.y,p.w-4,4);
+        // (3) twinkling sparkle glints across the surface
+        for(let k=0;k<Math.max(2,Math.floor(p.w/22));k++){ const gx=px+11+k*22, tw=0.35+0.65*Math.abs(Math.sin(tt*3+k*1.7));
+          ctx.globalAlpha=tw; ctx.fillStyle='rgba(255,255,255,0.95)';
+          ctx.beginPath(); ctx.moveTo(gx,p.y-3); ctx.lineTo(gx+1.6,p.y+1); ctx.lineTo(gx,p.y+5); ctx.lineTo(gx-1.6,p.y+1); ctx.closePath(); ctx.fill(); }
+        ctx.globalAlpha=1; ctx.restore();
+        // (4) cyan hazard rim glow around the whole slab
+        ctx.save(); iceShelfPath(px,p.y,p.w,bH,seed);
+        ctx.strokeStyle='rgba(120,230,255,'+(0.55+0.25*Math.sin(tt*3))+')'; ctx.lineWidth=1.8; ctx.stroke(); ctx.restore();
       }
     }
+    ctx.globalAlpha=1;
   }
 }
 
@@ -6995,8 +7559,16 @@ function drawL2Enemies(){
 function drawYeti(){
   if(!yeti)return;
   if(!yeti.alive&&yeti.dieTimer<=0)return;
+  if(yeti.alive && !yeti.active && !cutsceneActive) return;   // dormant until the artifact unlocks the reveal
   const bx=yeti.x-cameraX,by=yeti.y;
   if(bx+yeti.w<-20||bx>W+20)return;
+  // enrage aura — brightens the silhouette as the world darkens (phase 2)
+  { const enr = (typeof l2BossEnrage!=='undefined') ? l2BossEnrage : 0;
+    if(enr>0.02 && yeti.alive){ ctx.save(); ctx.globalCompositeOperation='lighter';
+      const ax=bx+yeti.w/2, ay=by+yeti.h*0.5, pr2=0.6+0.4*Math.sin(yeti.phase*1.4);
+      const ag=ctx.createRadialGradient(ax,ay,8,ax,ay,yeti.w*0.85);
+      ag.addColorStop(0,'rgba(150,210,255,'+(0.30*enr*pr2)+')'); ag.addColorStop(0.6,'rgba(120,150,255,'+(0.14*enr)+')'); ag.addColorStop(1,'rgba(120,150,255,0)');
+      ctx.fillStyle=ag; ctx.beginPath(); ctx.arc(ax,ay,yeti.w*0.85,0,7); ctx.fill(); ctx.restore(); } }
   ctx.save();
   const dying=!yeti.alive;
   if(dying){ctx.globalAlpha=Math.max(0,yeti.dieTimer/120);ctx.translate(0,(120-yeti.dieTimer)*0.3);}
@@ -7131,7 +7703,7 @@ function drawL2Shockwaves(){
 }
 
 function drawL2Flag(){
-  drawEscapePortal(L2_FLAG.x - cameraX + 24, FLOOR-50, 34, 1, performance.now()*0.004);
+  drawEscapePortal(L2_FLAG.x - cameraX + 24, FLOOR-50, 34, l2Portal.open, performance.now()*0.004);
 }
 function drawL3Shockwaves(){
   for(const sw of shockwaves){
@@ -9866,7 +10438,7 @@ function drawGenFlag(){
 // =========================================================================
 function buildLevel4to6Jump(n){ if(n===4)buildLevel4(); else if(n===5)buildLevel5(); else buildLevel6(); }
 function buildLevelContent(n){
-  if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); }
+  if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
   else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); }
   else if(n===4){ buildLevel4(); }
   else if(n===5){ buildLevel5(); }
