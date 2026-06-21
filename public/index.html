@@ -410,8 +410,18 @@ document.addEventListener('webkitfullscreenchange', setupHiDPI);
 window.addEventListener('orientationchange', ()=>setTimeout(setupHiDPI,200));
 const ottoConfidentImg = new Image(); ottoConfidentImg.src = 'assets/otto_confident.webp';
 const GRAVITY = 0.55, FLOOR = H - 56;
-const WORLD_W = 3400;
-const BOSS_GATE = 3060;
+// ---- Boss-stage geometry: a long empty no-enemy run leads into an isolated arena ----
+const ARENA_X0   = 3260;          // left edge of the isolated boss arena floor
+const ARENA_X1   = 3760;          // right edge (where the escape flag sits)
+const WORLD_W = 3900;             // widened so the swallowing gap + arena fit past the level proper
+const BOSS_GATE = 3300;           // cutscene trigger — pushed deep into the arena, well past the empty gap
+const GAP_START  = 2900;          // where the last descent ledge ends and the empty crossing begins
+// Swallowing-horizon progress (0 = open canyon, 1 = fully walled-in sandstorm). Driven by Sawyer's x in the gap.
+let sandWall = 0;
+// Enraged-phase color blend (0 = harsh orange phase 1, 1 = bruised crimson phase 2). Eased in drawBg.
+let bossEnrage = 0;
+// Boss-arena bobbing platforms: hidden until the fight begins, crumble away on boss death.
+let bossArena = { active:false, spawnT:0, deathBurst:0 };
 
 let musicOn = true, sfxOn = true;
 let score = 0, lives = 5, gameOver = false, won = false;
@@ -1146,7 +1156,7 @@ const platforms = [
   {...makePlatform(240,  FLOOR-90, 100), mid:true, shape:'disc'},
   {...makePlatform(470,  FLOOR-150, 90), mid:true, shape:'rock'},
   {...makePlatform(710,  FLOOR-100, 110), mid:true, shape:'slab'},
-  {...makePlatform(960,  FLOOR-170, 90), mid:true, shape:'pillar'},
+  {...makePlatform(960,  FLOOR-170, 90), mid:true, shape:'rock'},
   {...makePlatform(1210, FLOOR-110, 100), mid:true, shape:'disc'},
   {...makePlatform(1470, FLOOR-160, 90), mid:true, shape:'rock'},
   {...makePlatform(1720, FLOOR-120, 110), mid:true, shape:'bone'},
@@ -1157,17 +1167,17 @@ const platforms = [
   {...makePlatform(2410, FLOOR-270, 170), tri:true, shape:'slab', apex:true},      // PLATEAU — the artifact sits on top
   {...makePlatform(2630, FLOOR-180, 110), tri:true, shape:'rock'},                 // descent step 2
   {...makePlatform(2790, FLOOR-90,  110), tri:true, shape:'slab'},                 // descent step 1
-  // ---- ( flat-ground spacing gap ~2900..3060 separates the level from the boss stage ) ----
-  // ---- BOSS ARENA: 2-3 simple ledges to hop onto and dodge The Drifter's attacks ----
-  {...makePlatform(3070, FLOOR-70,  90), bossPad:true, shape:'slab'},
-  {...makePlatform(3200, FLOOR-115, 90), bossPad:true, shape:'slab'},
-  {...makePlatform(3330, FLOOR-70,  90), bossPad:true, shape:'slab'},
+  // ---- ( long flat-ground EMPTY crossing ~2900..3260 — no enemies — the horizon slowly swallows the level here ) ----
+  // ---- BOSS ARENA: unique obsidian-glass ledges. HIDDEN until the fight begins; bob on staggered sine waves; crumble on boss death. ----
+  {...makePlatform(3300, FLOOR-118, 92), bossPlatform:true, shape:'slab', baseY:FLOOR-118, bob:22, bobSpeed:0.022, bobPhase:0.0,  hidden:true},
+  {...makePlatform(3500, FLOOR-162, 92), bossPlatform:true, shape:'slab', baseY:FLOOR-162, bob:28, bobSpeed:0.018, bobPhase:1.7,  hidden:true},
+  {...makePlatform(3700, FLOOR-118, 92), bossPlatform:true, shape:'slab', baseY:FLOOR-118, bob:22, bobSpeed:0.025, bobPhase:3.3,  hidden:true},
   // ---- SKY ascent: climbs ABOVE the ceiling (camera follows up); optional loot route, ground is always safe ----
   {...makePlatform(300,  FLOOR-200, 100), sky:true, shape:'disc'},
   {...makePlatform(480,  FLOOR-245, 100), sky:true, shape:'rock'},
   {...makePlatform(660,  FLOOR-285, 100), sky:true, shape:'slab',  kind:'slide', dyn:true, x0:660,  range:60, speed:0.016, phase:0},
   {...makePlatform(840,  FLOOR-330, 100), sky:true, shape:'disc'},
-  {...makePlatform(1020, FLOOR-360, 100), sky:true, shape:'pillar'},                                   // peak (above old ceiling)
+  {...makePlatform(1020, FLOOR-360, 100), sky:true, shape:'rock'},                                   // peak (above old ceiling)
   {...makePlatform(1200, FLOOR-330, 100), sky:true, shape:'rock',  kind:'slide', dyn:true, x0:1200, range:66, speed:0.014, phase:1.6},
   {...makePlatform(1380, FLOOR-285, 100), sky:true, shape:'bone'},
   {...makePlatform(1560, FLOOR-240, 100), sky:true, shape:'disc'},                                     // descent
@@ -1242,6 +1252,7 @@ function buildRocks(){
   for (let i = 1; i < platforms.length; i++){
     const p = platforms[i];
     if (p.dyn) continue;                 // moving/crumbling platforms don't carry static rocks
+    if (p.bossPlatform) continue;        // arena ledges are hidden until the fight — no rocks on them
     const px = p.x + Math.floor(p.w/2) - 9;
     const rockType = rockTypes[(i + 3) % rockTypes.length];
     rocks.push({ 
@@ -1269,7 +1280,7 @@ let boss = null;
 let bossWarnT = 0;   // counts down while showing the "Find the artifact to escape" warning
 function buildBoss(){
   boss = {
-    x: 3200, y: FLOOR-90, w: 96, h: 90,
+    x: 3520, y: FLOOR-90, w: 96, h: 90,
     hp: 18, maxHp: 18, vx: 1.1, facing:-1,
     alive: true, active:false, hitFlash:0,
     spitTimer: 50, phase:0, dieTimer:0, lungeTimer:150,
@@ -1278,10 +1289,14 @@ function buildBoss(){
   };
   portal = { open:0, state:'closed', t:0 };
   bossWarnT = 0;
+  sandWall = 0; bossEnrage = 0;
+  bossArena = { active:false, spawnT:0, deathBurst:0 };
+  // arena platforms start hidden every time the level (re)builds
+  for(const pl of platforms){ if(pl.bossPlatform){ pl.hidden=true; pl.y=pl.baseY; pl.dx=0; pl.dy=0; } }
   buildArtifactGate();
 }
 
-const FLAG = { x: WORLD_W-120, y: FLOOR }; // kept for hitbox reference
+const FLAG = { x: ARENA_X1-24, y: FLOOR }; // escape flag at the far edge of the isolated arena
 // Escape portal — stays hidden until The Drifter is defeated, then animates open/closed
 let portal = { open:0, state:'closed', t:0 };
 
@@ -1303,6 +1318,18 @@ function updatePlatforms(){
   platTimer++;
   for(const pl of platforms){
     pl.dx = 0; pl.dy = 0;
+    if(pl.bossPlatform){
+      if(pl.hidden){ continue; }                                  // dormant until the fight begins
+      // staggered vertical bob — each ledge on its own sine phase/interval
+      const ny = pl.baseY - Math.sin(platTimer*pl.bobSpeed + pl.bobPhase) * pl.bob;
+      pl.dy = ny - pl.y; pl.y = ny;
+      if(pl.spawnPop>0) pl.spawnPop = Math.max(0, pl.spawnPop-0.05);   // rise/scale-in decay
+      // trickling sand off the lip (same effect as the other elevated ledges)
+      if(Math.random()<0.06){ const ex = pl.x + (Math.random()<0.5? 4 : pl.w-4);
+        particles.push({x:ex, y:pl.y+pl.h, vx:(Math.random()-.5)*0.4, vy:0.6+Math.random()*0.9, life:26, maxLife:26, type:'dust'}); }
+      if(pl.squash) pl.squash*=0.82;
+      continue;
+    }
     if(pl.kind==='slide'){
       const nx = pl.x0 + Math.sin(platTimer*pl.speed + pl.phase)*pl.range;
       pl.dx = nx - pl.x; pl.x = nx;
@@ -1338,6 +1365,7 @@ function resolve(p){
   let landed=null;
   for (const pl of platforms){
     if (pl.kind==='crumble' && (pl.state==='gone' || (pl.state==='falling'&&pl.fallT>2))) continue;
+    if (pl.bossPlatform && pl.hidden) continue;
     const inX = p.x+p.w>pl.x && p.x<pl.x+pl.w;
     const wasAbove = (p.y+p.h-p.vy)<=pl.y+2;
     if (inX && wasAbove && p.y+p.h>=pl.y && p.y+p.h<=pl.y+pl.h+10){
@@ -1370,6 +1398,7 @@ function groundAhead(p, dir){
   const footY = p.y + p.h;
   for (const pl of platforms){
     if (pl.kind==='crumble' && pl.state!=='solid') continue;
+    if (pl.bossPlatform && pl.hidden) continue;
     if (probeX>pl.x && probeX<pl.x+pl.w && footY>=pl.y-4 && footY<=pl.y+30) return true;
   }
   return false;
@@ -1416,36 +1445,46 @@ function updateOtto(){
   const o = otto, s = sawyer;
   if(o.onGround) o.crossingPit=0;
   if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
-  // follow a spot trailing behind Sawyer
-  const desiredX = s.x - s.facing*40;
+  // follow a spot trailing just behind Sawyer (tighter so he stays close on climbs)
+  const desiredX = s.x - s.facing*28;
   const dx = desiredX - o.x;
-  const accel = 0.5, maxSpd = 3.6;
-  if (Math.abs(dx) > 6){ o.vx += Math.sign(dx)*accel; }
+  const accel = 0.62, maxSpd = 4.2;   // a touch faster than Sawyer so he can close gaps on ascents
+  if (Math.abs(dx) > 5){ o.vx += Math.sign(dx)*accel; }
   else o.vx *= 0.7;
   o.vx = Math.max(-maxSpd, Math.min(maxSpd, o.vx));
   if(o.crossingPit&&!o.onGround) o.vx=o.crossingPit*maxSpd;
   // Otto always faces the direction Sawyer is facing (for shooting)
   o.facing = sawyer.facing;
 
-  // jump: when Sawyer is higher, or no ground ahead in travel direction
+  // jump: when Sawyer is higher (even after he's landed on a ledge), or no ground ahead in travel direction
   const dir = Math.sign(dx) || 1;
   const toS = Math.sign(s.x - o.x) || dir;
   const mdir = (Math.abs(o.vx)>0.3 ? Math.sign(o.vx) : toS);
   if(o.hopCd>0) o.hopCd--;
   const pit = !groundAhead(o, mdir);
   const wantCross = pit && (Math.sign(s.x-o.x)===mdir || Math.abs(s.x-o.x)<24);
-  const climb = (s.y < o.y - 50) && !s.onGround && !wantCross;
+  // Climb whenever Sawyer is notably above Otto and roughly overhead — works whether
+  // Sawyer is mid-leap OR already standing on the higher ledge, so Otto chases him up the arc.
+  const heightGap = o.y - s.y;                 // >0 when Sawyer is higher
+  const overhead  = Math.abs(s.x - o.x) < 150; // close enough horizontally to bother climbing
+  const climb = heightGap > 22 && overhead && !wantCross;
   const needHop = o.onGround && o.hopCd<=0 && (wantCross || climb);
-  if (needHop){ o.vy = -11.5; o.onGround=false; o.hopCd=12; if(wantCross){o.vx=mdir*4.4;o.crossingPit=mdir;} SFX.jumpBaby(); }
+  if (needHop){
+    // scale hop power to the height we need to clear (clamped), so tall steps don't stall him
+    const hopV = wantCross ? 11.5 : Math.max(11, Math.min(15.5, 9 + heightGap*0.07));
+    o.vy = -hopV; o.onGround=false; o.hopCd=10;
+    if(wantCross){o.vx=mdir*4.4;o.crossingPit=mdir;}
+    SFX.jumpBaby();
+  }
 
   o.vy += GRAVITY; o.x += o.vx; o.y += o.vy;
   resolve(o);
   if (o.x < 0) o.x = 0;
   if (o.x > WORLD_W-o.w) o.x = WORLD_W-o.w;
 
-  // catch up if lost / fell
-  if (o.y > H + 40 || Math.abs(o.x - s.x) > 460){
-    o.x = s.x - s.facing*40; o.y = s.y - 6; o.vx=0; o.vy=0;
+  // catch up if lost / fell (tighter leash so he never trails far on a climb)
+  if (o.y > H + 40 || Math.abs(o.x - s.x) > 360 || (s.y < o.y - 140 && o.onGround && Math.abs(o.x-s.x)<60)){
+    o.x = s.x - s.facing*28; o.y = s.y - 6; o.vx=0; o.vy=0;
   }
 
   // Otto's attack timers (firing is triggered by Sawyer's spacebar)
@@ -1506,6 +1545,16 @@ function update(){
       boss.active = true;
       otto.cower = 120;
       SFX.rattle();
+      // ---- The arena rises: obsidian ledges erupt from the sand as the fight begins ----
+      bossArena.active = true; bossArena.spawnT = 0;
+      shakeIntensity = Math.max(shakeIntensity, 9);
+      for(const pl of platforms){
+        if(pl.bossPlatform){
+          pl.hidden = false; pl.y = pl.baseY; pl.spawnPop = 1;     // spawnPop drives a brief rise/scale-in
+          for(let i=0;i<18;i++){ const a=Math.random()*7, sp=1.5+Math.random()*4;
+            particles.push({x:pl.x+pl.w/2,y:pl.baseY+pl.h,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-2.5,life:30,maxLife:30,type:'dust'}); }
+        }
+      }
     }
     // Lock Sawyer horizontally; gravity + collision so he lands on ground reliably
     s.vx = 0;
@@ -1769,6 +1818,14 @@ function update(){
         boss.hp--; boss.hitFlash=8; shakeIntensity = 5; score+= pr.type==='milk'?15:40;
         SFX.bossHit(); pr.life = pr.type==='milk'?Math.min(pr.life,2):0;
         if (boss.hp<=0){ boss.alive=false; boss.dieTimer=120; die(); score+=500; shakeIntensity=12; SFX.bossDie();
+          // ---- arena collapses: ledges vanish in a violent crumble burst ----
+          bossArena.active=false; bossArena.deathBurst=24;
+          for(const pl of platforms){ if(pl.bossPlatform && !pl.hidden){
+            pl.hidden=true;
+            for(let i=0;i<26;i++){ const a=Math.random()*7, sp=1+Math.random()*5;
+              particles.push({x:pl.x+Math.random()*pl.w, y:pl.y+Math.random()*pl.h, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-1, life:34, maxLife:34, type:'dust'}); }
+            for(let i=0;i<8;i++) particles.push({x:pl.x+pl.w/2, y:pl.y+pl.h/2, vx:(Math.random()-.5)*6, vy:-1-Math.random()*4, life:26, maxLife:26, type:'spark', color:'#C98A52'});
+          }}
           if(portal.state==='closed'){ portal.state='opening'; SFX.win();
             // portal-open burst: ring of inward-pulled motes at the flag
             const pcx=FLAG.x+24, pcy=FLOOR-50;
@@ -1803,6 +1860,11 @@ function update(){
 
   // boss
   if (boss && boss.alive){
+    // Swallowing horizon: as Sawyer crosses the empty gap, the storm-wall climbs and swallows the level.
+    {
+      const target = Math.max(0, Math.min(1, (s.x - GAP_START) / (ARENA_X0 - GAP_START)));
+      sandWall += (target - sandWall) * 0.06;     // smooth ease toward the crossing progress
+    }
     // Entering the boss stage without the relic — warn the player it can't be escaped yet
     if (!artifactCollected && s.x > BOSS_GATE - 120) bossWarnT = 100;
     if (artifactCollected && !boss.active){ boss.phase+=0.05; driftAdvance(boss); }   // idle breathing during approach/cutscene (only once it exists)
@@ -1824,7 +1886,7 @@ function update(){
       const ph = boss.phaseIndex;
       boss.x += boss.vx;
       if (Math.abs(boss.vx)>2.4 && Math.random()<0.7) particles.push({x:boss.x+boss.w/2-boss.facing*8,y:boss.y+boss.h-2,vx:-boss.facing*(1+Math.random()*2),vy:-0.5-Math.random()*1.5,life:16,maxLife:16,type:'dust'});
-      if (boss.x < 3070 || boss.x > 3320) boss.vx*=-1;
+      if (boss.x < ARENA_X0+10 || boss.x > ARENA_X1-boss.w-10) boss.vx*=-1;
       if (boss.hitFlash>0) boss.hitFlash--;
 
       // --- SANDSTORM SPECIAL with telegraphed wind-up ---
@@ -2761,9 +2823,18 @@ function drawVenom(){
     if(v.tornado){
       const baseY=v.base, topY=baseY-50;
       ctx.save();
+      // enraged-phase glow: a hot additive aura so projectiles pop against the darkened crimson sky
+      const enr = (typeof bossEnrage!=='undefined') ? bossEnrage : 0;
+      const hot = (v.ph?0.5:0) + enr*0.6;
+      if(hot>0.05){ ctx.save(); ctx.globalCompositeOperation='lighter';
+        const tg=ctx.createRadialGradient(x,baseY-25,2,x,baseY-25,30);
+        tg.addColorStop(0,`rgba(255,140,80,${0.5*hot})`); tg.addColorStop(1,'rgba(255,140,80,0)');
+        ctx.fillStyle=tg; ctx.beginPath(); ctx.ellipse(x,baseY-25,24,34,0,0,7); ctx.fill(); ctx.restore(); }
       ctx.fillStyle='rgba(120,100,70,0.35)';
       ctx.beginPath(); ctx.ellipse(x,baseY+2,14,4,0,0,7); ctx.fill();
-      const cols=['rgba(214,196,150,0.85)','rgba(196,172,120,0.7)','rgba(170,146,98,0.6)'];
+      const cols= enr>0.5
+        ? ['rgba(255,180,120,0.9)','rgba(245,150,90,0.78)','rgba(220,120,70,0.66)']
+        : ['rgba(214,196,150,0.85)','rgba(196,172,120,0.7)','rgba(170,146,98,0.6)'];
       for(let b=0;b<7;b++){
         const f=b/6, cy=baseY-f*50, rw=4+f*16;
         const wob=Math.sin(v.spin+b*0.9)*rw*0.5;
@@ -3195,12 +3266,15 @@ function drawDrifter(b,bx,by,flash){
     const aX=cx, aY=dy+dh*0.5;
     const pulse=0.85+0.15*Math.sin(t*2.2);
     const windup=b.windup>0?1:0;
-    const ac = ph?'rgba(224,150,86,':'rgba(214,190,140,';
+    // In the enraged phase the aura turns hot and bright so he reads as a stark silhouette against the dark sky.
+    const enr = (typeof bossEnrage!=='undefined') ? bossEnrage : 0;
+    const ac = ph?'rgba(255,150,90,':'rgba(214,190,140,';
+    const boost = 1 + enr*1.3;               // brightness multiplier for the end of the fight
     ctx.save(); ctx.globalCompositeOperation='lighter';
-    // soft halo of blown dust
-    const halo=ctx.createRadialGradient(aX,aY,dw*0.15,aX,aY,dw*0.95*pulse);
-    halo.addColorStop(0, ac+(0.16+ph*0.05+windup*0.1)+')');
-    halo.addColorStop(0.55, ac+(0.06)+')');
+    // soft halo of blown dust — intensifies as the environment darkens
+    const halo=ctx.createRadialGradient(aX,aY,dw*0.15,aX,aY,dw*(0.95+enr*0.25)*pulse);
+    halo.addColorStop(0, ac+((0.16+ph*0.05+windup*0.1)*boost)+')');
+    halo.addColorStop(0.55, ac+((0.06)*boost)+')');
     halo.addColorStop(1, ac+'0)');
     ctx.fillStyle=halo; ctx.beginPath(); ctx.ellipse(aX,aY,dw*0.95*pulse,dh*0.62*pulse,0,0,7); ctx.fill();
     // swirling dust arcs orbiting him
@@ -3209,8 +3283,8 @@ function drawDrifter(b,bx,by,flash){
       const sp=t*(1.6+i*0.35)+i*1.7;
       const rad=dw*(0.42+0.12*i)+Math.sin(sp)*4;
       const a0=sp, a1=sp+1.1+0.4*Math.sin(t+i);
-      ctx.strokeStyle=ac+(0.14+0.06*Math.sin(t*3+i))+')';
-      ctx.lineWidth=1.6+ (i%2);
+      ctx.strokeStyle=ac+((0.14+0.06*Math.sin(t*3+i))*boost)+')';
+      ctx.lineWidth=(1.6+ (i%2))*(1+enr*0.4);
       ctx.beginPath(); ctx.ellipse(aX,aY,rad,rad*0.5,Math.sin(t*0.5+i)*0.4,a0,a1); ctx.stroke();
     }
     ctx.restore();
@@ -3349,46 +3423,136 @@ function drawPitVoids(){
   }
 }
 function pl_squash(p){ return p.squash||0; }
-// Silhouette path for a ledge shape (flat standing surface at topY across full width)
-function ledgeShapePath(shape,x,topY,w,h){
+// Silhouette path for a ledge shape (flat standing surface at topY across full width).
+// Bodies use deterministic jagged facets (tRand-seeded) so they read as rough rock, not smooth blobs.
+function ledgeShapePath(shape,x,topY,w,h,seed){
   const p=new Path2D();
-  if(shape==='disc'){
-    p.moveTo(x,topY); p.lineTo(x+w,topY);
-    p.bezierCurveTo(x+w+10,topY+h*0.5, x+w*0.72,topY+h, x+w/2,topY+h);
-    p.bezierCurveTo(x+w*0.28,topY+h, x-10,topY+h*0.5, x,topY); p.closePath();
-  } else if(shape==='rock'){
-    p.moveTo(x,topY); p.lineTo(x+w,topY);
-    p.quadraticCurveTo(x+w+7,topY+h*0.4, x+w*0.80,topY+h*0.85);
-    p.quadraticCurveTo(x+w*0.62,topY+h*1.08, x+w*0.50,topY+h*0.86);
-    p.quadraticCurveTo(x+w*0.38,topY+h*1.08, x+w*0.20,topY+h*0.85);
-    p.quadraticCurveTo(x-7,topY+h*0.4, x,topY); p.closePath();
-  } else if(shape==='pillar'){
-    const capH=9, colH=h+56, inset=15;
-    p.moveTo(x,topY); p.lineTo(x+w,topY); p.lineTo(x+w,topY+capH);
-    p.lineTo(x+w-inset,topY+capH+5); p.lineTo(x+w-inset,topY+colH);
-    p.lineTo(x+inset,topY+colH); p.lineTo(x+inset,topY+capH+5);
-    p.lineTo(x,topY+capH); p.closePath();
+  const J=(s)=>tRand(s)*2-1; // -1..1 deterministic
+  const SB=(seed!=null?seed:x)*0.05; // jag seed from STABLE world x, never screen px (prevents wobble)
+  if(shape==='disc' || shape==='rock' || shape==='slab'){
+    // Rough boulder: flat top edge, then a craggy faceted underside/sides.
+    const amp = shape==='rock' ? 1.0 : (shape==='slab' ? 0.7 : 0.85);
+    const sd  = SB + (shape==='rock'?11:shape==='slab'?23:37);
+    p.moveTo(x, topY);
+    p.lineTo(x+w, topY);
+    // right shoulder bulge then faceted descent toward center-bottom
+    p.lineTo(x+w+(5+J(sd+1)*4)*amp, topY + h*0.32);
+    const rs=Math.max(3,Math.round(w/26));
+    for(let i=1;i<=rs;i++){ const f=i/rs;
+      const edge=x+w - w*0.20*f + J(sd+i)*8*amp;
+      const yy=topY+h*0.32 + (h*0.74)*f;
+      p.lineTo(edge,yy); }
+    // jagged bottom edge across
+    const bs=Math.max(4,Math.round(w/20));
+    for(let i=1;i<=bs;i++){ const f=i/bs;
+      const bx2=x+w*0.80 - w*0.60*f;
+      const by2=topY+h*(0.94 + J(sd+40+i)*0.14*amp);
+      p.lineTo(bx2,by2); }
+    // faceted climb up the left side
+    const ls=Math.max(3,Math.round(w/26));
+    for(let i=1;i<=ls;i++){ const f=i/ls;
+      const edge=x+w*0.20 - w*0.20*f + J(sd+80+i)*8*amp;
+      const yy=topY+h*1.06 - (h*0.74)*f;
+      p.lineTo(edge,yy); }
+    p.lineTo(x-(5+J(sd+2)*4)*amp, topY+h*0.32);
+    p.closePath();
   } else if(shape==='bone'){
-    const r=h*0.62;
-    p.moveTo(x+8,topY); p.lineTo(x+w-8,topY);
-    p.quadraticCurveTo(x+w+5,topY-2, x+w+5,topY+r);
-    p.quadraticCurveTo(x+w+5,topY+h+2, x+w-8,topY+h);
-    p.lineTo(x+8,topY+h);
-    p.quadraticCurveTo(x-5,topY+h+2, x-5,topY+r);
-    p.quadraticCurveTo(x-5,topY-2, x+8,topY); p.closePath();
-  } else { // slab (tapered)
-    p.moveTo(x+5,topY); p.lineTo(x+w-5,topY);
-    p.quadraticCurveTo(x+w,topY, x+w,topY+5);
-    p.lineTo(x+w-7,topY+h); p.lineTo(x+7,topY+h);
-    p.lineTo(x,topY+5); p.quadraticCurveTo(x,topY, x+5,topY); p.closePath();
+    // Craggy dog-bone: flat top to stand on, knobby lobed ends with angular nicks.
+    const sd=SB+5, r=h*0.78, k=h*0.7; // knob radius
+    p.moveTo(x+k*0.7, topY);
+    p.lineTo(x+w-k*0.7, topY);
+    // right knob (two faceted lobes)
+    p.lineTo(x+w-k*0.2, topY-1);
+    p.lineTo(x+w+k*0.5+J(sd+1)*2, topY+r*0.18);
+    p.lineTo(x+w+k*0.6+J(sd+2)*2, topY+r*0.5);
+    p.lineTo(x+w+k*0.45+J(sd+3)*2, topY+h*0.74);
+    p.lineTo(x+w+k*0.55+J(sd+4)*2, topY+h*1.02);
+    p.lineTo(x+w-k*0.25, topY+h);
+    // jagged underside waist
+    p.lineTo(x+w*0.68, topY+h+J(sd+5)*2);
+    p.lineTo(x+w*0.5,  topY+h*0.86+J(sd+6)*2);   // pinched waist
+    p.lineTo(x+w*0.32, topY+h+J(sd+7)*2);
+    p.lineTo(x+k*0.25, topY+h);
+    // left knob (two faceted lobes)
+    p.lineTo(x-k*0.55+J(sd+8)*2, topY+h*1.02);
+    p.lineTo(x-k*0.45+J(sd+9)*2, topY+h*0.74);
+    p.lineTo(x-k*0.6+J(sd+10)*2, topY+r*0.5);
+    p.lineTo(x-k*0.5+J(sd+11)*2, topY+r*0.18);
+    p.lineTo(x+k*0.2, topY-1);
+    p.closePath();
+  } else { // fallback slab (shouldn't hit; kept for safety)
+    p.moveTo(x,topY); p.lineTo(x+w,topY); p.lineTo(x+w-6,topY+h); p.lineTo(x+6,topY+h); p.closePath();
   }
   return p;
 }
+// ---- Unique boss-arena ledge: dark obsidian glass with an ember-lit, storm-forged top. ----
+//      Color/heat scales with The Drifter's phase (crimson in the enraged half).
+function drawBossPlatform(p, px){
+  const ph = (boss && boss.phaseIndex) ? boss.phaseIndex : 0;
+  const sq = pl_squash(p);
+  const pop = p.spawnPop||0;
+  const topY = p.y + sq;
+  const bodyH = p.h + 16 - sq;
+  ctx.save();
+  // rise/scale-in pop when first spawned
+  if(pop>0){ const cy=topY+bodyH; ctx.translate(px+p.w/2, cy); ctx.scale(1, 1-0.5*pop); ctx.translate(-(px+p.w/2), -cy); ctx.globalAlpha=1-pop*0.6; }
+  // ember palette warms toward crimson in phase 2
+  const emberA = ph? 'rgba(255,90,60,' : 'rgba(255,150,70,';
+  const emberHot = ph? '#FF5236' : '#FFB44A';
+  // drop shadow
+  ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(px+p.w/2, topY+bodyH+3, p.w*0.46, 4, 0,0,7); ctx.fill();
+  // obsidian body — faceted dark glass
+  const seedX=p.x;
+  const path = ledgeShapePath('slab', Math.round(px), Math.round(topY), p.w, Math.round(bodyH), seedX);
+  const bg = ctx.createLinearGradient(0, topY, 0, topY+bodyH);
+  bg.addColorStop(0, ph? '#2A1018' : '#241826');
+  bg.addColorStop(0.5, ph? '#160810' : '#130A18');
+  bg.addColorStop(1, '#070409');
+  ctx.fillStyle=bg; ctx.fill(path);
+  ctx.save(); ctx.clip(path);
+  // glassy diagonal sheen
+  ctx.globalCompositeOperation='lighter';
+  ctx.strokeStyle='rgba(150,170,210,0.10)'; ctx.lineWidth=2;
+  for(let i=-bodyH;i<p.w;i+=12){ ctx.beginPath(); ctx.moveTo(px+i,topY+bodyH); ctx.lineTo(px+i+bodyH,topY); ctx.stroke(); }
+  ctx.globalCompositeOperation='source-over';
+  // molten cracks glowing up through the glass
+  ctx.globalCompositeOperation='lighter';
+  for(let c=0;c<3;c++){ const cx0=px+p.w*(0.22+c*0.3)+tRand(seedX+c)*10;
+    ctx.strokeStyle=emberA+(0.5+0.4*Math.sin(performance.now()*0.005+c))+')'; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(cx0, topY+2);
+    ctx.lineTo(cx0+(tRand(seedX+c+5)*2-1)*8, topY+bodyH*0.5);
+    ctx.lineTo(cx0+(tRand(seedX+c+9)*2-1)*12, topY+bodyH-2); ctx.stroke(); }
+  ctx.globalCompositeOperation='source-over';
+  ctx.restore();
+  // crisp glass rim
+  ctx.strokeStyle= ph? 'rgba(120,40,50,0.9)':'rgba(90,80,120,0.85)'; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke(path);
+  // ember-lit top lip (the storm-forged edge) — glows brighter in phase 2
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const lipG = ctx.createLinearGradient(0, topY-6, 0, topY+6);
+  lipG.addColorStop(0, emberA+'0)'); lipG.addColorStop(0.5, emberA+(0.55+ph*0.3)+')'); lipG.addColorStop(1, emberA+'0)');
+  ctx.fillStyle=lipG; ctx.fillRect(px, topY-6, p.w, 12);
+  ctx.fillStyle=emberHot;
+  ctx.beginPath(); ctx.moveTo(px+2,topY+2);
+  for(let xx=2;xx<=p.w-2;xx+=8){ ctx.lineTo(px+xx, topY+Math.sin((seedX+xx)*0.6)*1.1); }
+  ctx.lineTo(px+p.w-2,topY+2); ctx.lineTo(px+2,topY+2); ctx.fill();
+  // ember motes drifting up off the lip
+  for(let m=0;m<2;m++){ const mx=px+8+((performance.now()*0.04+m*53+seedX)% (p.w-16)); const my=topY-2-((performance.now()*0.06+m*40)%14);
+    ctx.globalAlpha=0.6; ctx.fillStyle=emberHot; ctx.beginPath(); ctx.arc(mx,my,1.2,0,7); ctx.fill(); }
+  ctx.restore();
+  ctx.restore();
+}
+
 function drawPlatforms(){
   drawPitVoids();
   for (const p of platforms){
     const px=p.x-cameraX;
     if (px+p.w<0||px>W) continue;
+    if (p.bossPlatform){
+      if (p.hidden) continue;
+      drawBossPlatform(p, px);
+      continue;
+    }
     if (p.y===FLOOR){
       // Ground segment
       ctx.fillStyle='#C68E45';
@@ -3430,24 +3594,24 @@ function drawPlatforms(){
       if(p.kind==='crumble' && p.state==='shaking'){ ctx.translate((Math.random()-.5)*1.6,(Math.random()-.5)*1.6); } // shudder tell
       const shape = p.shape || 'slab';
       const seedX = (p.x0!=null) ? p.x0 : p.x;
-      let base='#C89A5A', dark='#8A6433', litTop='#E6C188';
-      if(shape==='bone'){ base='#E4DAC2'; dark='#B6AA8E'; litTop='#F3ECDD'; }   // bleached bone
+      let base='#BC6E4A', dark='#6E3622', litTop='#D38A60';   // deeper red-rock, blended toward canyon #D4735A / butte #7E4636
+      if(shape==='bone'){ base='#D6C2A6', dark='#9C826A', litTop='#E8DBC4'; }   // bone, warmed toward the red-rock family
       // drop shadow
       ctx.fillStyle='rgba(0,0,0,0.10)';
       ctx.beginPath(); ctx.ellipse(px+p.w/2, topY+bodyH+3, p.w*0.45, 3.5, 0,0,7); ctx.fill();
       // shaped silhouette
-      const path = ledgeShapePath(shape, px, topY, p.w, bodyH);
+      const path = ledgeShapePath(shape, Math.round(px), Math.round(topY), p.w, Math.round(bodyH), seedX);
       ctx.fillStyle=base; ctx.fill(path);
       ctx.strokeStyle=dark; ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke(path);
       ctx.save();
       ctx.clip(path);
-      // horizontal strata bands
+      // horizontal strata bands (red-rock tinted)
       for(let b=0;b<3;b++){ const by=topY+6+b*((bodyH-6)/3);
-        ctx.fillStyle = b%2? 'rgba(120,80,40,0.16)' : 'rgba(255,225,170,0.12)';
+        ctx.fillStyle = b%2? 'rgba(110,54,38,0.18)' : 'rgba(212,140,100,0.12)';
         ctx.fillRect(px-12, by, p.w+24, ((bodyH-6)/3)*0.6); }
       // grain + speckle (seeded by a STABLE x so sliding platforms don't shimmer)
-      texSpeckle(px, topY, p.w, bodyH, Math.floor(p.w/6), 'rgba(90,60,30,0.18)', seedX*0.13, 1.2);
-      texSpeckle(px, topY, p.w, bodyH, Math.floor(p.w/14), 'rgba(255,240,200,0.22)', seedX*0.07+9, 0.9);
+      texSpeckle(px, topY, p.w, bodyH, Math.floor(p.w/6), 'rgba(80,40,26,0.18)', seedX*0.13, 1.2);
+      texSpeckle(px, topY, p.w, bodyH, Math.floor(p.w/14), 'rgba(232,180,140,0.20)', seedX*0.07+9, 0.9);
       // realistic crumble fissures (dark core + light relief, branching, jagged)
       if(p.kind==='crumble'){
         const cr = p.state==='shaking'? Math.min(1,p.crackT/34) : (p.state==='solid'?0:1);
@@ -3469,6 +3633,10 @@ function drawPlatforms(){
             for(let c=0;c<3;c++){ const chx=px+p.w*(0.2+c*0.3); ctx.beginPath(); ctx.moveTo(chx,topY); ctx.lineTo(chx+6,topY); ctx.lineTo(chx+2,topY+5*cr); ctx.closePath(); ctx.fill(); } }
         }
       }
+      // extra rough-rock texturing: branching cracks + grit so it doesn't read smooth
+      texCracks(px, topY, p.w, bodyH, 'rgba(60,38,18,0.30)', seedX*0.21+3, 3, 0.8);
+      texCracks(px, topY+bodyH*0.3, p.w, bodyH*0.7, 'rgba(255,235,190,0.10)', seedX*0.17+8, 2, 0.6); // light relief on faces
+      texSpeckle(px, topY+2, p.w, bodyH, Math.floor(p.w/5), 'rgba(50,32,14,0.20)', seedX*0.31+2, 1.6); // coarse grit
       ctx.restore();
       // per-shape accents (on top of body, beneath the lit lip)
       if(shape==='rock'){
@@ -3477,17 +3645,15 @@ function drawPlatforms(){
           ctx.beginPath(); ctx.ellipse(lx,ly, 7-i, 4, -0.3, 0,7); ctx.fill(); }
         ctx.strokeStyle='rgba(80,55,28,0.25)'; ctx.lineWidth=1;
         ctx.beginPath(); ctx.moveTo(px+p.w*0.5,topY+4); ctx.lineTo(px+p.w*0.55,topY+bodyH*0.7); ctx.stroke();
-      } else if(shape==='pillar'){
-        ctx.strokeStyle='rgba(74,40,24,0.3)'; ctx.lineWidth=1;
-        for(let s=1;s<5;s++){ const yy=topY+12+s*((bodyH+50)/5); ctx.beginPath(); ctx.moveTo(px+16,yy); ctx.lineTo(px+p.w-16,yy); ctx.stroke(); }
-        ctx.fillStyle='rgba(255,225,170,0.14)'; ctx.fillRect(px+15,topY+14,3,bodyH+40);   // sun-catch on column
       } else if(shape==='bone'){
-        const r=bodyH*0.62;
-        ctx.fillStyle=base; ctx.strokeStyle=dark; ctx.lineWidth=2;
-        for(const ex of [px-1, px+p.w+1]){ ctx.beginPath(); ctx.arc(ex, topY+r*0.7, r*0.7, 0,7); ctx.fill(); ctx.stroke();
-          ctx.beginPath(); ctx.arc(ex, topY+bodyH-2, r*0.55, 0,7); ctx.fill(); ctx.stroke(); }
-        ctx.fillStyle='rgba(120,108,86,0.5)';
-        for(const ex of [px-1, px+p.w+1]){ ctx.beginPath(); ctx.arc(ex, topY+r*0.7, r*0.28, 0,7); ctx.fill(); }
+        // faceted shading on the knobby ends (no smooth ovals)
+        const r=bodyH*0.6;
+        ctx.fillStyle='rgba(120,108,86,0.42)';
+        for(const ex of [px+4, px+p.w-4]){
+          ctx.beginPath(); ctx.moveTo(ex,topY+r*0.35); ctx.lineTo(ex-4,topY+r*0.7); ctx.lineTo(ex,topY+r*1.05); ctx.lineTo(ex+4,topY+r*0.7); ctx.closePath(); ctx.fill();
+        }
+        ctx.strokeStyle='rgba(150,138,112,0.5)'; ctx.lineWidth=1;
+        ctx.beginPath(); ctx.moveTo(px+12,topY+bodyH*0.5); ctx.lineTo(px+p.w-12,topY+bodyH*0.5); ctx.stroke();
       } else if(shape==='disc'){
         ctx.strokeStyle='rgba(255,235,190,0.3)'; ctx.lineWidth=1.5;
         ctx.beginPath(); ctx.ellipse(px+p.w/2, topY+3, p.w*0.46, 2.5, 0, Math.PI, 0); ctx.stroke();
@@ -3519,7 +3685,7 @@ function drawPlatforms(){
    so the level keeps all its own art. Per-level treatments below.
    ============================================================ */
 const cosmicGlow = (function(){
-  let t=0, stars=null, gWarm=null, gCyan=null, gGreen=null, gMoon=null, gViolet=null, blink=1, blinkT=4, ready=false;
+  let t=0, stars=null, starsTall=null, gWarm=null, gCyan=null, gGreen=null, gMoon=null, gViolet=null, blink=1, blinkT=4, ready=false;
   function tinted(color){ const s=64,c=document.createElement('canvas'); c.width=c.height=s;
     const g=c.getContext('2d'); const r=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
     r.addColorStop(0,'rgba(255,255,255,1)'); r.addColorStop(0.3,'rgba(255,255,255,0.5)');
@@ -3531,21 +3697,53 @@ const cosmicGlow = (function(){
     const n=Math.round(W*H/3200);
     for(let i=0;i<n;i++){ g.globalAlpha=Math.random()*0.5+0.12; g.fillStyle=Math.random()<0.15?'#bfe':'#dde';
       g.beginPath(); g.arc(Math.random()*W, Math.random()*H*0.55, Math.random()*1.1+0.2,0,7); g.fill(); }
-    stars=c; }
+    stars=c;
+    // L1-only: a starfield spanning the FULL vertical range the camera can reveal on the sky route,
+    // so the purple sky + stars continue seamlessly above screen-y 0 with no horizon seam.
+    // STAR_TOP is the screen y of the canvas's top row once drawn under a cameraY translate.
+    const STAR_TOP=-360, starH=H-STAR_TOP;
+    const ct=document.createElement('canvas'); ct.width=W; ct.height=starH; const gt=ct.getContext('2d');
+    const nt=Math.round(W*starH/3200);
+    for(let i=0;i<nt;i++){ gt.globalAlpha=Math.random()*0.5+0.12; gt.fillStyle=Math.random()<0.15?'#bfe':'#dde';
+      gt.beginPath(); gt.arc(Math.random()*W, Math.random()*starH*0.82, Math.random()*1.1+0.2,0,7); gt.fill(); }
+    starsTall=ct; starsTall.top=STAR_TOP; }
   function vignette(a){ const v=ctx.createRadialGradient(W/2,H*0.45,H*0.22,W/2,H*0.5,H*0.95);
     v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,'+a+')'); ctx.fillStyle=v; ctx.fillRect(0,0,W,H); }
 
   // L1 — desert at sunset: one sun burst, no neon
   function gradeDesert(){
     ctx.save();
+    ctx.translate(0,cameraY); // pin the grade to the screen; fill extends above 0 to cover the sky route
+    const TOP=-360, FH=H-TOP;  // full revealed vertical range
+    // ---- HP-LINKED ARENA GRADE ----
+    // `fight` ramps the harsh blowing-orange in during phase 1; `enr` (bossEnrage) abruptly bruises it
+    // to deep crimson/violet in The Drifter's enraged half. Both fall back to the normal dusk grade elsewhere.
+    const fight = (boss && boss.alive && boss.active) ? Math.min(1, sandWall+0.15) : 0;
+    const enr = bossEnrage;
+    const mix=(a,b,f)=>a+(b-a)*f;
+    const lerpA=(c1,c2,f)=>[mix(c1[0],c2[0],f),mix(c1[1],c2[1],f),mix(c1[2],c2[2],f),mix(c1[3],c2[3],f)]; // returns an ARRAY (stays blendable)
+    const css=c=>`rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${c[3].toFixed(2)})`;
+    // top-of-sky: dusk-violet → (phase1) smoky orange-brown → (phase2) bruised violet-crimson
+    const top1 = enr>0 ? lerpA([60,20,40,0.9],[40,8,46,0.92],enr) : [46,22,40,0.88];
+    const topBase=[26,16,52,0.85];
+    const topCol = lerpA(topBase, top1, fight);
+    // horizon band: warm orange → harsh blowing orange → aggressive crimson
+    const horiz1 = enr>0 ? lerpA([236,104,40,0.55],[200,30,46,0.60],enr) : [236,104,40,0.55];
+    const horizCol = lerpA([220,96,52,0.42], horiz1, fight);
+    // low band: → deep crimson/violet floor in phase 2
+    const low1 = enr>0 ? lerpA([90,24,30,0.5],[60,14,40,0.6],enr) : [90,30,34,0.46];
+    const lowCol = lerpA([70,32,40,0.42], low1, fight);
+    const midCol = lerpA([92,40,82,0.55], enr>0?[78,26,70,0.6]:[92,40,82,0.55], fight*0.7);
     const g=ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,   'rgba(26,16,52,0.85)');
-    g.addColorStop(0.40,'rgba(92,40,82,0.55)');
-    g.addColorStop(0.62,'rgba(220,96,52,0.42)');
-    g.addColorStop(0.80,'rgba(70,32,40,0.42)');
+    g.addColorStop(0,   css(topCol));
+    g.addColorStop(0.40, css(midCol));
+    g.addColorStop(0.62, css(horizCol));
+    g.addColorStop(0.80, css(lowCol));
     g.addColorStop(1,   'rgba(22,12,26,0.55)');
+    // Solid deep-dusk fill above the horizon band — match the (possibly graded) top colour.
+    ctx.fillStyle=css(topCol); ctx.fillRect(0,TOP,W,-TOP);
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-    if(stars){ ctx.globalAlpha=0.55; ctx.drawImage(stars,0,0); ctx.globalAlpha=1; }
+    if(starsTall){ ctx.globalAlpha=0.55; ctx.drawImage(starsTall,0,starsTall.top); ctx.globalAlpha=1; }
     // single sun burst low on the horizon
     ctx.globalCompositeOperation='lighter';
     const sx=W*0.80, sy=FLOOR-26, big=H*1.1, mid=H*0.42;
@@ -3831,9 +4029,60 @@ function drawBossWarning(){
   ctx.fillText('TO ESCAPE', cx, cy+18);
   ctx.restore();
 }
+// Towering wind-wall of sand that rises from the horizon to isolate the boss arena.
+// Height + opacity scale with `sandWall` (0..1). Tints crimson once The Drifter enrages.
+function drawSandWall(){
+  const k = sandWall;                       // 0 open → 1 fully walled
+  const t = performance.now()*0.001;
+  const wallH = (H*0.95) * k;               // climbs up the screen
+  const wallTop = FLOOR - wallH;
+  // base tint shifts orange → bruised crimson with enrage
+  const enr = bossEnrage;
+  const cR = Math.round(196 + enr*30), cG = Math.round(120 - enr*70), cB = Math.round(60 + enr*20);
+  ctx.save();
+  // 1) the solid swallowing mass — a churning gradient column across the whole screen
+  const g = ctx.createLinearGradient(0, wallTop, 0, FLOOR);
+  g.addColorStop(0,   `rgba(${cR},${cG},${cB},0)`);
+  g.addColorStop(0.18,`rgba(${cR},${cG},${cB},${0.45*k})`);
+  g.addColorStop(0.5, `rgba(${Math.round(cR*0.8)},${Math.round(cG*0.7)},${Math.round(cB*0.8)},${0.82*k})`);
+  g.addColorStop(1,   `rgba(${Math.round(cR*0.6)},${Math.round(cG*0.55)},${Math.round(cB*0.6)},${0.95*k})`);
+  ctx.fillStyle=g;
+  // ragged, wind-torn top edge
+  ctx.beginPath(); ctx.moveTo(0,FLOOR);
+  ctx.lineTo(0,wallTop);
+  for(let x=0;x<=W;x+=24){
+    const crest = wallTop + Math.sin(x*0.018 + t*1.4)*22*k + Math.sin(x*0.05 + t*2.3)*10*k;
+    ctx.lineTo(x, crest);
+  }
+  ctx.lineTo(W,FLOOR); ctx.closePath(); ctx.fill();
+  // 2) horizontal blowing sand streaks inside the wall
+  ctx.globalCompositeOperation='lighter';
+  ctx.strokeStyle=`rgba(${cR+30},${cG+50},${cB+30},${0.10*k})`; ctx.lineWidth=2;
+  for(let i=0;i<10;i++){
+    const y = wallTop + 30 + ((i*53 + t*120*(0.6+i*0.05)) % Math.max(40,wallH));
+    ctx.beginPath();
+    let xx=0; ctx.moveTo(0,y);
+    for(;xx<=W;xx+=40){ ctx.lineTo(xx, y + Math.sin(xx*0.02 + t*3 + i)*4); }
+    ctx.stroke();
+  }
+  // 3) a faint smothered glow where the sun used to be (it is being swallowed)
+  if(k<0.98){
+    const sunGlow = ctx.createRadialGradient(W*0.80, FLOOR-60, 4, W*0.80, FLOOR-60, 90);
+    sunGlow.addColorStop(0, `rgba(255,${180-enr*120|0},120,${0.30*(1-k)})`);
+    sunGlow.addColorStop(1, 'rgba(255,180,120,0)');
+    ctx.fillStyle=sunGlow; ctx.beginPath(); ctx.arc(W*0.80, FLOOR-60, 90, 0, 7); ctx.fill();
+  }
+  ctx.globalCompositeOperation='source-over';
+  ctx.restore();
+}
+
 function drawBg(){
+  // Ease the enraged-phase color blend toward its target (1 once The Drifter is below half HP)
+  { const target = (boss && boss.alive && boss.active && boss.phaseIndex>=1) ? 1 : 0;
+    bossEnrage += (target - bossEnrage) * 0.05; }
+  const farFade = 1 - sandWall*0.92;   // distant parallax dissolves as the storm-wall swallows the level
   // Gradient sky spanning the FULL vertical range the camera can reveal (pale haze up high → warm at the horizon)
-  const skyTop=-340, g=ctx.createLinearGradient(0,skyTop,0,H);
+  const skyTop=-360, g=ctx.createLinearGradient(0,skyTop,0,H);
   g.addColorStop(0.00,'#EAD9C4');   // pale hazy high-altitude sky
   g.addColorStop(0.22,'#F3D9B2');
   g.addColorStop(0.42,'#FBC47D');   // warm glow near the horizon band (~old screen top)
@@ -3842,6 +4091,7 @@ function drawBg(){
   g.addColorStop(1.00,'#E8C9A8');
   ctx.fillStyle=g; ctx.fillRect(0,skyTop,W,H-skyTop);
   // High sun + soft clouds in the upper sky (only really seen when climbing the sky route)
+  ctx.save(); ctx.globalAlpha=farFade;
   (function(){
     const sunX=((140 - cameraX*0.04)%(W+200)+(W+200))%(W+200)-100, sunY=-235;
     const sg=ctx.createRadialGradient(sunX,sunY,4,sunX,sunY,60);
@@ -3860,8 +4110,10 @@ function drawBg(){
       ctx.fill();
     }
   })();
+  ctx.restore();
 
   // Far canyon wall — continuous layered mesa band (hazy, distant)
+  ctx.save(); ctx.globalAlpha=farFade;
   (function(){
     const baseY=FLOOR-96, seg=170, off=((cameraX*0.08)%seg+seg)%seg;
     ctx.fillStyle='rgba(120,72,64,0.30)';
@@ -3957,6 +4209,11 @@ function drawBg(){
     }
   }
   
+  ctx.restore();   // end farFade group (all distant + mid parallax dissolves into the storm)
+
+  // ---- THE SWALLOWING HORIZON: a towering wall of wind-blown sand rising to engulf the arena ----
+  if(sandWall>0.01) drawSandWall();
+
   // Cacti
   drawCactus(150,FLOOR,1);
   drawCactus(500,FLOOR,0.8);
