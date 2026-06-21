@@ -1285,7 +1285,8 @@ function buildBoss(){
     alive: true, active:false, hitFlash:0,
     spitTimer: 50, phase:0, dieTimer:0, lungeTimer:150,
     phaseIndex:0, windup:0, geyserTimer:60,
-    animName:'idle', animFrame:0, animAcc:0
+    animName:'idle', animFrame:0, animAcc:0,
+    prevFrame:0, xfade:0, xfadeRow:null, xfadeFrame:0
   };
   portal = { open:0, state:'closed', t:0 };
   bossWarnT = 0;
@@ -3244,25 +3245,42 @@ DRIFTER_ATLAS.onload=()=>{drifterReady=true;};
 DRIFTER_ATLAS.src='assets/drifter_atlas.webp';
 const DRIFTER_FRAMES={"idle": [[2222.1, 41.4, 276.3, 289.8], [1952.1, 38.7, 234.9, 292.5], [1635.3, 35.1, 249.3, 295.2], [1323.9, 41.4, 222.3, 289.8], [1007.1, 40.5, 227.7, 290.7], [687.6, 35.1, 230.4, 295.2], [372.6, 36.0, 236.7, 295.2], [40.5, 42.3, 254.7, 288.9]], "attack": [[2191.5, 397.8, 296.1, 278.1], [1912.5, 396.9, 253.8, 279.0], [1603.8, 395.1, 256.5, 280.8], [1257.3, 396.0, 288.9, 279.0], [945.0, 396.0, 292.5, 276.3], [652.5, 394.2, 292.5, 273.6], [302.4, 396.0, 350.1, 279.0], [22.5, 396.9, 279.9, 279.0]], "special": [[2198.7, 706.5, 300.6, 333.9], [1863.9, 706.5, 301.5, 333.9], [1481.4, 706.5, 338.4, 331.2], [1086.3, 707.4, 334.8, 333.0], [703.8, 716.4, 341.1, 324.0], [357.3, 715.5, 288.0, 322.2], [42.3, 761.4, 260.1, 278.1]], "death": [[2223.0, 1064.7, 275.4, 298.8], [1891.8, 1072.8, 282.6, 289.8], [1515.6, 1095.3, 331.2, 265.5], [1089.9, 1117.8, 373.5, 259.2], [709.2, 1140.3, 333.9, 234.9], [351.0, 1170.0, 308.7, 207.0]]};
 const DRIFTER_ANIM={
-  idle:   {row:'idle',    fps:8,  loop:true },
-  attack: {row:'attack',  fps:12, loop:false, next:'idle'},
-  special:{row:'special', fps:10, loop:false, next:'idle'},
-  death:  {row:'death',   fps:10, loop:false, hold:true }
+  idle:   {row:'idle',    fps:9,  loop:true,  ease:'sine'  },
+  attack: {row:'attack',  fps:16, loop:false, next:'idle', ease:'snap' },
+  special:{row:'special', fps:13, loop:false, next:'idle', ease:'inout'},
+  death:  {row:'death',   fps:11, loop:false, hold:true,   ease:'inout'}
 };
+// per-state cross-dissolve duration (in frame-units) used when switching rows
+const DRIFT_XFADE=0.6;
+// easing helpers operating on the 0..1 inter-frame fraction
+function driftEase(kind,u){
+  if(kind==='sine')  return 0.5-0.5*Math.cos(u*Math.PI);     // slow-in/slow-out
+  if(kind==='inout') return u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+  if(kind==='snap')  return 1-Math.pow(1-u,3);               // fast snap to pose
+  return u;                                                   // linear
+}
 const DRIFT_DISPLAY_H=116;                       // on-screen height of idle pose
 const DRIFT_SCALE=DRIFT_DISPLAY_H/DRIFTER_FRAMES.idle[0][3];
 // --- state machine (defaults to idle; exposes the requested triggers) ---
-function driftInitAnim(b){ b.animName='idle'; b.animFrame=0; b.animAcc=0; }
-function driftSetAnim(b,name){ if(b.animName===name)return; b.animName=name; b.animFrame=0; b.animAcc=0; }
+function driftInitAnim(b){ b.animName='idle'; b.animFrame=0; b.animAcc=0; b.prevFrame=0; b.xfade=0; b.xfadeRow=null; b.xfadeFrame=0; }
+function driftSetAnim(b,name){
+  if(b.animName===name)return;
+  // capture the pose we're leaving so we can cross-dissolve into the new row
+  b.xfadeRow=DRIFTER_ANIM[b.animName]?DRIFTER_ANIM[b.animName].row:null;
+  b.xfadeFrame=b.animFrame;
+  b.xfade=DRIFT_XFADE;
+  b.animName=name; b.animFrame=0; b.animAcc=0; b.prevFrame=0;
+}
 function driftAdvance(b){
   const a=DRIFTER_ANIM[b.animName]; if(!a)return;
   const n=DRIFTER_FRAMES[a.row].length;
+  if(b.xfade>0){ b.xfade-=a.fps/60; if(b.xfade<0)b.xfade=0; }   // decay row-switch blend
   b.animAcc+=a.fps/60;
   while(b.animAcc>=1){
-    b.animAcc-=1; b.animFrame++;
+    b.animAcc-=1; b.prevFrame=b.animFrame; b.animFrame++;
     if(b.animFrame>=n){
       if(a.loop){ b.animFrame=0; }
-      else if(a.hold){ b.animFrame=n-1; b.animAcc=0; break; }
+      else if(a.hold){ b.animFrame=n-1; b.animAcc=0; b.prevFrame=n-1; break; }
       else { driftSetAnim(b,a.next||'idle'); break; }
     }
   }
@@ -3273,19 +3291,21 @@ function triggerSpecial(){ if(boss&&boss.alive&&boss.animName==='idle') driftSet
 function die(){ if(boss){ driftSetAnim(boss,'death'); } }
 function drawDrifter(b,bx,by,flash){
   const a=DRIFTER_ANIM[b.animName]||DRIFTER_ANIM.idle;
-  const fr=DRIFTER_FRAMES[a.row][Math.min(b.animFrame,DRIFTER_FRAMES[a.row].length-1)];
+  const rowArr=DRIFTER_FRAMES[a.row];
+  const fr=rowArr[Math.min(b.animFrame,rowArr.length-1)];
   if(!drifterReady||!fr){                         // fallback: simple sand wraith
     ctx.fillStyle=flash?'#fff':'#cfc6b0';
     ctx.beginPath(); ctx.ellipse(bx+b.w/2,by+b.h-18,20,30,0,0,7); ctx.fill();
     ctx.fillStyle='#e8e2d0'; ctx.beginPath(); ctx.ellipse(bx+b.w/2,by+16,16,10,0,0,7); ctx.fill();
     return;
   }
-  const [sx,sy,sw,sh]=fr;
-  const dw=sw*DRIFT_SCALE, dh=sh*DRIFT_SCALE;
   const cx=bx+b.w/2;                              // bottom-center pivot
-  const dx=cx-dw/2, dy=(by+b.h)-dh;
+  const baseGroundY=by+b.h;
   const t=performance.now()*0.001;
   const ph=b.phaseIndex||0;
+  // approximate display box from the current frame (used for aura sizing)
+  const dw=fr[2]*DRIFT_SCALE, dh=fr[3]*DRIFT_SCALE;
+  const dx=cx-dw/2, dy=baseGroundY-dh;
   // --- DUSTY WIND AURA (drawn behind the figure) ---
   if(b.animName!=='death'){
     const aX=cx, aY=dy+dh*0.5;
@@ -3314,8 +3334,43 @@ function drawDrifter(b,bx,by,flash){
     }
     ctx.restore();
   }
+  // ===================== SMOOTH BLIT =====================
+  // (1) inter-frame fraction with per-state easing
+  const aset=DRIFTER_ANIM[b.animName]||DRIFTER_ANIM.idle;
+  const fracRaw=Math.max(0,Math.min(1,b.animAcc||0));
+  const frac=driftEase(aset.ease,fracRaw);
+  const curIdx=Math.min(b.animFrame,rowArr.length-1);
+  const prevIdx=Math.min(b.prevFrame!=null?b.prevFrame:curIdx,rowArr.length-1);
+  // (2) continuous procedural motion the discrete frames can't supply
+  let bobY=0, bobX=0, lean=0, scaleY=1;
+  if(b.animName==='idle'){ bobY=Math.sin(t*1.7)*2.2; lean=Math.sin(t*0.9)*0.015; scaleY=1+Math.sin(t*1.7)*0.012; }
+  else if(b.animName==='attack'){ const e=Math.sin(((curIdx+fracRaw)/rowArr.length)*Math.PI); bobX=(b.facing>0?-1:1)*e*7; }
+  else if(b.animName==='special'){ const u=(curIdx+fracRaw)/rowArr.length; bobY=-Math.sin(u*Math.PI)*3; }
   if(flash) ctx.filter='brightness(2.6) saturate(0.3)';
-  ctx.drawImage(DRIFTER_ATLAS, sx,sy,sw,sh, dx,dy,dw,dh);
+  // helper: draw a given [sx,sy,sw,sh] frame at bottom-center pivot, with procedural transform
+  const blit=(f,alpha)=>{
+    if(alpha<=0.001)return;
+    const w=f[2]*DRIFT_SCALE, h=f[3]*DRIFT_SCALE;
+    const ddx=cx-w/2+bobX, ddy=baseGroundY-h+bobY;
+    ctx.save();
+    ctx.globalAlpha*=alpha;
+    if(lean){ ctx.translate(cx,baseGroundY); ctx.rotate(lean); ctx.translate(-cx,-baseGroundY); }
+    if(scaleY!==1){ ctx.translate(cx,baseGroundY); ctx.scale(1,scaleY); ctx.translate(-cx,-baseGroundY); }
+    ctx.drawImage(DRIFTER_ATLAS, f[0],f[1],f[2],f[3], ddx,ddy,w,h);
+    ctx.restore();
+  };
+  // (3) cross-dissolve from a row-switch, if active
+  if(b.xfade>0 && b.xfadeRow && DRIFTER_FRAMES[b.xfadeRow]){
+    const xa=Math.max(0,Math.min(1,b.xfade/DRIFT_XFADE));   // 1->0 as it resolves
+    const oldArr=DRIFTER_FRAMES[b.xfadeRow];
+    const of=oldArr[Math.min(b.xfadeFrame,oldArr.length-1)];
+    blit(of, xa);                                            // fading-out old pose
+    blit(rowArr[curIdx], 1-xa);                              // fading-in new pose
+  } else {
+    // (4) intra-row interpolation: cross-fade adjacent frames by eased fraction
+    blit(rowArr[prevIdx], 1-frac);
+    blit(rowArr[curIdx],  frac);
+  }
   ctx.filter='none';
   // --- foreground wind wisps trailing off him ---
   if(b.animName!=='death'){
