@@ -412,7 +412,7 @@
     <b>You are Sawyer</b> &mdash; run, jump, and throw to clear each world. You start with 5 hearts; lose them all and it's game over.<br>
     <b>Otto, your baby brother,</b> follows on his own, hops along behind you, and spits milk at any critter that gets close. He can't be hurt &mdash; only Sawyer loses hearts.<br>
     <b>Goal:</b> grab collectibles for points, stomp or bonk enemies, and defeat each world's boss to advance.<br>
-    <b>Power-ups:</b> collect <b>Baby Bottles</b> to shield Sawyer and charge up Otto's giant form.
+    <b>Power-ups:</b> collect <b>Baby Bottles</b> to shield Sawyer and unleash Otto's <b>Big Baby</b> rush.
   </div>
   <div style="text-align:center;padding:6px 0 2px;font-size:11px;color:#888;letter-spacing:0.04em;">A game by <b>Activities with Ryan</b></div>
 </div>
@@ -1623,41 +1623,54 @@ function buildBoss(){
 //  ENTRY PORTAL DUMP — Sawyer & Otto are tossed out of a portal that closes
 //  behind them at the start of every level.
 // =========================================================================
-let portalDump = { active:false, t:0, open:0, phase:'idle', x:0, y:0 };
+let portalDump = { active:false, t:0, open:0, phase:'idle', x:0, y:0, released:false };
 // Called from buildPlayers() — arms the dump using the freshly-spawned players.
 function startPortalDump(){
   if(!sawyer) return;
   // portal hovers just above the spawn point
   const px = sawyer.x + sawyer.w/2;
-  const py = sawyer.y - 46;
-  portalDump = { active:true, t:0, open:0, phase:'opening', x:px, y:py };
-  // tuck the riders up inside the portal mouth and toss them out & down
-  sawyer.y = py - 4; sawyer.vy = -2.2; sawyer.vx = 0.6; sawyer.onGround=false;
-  if(otto){ otto.x = px - 30; otto.y = py - 2; otto.vy = -1.6; otto.vx = 0.4; otto.onGround=false; }
+  const py = sawyer.y - 50;
+  portalDump = { active:true, t:0, open:0, phase:'opening', x:px, y:py, released:false };
+  // tuck the riders up inside the portal mouth; they stay hidden & still until released
+  sawyer.y = py - 4; sawyer.vy = 0; sawyer.vx = 0; sawyer.onGround=false;
+  if(otto){ otto.x = px - 30; otto.y = py - 2; otto.vy = 0; otto.vx = 0; otto.onGround=false; }
 }
 // Advances the portal animation; returns true while it should still suppress input.
-function tickPortalDump(){
+// `running` is false while the level popup is up — portal opens & waits, riders held.
+function tickPortalDump(running){
   if(!portalDump.active) return false;
-  portalDump.t++;
   if(portalDump.phase==='opening'){
-    portalDump.open = Math.min(1, portalDump.open + 0.10);
-    if(portalDump.open>=1) portalDump.phase='hold';
+    // portal yawns open (runs even under the popup so it's ready when Play is hit)
+    portalDump.open = Math.min(1, portalDump.open + 0.07);
+    if(portalDump.open>=1 && running) portalDump.phase='hold';
   } else if(portalDump.phase==='hold'){
-    // give the riders a beat to clear the portal mouth before it shuts
-    if(portalDump.t>26) portalDump.phase='closing';
+    // release the riders the instant the level is live, toss them out & down
+    if(!portalDump.released){
+      portalDump.released = true; portalDump.t = 0;
+      sawyer.vy=-2.4; sawyer.vx=0.6; sawyer.onGround=false;
+      if(otto){ otto.vy=-1.8; otto.vx=0.4; otto.onGround=false; }
+    }
+    portalDump.t++;
+    // longer beat so they clearly clear the mouth before it shuts
+    if(portalDump.t>40) portalDump.phase='closing';
   } else if(portalDump.phase==='closing'){
-    portalDump.open = Math.max(0, portalDump.open - 0.06);
+    portalDump.t++;
+    portalDump.open = Math.max(0, portalDump.open - 0.045);
     if(portalDump.open<=0){ portalDump.active=false; portalDump.phase='idle'; }
   }
-  // input is suppressed only briefly, until the riders are clearly out (~32 frames)
-  return portalDump.t < 32;
+  // suppress input from release until the riders are clearly out (~46 frames)
+  return portalDump.released && portalDump.t < 46;
+}
+// True while the riders are still tucked inside the portal and shouldn't be drawn.
+function portalRidersHidden(){
+  return portalDump.active && !portalDump.released;
 }
 // Draws the entry portal in screen space for the current camera.
 function drawPortalDump(){
   if(!portalDump.active && portalDump.open<=0) return;
   const sx = portalDump.x - cameraX;
   const sy = portalDump.y - (((typeof cameraY!=='undefined')?cameraY:0));
-  drawEscapePortal(sx, sy, 30, portalDump.open, performance.now()*0.004);
+  drawEscapePortal(sx, sy, 32, portalDump.open, performance.now()*0.004);
 }
 
 const FLAG = { x: ARENA_X1-24, y: FLOOR }; // escape flag at the far edge of the isolated arena
@@ -6077,11 +6090,14 @@ function loop(){
   if(_frameMs > MAX_FRAME_MS) _frameMs = MAX_FRAME_MS; // clamp after stalls/tab-switch
   _stepAccum += _frameMs;
   let _steps = 0;
+  // Entry portal opens during the level popup and tosses the riders once play begins.
+  // Tick once per rendered frame so the open/close animates smoothly even while paused.
+  let _portalDumpInputLock = false;
+  if(portalDump.active) _portalDumpInputLock = tickPortalDump(!levelPaused);
   // Drain whole steps; the sub-step remainder carries to next frame (no per-frame lurch)
   while(_stepAccum >= STEP_MS && _steps < MAX_STEPS){
-    // Entry portal dump: brief input lock while the riders are tossed out.
-    let _dumpLock=false;
-    if(portalDump.active && !levelPaused) _dumpLock = tickPortalDump();
+    // Entry portal dump: input lock while the riders are tossed out (only when live).
+    let _dumpLock = portalDump.active ? _portalDumpInputLock : false;
     let _kL,_kR,_kU,_kD,_kSp;
     if(_dumpLock){
       _kL=keys['ArrowLeft']; _kR=keys['ArrowRight']; _kU=keys['ArrowUp']; _kD=keys['ArrowDown']; _kSp=keys['Space'];
@@ -6241,26 +6257,60 @@ function loop(){
     drawPlayer(sawyer);
   } else if(!bikeEscape.active && !victoryActive) {
     if(portalDump.active) drawPortalDump();   // entry portal sits behind the riders
-    if(ottoPower===2){ const v=otto.invincible===0||Math.floor(otto.invincible/5)%2===0; if(v) ottoAura(2); }
-    drawPlayer(otto); drawPlayer(sawyer);
+    if(!portalRidersHidden()){                // riders stay hidden until tossed out
+      if(ottoPower===2){ const v=otto.invincible===0||Math.floor(otto.invincible/5)%2===0; if(v) ottoAura(2); }
+      drawPlayer(otto); drawPlayer(sawyer);
+    }
   }
   // Bike escape rider overlay
   // (bike escape removed — portal warp handles level finish)
   if(currentLevel===5 && !bikeEscape.active && !victoryActive) drawHausDarkness();
   if(currentLevel===5 && !bikeEscape.active && !victoryActive) drawBaronGhoul();
-  // Power indicator HUD
+  // Power indicator HUD — neon banner, top-center (clear of corner HUD)
   if(ottoPower>0){
-    const pwrNames=['','GIANT!','SPRAY!','CUTE!'];
-    const pwrColors=['','#B5D4F4','#B5F4B5','#F4B5D4'];
-    const pct=ottoPowerTimer/POWER_DURATION;
-    ctx.save();
-    ctx.fillStyle=pwrColors[ottoPower];ctx.globalAlpha=0.85;
-    ctx.beginPath();ctx.roundRect(W/2-70,H-28,140,20,6);ctx.fill();
-    ctx.fillStyle='rgba(0,0,0,0.3)';
-    ctx.beginPath();ctx.roundRect(W/2-70,H-28,140*(1-pct),20,6);ctx.fill();
-    ctx.globalAlpha=1;ctx.fillStyle='#2C2C2A';ctx.font='bold 11px system-ui';ctx.textAlign='center';
-    ctx.fillText('OTTO: '+pwrNames[ottoPower]+' '+Math.ceil(ottoPowerTimer/60)+'s',W/2,H-14);
-    ctx.restore();
+    const pwrNames=['','BIG BABY','MILK BLAST','SNUGGLE STUN'];
+    const pwrColors=['','#7FD4FF','#FFF4B0','#FF8AD8'];
+    // BIG BABY is a self-terminating rush (no timer) — show a full bar; others count down.
+    const timed = ottoPower!==1;
+    const pct = timed ? (ottoPowerTimer/POWER_DURATION) : 1;
+    const col = pwrColors[ottoPower];
+    const label = pwrNames[ottoPower];
+    const c = ctx; c.save();
+    c.textAlign='center';
+    c.font='900 18px system-ui,-apple-system,sans-serif';
+    const secTxt = timed ? ('  '+Math.ceil(ottoPowerTimer/60)+'s') : '';
+    const txt = 'OTTO: '+label+secTxt;
+    const tw = c.measureText(txt).width;
+    const bw = Math.max(150, tw+44), bx = W/2-bw/2, by = 8, bh = 30, cx = W/2;
+    // pulsing glow strength
+    const pulse = 0.6 + 0.4*Math.sin(performance.now()*0.006);
+    // ── housing: dark glass capsule with neon rim ──
+    c.beginPath(); c.roundRect(bx,by,bw,bh,15);
+    c.fillStyle='rgba(10,8,24,0.78)'; c.fill();
+    // remaining-time fill (subtle, behind text) for timed powers
+    if(timed){
+      c.save(); c.beginPath(); c.roundRect(bx,by,bw,bh,15); c.clip();
+      c.globalAlpha=0.20; c.fillStyle=col;
+      c.fillRect(bx,by,bw*pct,bh);
+      c.restore();
+    }
+    // neon rim — outer bloom + crisp inner stroke
+    c.lineJoin='round';
+    c.shadowColor=col; c.shadowBlur=14*pulse;
+    c.lineWidth=2.5; c.strokeStyle=col; c.globalAlpha=0.9;
+    c.beginPath(); c.roundRect(bx+1,by+1,bw-2,bh-2,14); c.stroke();
+    c.shadowBlur=0; c.globalAlpha=1;
+    c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.35)';
+    c.beginPath(); c.roundRect(bx+1,by+1,bw-2,bh-2,14); c.stroke();
+    // ── neon text: dark outline → glowing fill → bright core ──
+    const ty = by+bh/2+6.5;
+    c.lineWidth=4; c.lineJoin='round'; c.strokeStyle='rgba(4,2,14,0.95)';
+    c.strokeText(txt, cx, ty);
+    c.shadowColor=col; c.shadowBlur=10*pulse; c.fillStyle=col;
+    c.fillText(txt, cx, ty);
+    c.shadowBlur=0; c.globalAlpha=0.92; c.fillStyle='rgba(255,255,255,0.92)';
+    c.fillText(txt, cx, ty);
+    c.restore();
   }
   drawBottles(); drawHearts();
   
