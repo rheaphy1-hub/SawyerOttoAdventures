@@ -9137,7 +9137,11 @@ function updateGen(){
   }
   if(finishCardActive){
     finishCardTimer--;
-    if(finishCardTimer<=0){ finishCardActive=false; won=true; }
+    if(finishCardTimer<=0){
+      finishCardActive=false;
+      if(currentLevel===6 && !nameEntryDone){ startNameEntry(); }
+      else { won=true; }
+    }
     s.vx=0;
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
     return;
