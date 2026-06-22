@@ -3832,16 +3832,22 @@ function drawYetiSprite(b,bx,by,flash){
 const CRAB_ATLAS = new Image(); let crabReady=false;
 CRAB_ATLAS.onload=()=>{crabReady=true;};
 CRAB_ATLAS.src='assets/crab/crab_atlas.webp';
-const CRAB_FRAMES={"idle": [[0,0,432,301],[432,0,432,301],[864,0,432,301],[1296,0,432,301],[1728,0,432,301],[2160,0,432,301]], "walk": [[0,301,432,301],[432,301,432,301],[864,301,432,301],[1296,301,432,301],[1728,301,432,301],[2160,301,432,301]], "charge": [[0,602,432,301],[432,602,432,301],[864,602,432,301],[1296,602,432,301]], "raise": [[1728,602,432,301],[2160,602,432,301],[0,903,432,301],[432,903,432,301]], "wide": [[864,903,432,301],[1296,903,432,301],[1728,903,432,301]], "spit": [[2160,903,432,301],[0,1204,432,301]], "death": [[0,903,432,301],[2160,602,432,301],[864,0,432,301],[0,0,432,301]]};
+// Tight per-cell bounding boxes measured from the 6x5 atlas (gutters trimmed so no
+// neighbour-bleed; sizes vary because raised/wide claws extend past the body). Flat
+// index 0..28 (cell 29 is blank). [sx,sy,sw,sh] in atlas pixels.
+const CRAB_CELLS=[[27,56,367,236],[425,57,416,235],[853,44,404,248],[1289,56,375,236],[1692,56,413,236],[2137,56,367,236],[27,351,367,236],[425,351,416,236],[859,333,391,254],[1302,332,349,255],[1698,327,401,260],[2137,351,367,236],[6,606,410,276],[457,602,351,280],[884,593,342,289],[1300,623,354,259],[1720,627,358,255],[2114,623,414,259],[35,915,352,262],[450,931,365,246],[884,893,342,284],[1307,892,340,285],[1727,892,343,285],[2133,941,376,236],[23,1237,375,235],[446,1237,374,235],[868,1240,374,232],[1308,1206,338,266],[1718,1239,362,233]];
+// Animations reference ABSOLUTE cell indices (no row indirection). Poses mapped from
+// the atlas: 0-5 idle, 6-11 walk, 12-15 raise/strike(+spark), 16-19 charge/scuttle,
+// 20-22 wide claw display, 23-25 spit/recover, 26-28 death rear.
 const CRAB_ANIM={
-  idle:  {row:'idle',  frames:[0,1,2,3,4,5],   fps:6,  loop:true,  ease:'sine'  },
-  walk:  {row:'walk',  frames:[0,1,2,3,4,5],   fps:9,  loop:true,  ease:'sine'  },
-  raise: {row:'raise', frames:[0,1,2],         fps:12, loop:false, next:'idle', ease:'inout'},
-  wide:  {row:'wide',  frames:[0,1,2,2,1],     fps:11, loop:false, next:'idle', ease:'inout'},
-  slam:  {row:'raise', frames:[1,2,3,3,1],     fps:15, loop:false, next:'idle', ease:'snap' },
-  charge:{row:'charge',frames:[0,1,2,3],       fps:14, loop:true,  ease:'snap'  },
-  spit:  {row:'spit',  frames:[0,1,1,0],       fps:13, loop:false, next:'idle', ease:'snap' },
-  death: {row:'death', frames:[0,1,2,3],       fps:7,  loop:false, hold:true,   ease:'inout'}
+  idle:  {cells:[0,1,2,3,4,5],     fps:6,  loop:true,  ease:'sine'  },
+  walk:  {cells:[6,7,8,9,10,11],   fps:9,  loop:true,  ease:'sine'  },
+  raise: {cells:[12,13,14,13],     fps:12, loop:false, next:'idle', ease:'inout'},
+  wide:  {cells:[20,21,22,22,21],  fps:11, loop:false, next:'idle', ease:'inout'},
+  slam:  {cells:[12,13,14,15,13],  fps:15, loop:false, next:'idle', ease:'snap' },
+  charge:{cells:[16,17,18,19],     fps:14, loop:true,  ease:'snap'  },
+  spit:  {cells:[23,24,25,24],     fps:13, loop:false, next:'idle', ease:'snap' },
+  death: {cells:[26,27,28,28],     fps:7,  loop:false, hold:true,   ease:'inout'}
 };
 const CRAB_XFADE=0.55;
 function crabEase(kind,u){
@@ -3850,22 +3856,23 @@ function crabEase(kind,u){
   if(kind==='snap')  return 1-Math.pow(1-u,3);
   return u;
 }
-// All slots are the same size; SLOT taken from the first idle frame.
-const CRAB_SLOT_W=CRAB_FRAMES.idle[0][2], CRAB_SLOT_H=CRAB_FRAMES.idle[0][3];
-const CRAB_DISPLAY_H=150;                          // on-screen slot height
-const CRAB_SCALE=CRAB_DISPLAY_H/CRAB_SLOT_H;
-function crabInitAnim(b){ b.animName='idle'; b.animFrame=0; b.animAcc=0; b.prevFrame=0; b.xfade=0; b.xfadeRow=null; b.xfadeFrame=0; }
+// Reference frame = idle[0]. On-screen size is pinned to this reference so that
+// frames with wider/taller trims (raised or wide claws) read as the claws extending
+// OUT, not as the whole crab resizing. Scale is uniform across every frame.
+const CRAB_REF_W=CRAB_CELLS[0][2], CRAB_REF_H=CRAB_CELLS[0][3];
+const CRAB_DISPLAY_H=150;                          // on-screen reference height
+const CRAB_SCALE=CRAB_DISPLAY_H/CRAB_REF_H;
+function crabInitAnim(b){ b.animName='idle'; b.animFrame=0; b.animAcc=0; b.prevFrame=0; b.xfade=0; b.xfadeCell=null; }
 function crabSetAnim(b,name){
   if(b.animName===name)return;
   const cur=CRAB_ANIM[b.animName];
-  b.xfadeRow=cur?cur.row:null;
-  b.xfadeFrame=cur?(cur.frames[Math.min(b.animFrame,cur.frames.length-1)]):0;
+  b.xfadeCell=cur?cur.cells[Math.min(b.animFrame,cur.cells.length-1)]:null;
   b.xfade=CRAB_XFADE;
   b.animName=name; b.animFrame=0; b.animAcc=0; b.prevFrame=0;
 }
 function crabAdvance(b){
   const a=CRAB_ANIM[b.animName]; if(!a)return;
-  const n=a.frames.length;
+  const n=a.cells.length;
   if(b.xfade>0){ b.xfade-=a.fps/60; if(b.xfade<0)b.xfade=0; }
   b.animAcc+=a.fps/60;
   while(b.animAcc>=1){
@@ -3877,11 +3884,11 @@ function crabAdvance(b){
     }
   }
 }
+// Return the tight atlas rect for a logical frame index of an animation.
 function crabRect(animName,logicalIdx){
   const a=CRAB_ANIM[animName]||CRAB_ANIM.idle;
-  const arr=CRAB_FRAMES[a.row];
-  const fi=a.frames[Math.min(logicalIdx,a.frames.length-1)];
-  return arr[Math.min(fi,arr.length-1)];
+  const ci=a.cells[Math.min(logicalIdx,a.cells.length-1)];
+  return CRAB_CELLS[ci];
 }
 // Draw atlas crab; returns false so caller can use the vector fallback.
 // `deathSink` 0..1 lets the death state sink+fade the sprite (no belly-up art exists).
@@ -3892,11 +3899,11 @@ function drawCrabSprite(b,bx,by,flash){
   const baseGroundY=by+b.h;
   const t=performance.now()*0.001;
   const enr=(typeof globalThis!=='undefined'&&globalThis.l3BossEnrage!=null)?globalThis.l3BossEnrage:(typeof l3BossEnrage!=='undefined'?l3BossEnrage:0);
-  const W0=CRAB_SLOT_W*CRAB_SCALE, H0=CRAB_SLOT_H*CRAB_SCALE;
+  const W0=CRAB_REF_W*CRAB_SCALE, H0=CRAB_REF_H*CRAB_SCALE;  // reference body box (halo/aura)
   const dyA=baseGroundY-H0;
   const dead=b.animName==='death';
   // death sink/fade: the only way the crab reads as defeated (no flipped art)
-  const sink=dead?Math.min(1,(b.animFrame+ (b.animAcc||0))/ (CRAB_ANIM.death.frames.length-0.001)):0;
+  const sink=dead?Math.min(1,(b.animFrame+ (b.animAcc||0))/ (CRAB_ANIM.death.cells.length-0.001)):0;
   // sickly brine aura (brightens in phase 2; fades out as he dies)
   if(!dead){
     const aX=cx, aY=dyA+H0*0.5, pulse=0.85+0.15*Math.sin(t*2.2);
@@ -3916,16 +3923,17 @@ function drawCrabSprite(b,bx,by,flash){
   let bobY=0, bobX=0, lean=0, scaleY=1;
   if(b.animName==='idle'){ bobY=Math.sin(t*1.6)*2.0; scaleY=1+Math.sin(t*1.6)*0.012; }
   else if(b.animName==='walk'){ bobY=Math.abs(Math.sin(t*7))*-2.0; }
-  else if(b.animName==='raise'||b.animName==='wide'){ const u=curIdx/Math.max(1,a.frames.length-1); bobY=-Math.sin(u*Math.PI)*5; scaleY=1+Math.sin(u*Math.PI)*0.03; }
-  else if(b.animName==='slam'){ const u=curIdx/Math.max(1,a.frames.length-1); bobY=u<0.4?-Math.sin(u/0.4*Math.PI*0.5)*12:0; }
+  else if(b.animName==='raise'||b.animName==='wide'){ const u=curIdx/Math.max(1,a.cells.length-1); bobY=-Math.sin(u*Math.PI)*5; scaleY=1+Math.sin(u*Math.PI)*0.03; }
+  else if(b.animName==='slam'){ const u=curIdx/Math.max(1,a.cells.length-1); bobY=u<0.4?-Math.sin(u/0.4*Math.PI*0.5)*12:0; }
   else if(b.animName==='charge'){ bobX=(b.facing>0?1:-1)*Math.abs(Math.sin(t*10))*4; bobY=Math.abs(Math.sin(t*10))*-2; }
-  else if(b.animName==='spit'){ const e=Math.sin(((curIdx+fracRaw)/a.frames.length)*Math.PI); bobX=(b.facing>0?-1:1)*e*6; }
+  else if(b.animName==='spit'){ const e=Math.sin(((curIdx+fracRaw)/a.cells.length)*Math.PI); bobX=(b.facing>0?-1:1)*e*6; }
   else if(dead){ bobY=sink*10; scaleY=1-sink*0.12; }   // sink + squash as it dies
   if(flash) ctx.filter='brightness(2.3) saturate(0.55)';
-  // single clean blit — uniform width means no rim, no per-frame x-shift
+  // Each tight rect is drawn at ITS OWN trimmed size * uniform scale, bottom-center
+  // anchored on (cx, baseGroundY). Variable trims => claws extend out, body stays put.
   const blit=(rect,alpha)=>{
     if(alpha<=0.001||!rect)return;
-    const w=W0, h=H0;
+    const w=rect[2]*CRAB_SCALE, h=rect[3]*CRAB_SCALE;
     const ddx=cx-w/2+bobX, ddy=baseGroundY-h+bobY;
     ctx.save(); ctx.globalAlpha*=alpha*(dead?(1-sink*0.85):1);
     if(b.facing>0){ ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0); }
@@ -3934,11 +3942,9 @@ function drawCrabSprite(b,bx,by,flash){
     ctx.drawImage(CRAB_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx,ddy,w,h);
     ctx.restore();
   };
-  if(b.xfade>0 && b.xfadeRow && CRAB_FRAMES[b.xfadeRow]){
+  if(b.xfade>0 && b.xfadeCell!=null && CRAB_CELLS[b.xfadeCell]){
     const xa=Math.max(0,Math.min(1,b.xfade/CRAB_XFADE));
-    const oldArr=CRAB_FRAMES[b.xfadeRow];
-    const of=oldArr[Math.min(b.xfadeFrame,oldArr.length-1)];
-    blit(of, xa);
+    blit(CRAB_CELLS[b.xfadeCell], xa);
     blit(crabRect(b.animName,curIdx), 1-xa);
   } else {
     blit(crabRect(b.animName,prevIdx), 1-frac);
@@ -5744,7 +5750,7 @@ function jumpToLevel(n){
   audioManager.stop();
   buildPlayers();
   if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
-  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); }
+  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); }
   else if(n>=4&&n<=6){ buildLevel4to6Jump(n); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
