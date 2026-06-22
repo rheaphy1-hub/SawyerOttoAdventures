@@ -4451,6 +4451,19 @@ const cosmicGlow = (function(){
     // water/ground band: ink → deep teal (phase 2)
     const water = lerpA([4,10,32,0.74], [4,30,40,0.84], enr);
     ctx.fillStyle=css(water); ctx.fillRect(0,oceanTop,W,FLOOR-oceanTop);
+    // rolling night swell — slow crest lines drifting across the dark water so it reads
+    // as moving (complements the bioluminescent surf below; tuned to the night palette).
+    for(let w=0;w<4;w++){
+      const woff=w*13, wy0=oceanTop+6+woff;
+      const teal=lerpA([90,150,190,0.10+w*0.03],[80,180,170,0.12+w*0.04],enr);
+      ctx.fillStyle=css(teal);
+      ctx.beginPath(); ctx.moveTo(-10,wy0);
+      for(let x=0;x<=W+10;x+=20){
+        const wy=wy0+Math.sin(x*0.035 - t*(0.9+w*0.25) + w*0.6 + cameraX*0.0012*(1+w*0.2))*3.0;
+        ctx.lineTo(x,wy);
+      }
+      ctx.lineTo(W+10,wy0+11); ctx.lineTo(-10,wy0+11); ctx.closePath(); ctx.fill();
+    }
     if(stars){ ctx.globalAlpha=0.6*(1-enr*0.35); ctx.drawImage(stars,0,0); ctx.globalAlpha=1; }
     ctx.globalCompositeOperation='lighter';
     // cool low moon — brightens as the world bruises (threat reads brighter)
@@ -5860,7 +5873,7 @@ function loop(){
     drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawL2Stals(); drawProjectiles();
     drawL2BossWarning();
   } else if(currentLevel===3){
-    drawL3Bg(); cosmicGlow(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
+    drawL3BgFar(); cosmicGlow(); drawL3BgNear(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
     drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel===4){
     drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls();
@@ -7327,7 +7340,7 @@ function drawL3SeaSwallow(){
 function drawL3Arena(){
   for(const r of l3Arena){
     if(r.hidden) continue;
-    const sx = r.x - cameraX, sy = r.y;
+    const sx = r.x - cameraX, sy = r.y + (r.squash||0);   // "give": dip art on landing
     if(sx + r.w < -20 || sx > W+20) continue;
     const sc = (r.spawnT!==undefined && r.spawnT<14) ? (r.spawnT/14) : 1; // spawn-pop scale-in
     ctx.save();
@@ -7365,6 +7378,26 @@ function drawL3Arena(){
 function updateLevel3(){
   if(gameOver||won||levelPaused) return;
   const s=sawyer,o=otto;
+
+  // platform "give": spring each ledge/raft's squash back to rest (critically damped-ish)
+  for(const pl of l3Platforms){
+    if(pl.squash||pl.squashV){
+      pl.squashV=(pl.squashV||0) - (pl.squash||0)*0.45;   // spring toward 0
+      pl.squashV*=0.72;                                    // damping
+      pl.squash=(pl.squash||0)+pl.squashV;
+      if(Math.abs(pl.squash)<0.05&&Math.abs(pl.squashV)<0.05){ pl.squash=0; pl.squashV=0; }
+      else if(pl.squash>14) pl.squash=14;                  // clamp dip
+    }
+  }
+  for(const pl of l3Arena){
+    if(pl.squash||pl.squashV){
+      pl.squashV=(pl.squashV||0) - (pl.squash||0)*0.45;
+      pl.squashV*=0.72;
+      pl.squash=(pl.squash||0)+pl.squashV;
+      if(Math.abs(pl.squash)<0.05&&Math.abs(pl.squashV)<0.05){ pl.squash=0; pl.squashV=0; }
+      else if(pl.squash>14) pl.squash=14;
+    }
+  }
 
   // Cutscene handling
   if(cutsceneActive){
@@ -7767,6 +7800,8 @@ function resolveL3(p){
       if(p.id==='sawyer'&&Math.abs(p.vy)>5){
         for(let i=0;i<6;i++) particles.push({x:p.x+p.w/2+Math.random()*12-6,y:p.y+p.h,vx:Math.random()*3-1.5,vy:-0.5-Math.random()*1.5,life:14,maxLife:14,type:'dust'});
       }
+      // platform "give": elevated pier ledges dip on a hard landing, then spring back
+      if(pl.y!==FLOOR && !p.onGround && p.vy>4){ pl.squashV=(pl.squashV||0)+Math.min(p.vy*0.5,6); }
       p.vy=0;p.onGround=true;
     }
   }
@@ -7776,6 +7811,7 @@ function resolveL3(p){
     const inX=p.x+p.w>pl.x&&p.x<pl.x+pl.w;
     const wasAbove=(p.y+p.h-p.vy)<=pl.y+3;
     if(inX&&wasAbove&&p.y+p.h>=pl.y&&p.y+p.h<=pl.y+pl.h+12){
+      if(pl.y!==FLOOR && !p.onGround && p.vy>4){ pl.squashV=(pl.squashV||0)+Math.min(p.vy*0.5,6); }
       p.y=pl.y-p.h; p.vy=0; p.onGround=true;
       p.x+=pl.dx; p.y+=pl.dy;            // ride the raft's drift/bob
     }
@@ -7994,21 +8030,19 @@ function drawL2Bg(){
   }
 }
 
-function drawL3Bg(){
-  // Sky gradient — bright coastal blue
+// Sandy Shores background is drawn in TWO passes around the night grade (cosmicGlow):
+//  • drawL3BgFar  — sky + distant decor, BEHIND the grade (sky/clouds/sailboat/gulls)
+//  • drawL3BgNear — dunes + palms, IN FRONT of the grade so they sit over the night
+//    water/moon (fixes palms-behind-water + moon-in-front-of-palms).
+// The old bright daytime ocean band + horizon strip were a relic (the night grade owns
+// the water now) and have been removed.
+function drawL3BgFar(){
+  // Base sky — a neutral dark fill; the night grade paints the real sky on top.
   const g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#4AAFEC');
-  g.addColorStop(0.35,'#7CC8F0');
-  g.addColorStop(0.65,'#B8E4F8');
-  g.addColorStop(0.82,'#D6F0FA');
-  g.addColorStop(1,'#EAF6FD');
+  g.addColorStop(0,'#0B1430');
+  g.addColorStop(0.55,'#16244A');
+  g.addColorStop(1,'#21314E');
   ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-
-  // (no sun — Sandy Shores is a night scene; the moon comes from the grade)
-
-  // Distant horizon ocean (faint deep blue strip)
-  ctx.fillStyle='rgba(30,100,170,0.18)';ctx.fillRect(0,FLOOR-90,W,50);
-  ctx.fillStyle='rgba(50,130,200,0.12)';ctx.fillRect(0,FLOOR-80,W,30);
 
   // Cloud puffs (parallax far)
   const cloudSeed=[{ox:40,oy:50,rx:28,ry:14},{ox:180,oy:34,rx:22,ry:11},{ox:320,oy:55,rx:32,ry:13},{ox:500,oy:38,rx:24,ry:12},{ox:640,oy:52,rx:20,ry:10}];
@@ -8040,62 +8074,22 @@ function drawL3Bg(){
     ctx.beginPath();ctx.moveTo(gx,gl.oy);ctx.quadraticCurveTo(gx+7,gl.oy-6-wing*8,gx+14,gl.oy);ctx.stroke();
     ctx.beginPath();ctx.moveTo(gx,gl.oy);ctx.quadraticCurveTo(gx-7,gl.oy-6-wing*8,gx-14,gl.oy);ctx.stroke();
   }
+}
 
-  // Ocean water layer (between background and beach ground)
-  const waveT=Date.now()*0.0012;
-  const oceanTop=FLOOR-55;
-
-  // Ocean body — layered blue bands
-  const oceanG=ctx.createLinearGradient(0,oceanTop,0,FLOOR);
-  oceanG.addColorStop(0,'#1A7EC0');
-  oceanG.addColorStop(0.4,'#1569AA');
-  oceanG.addColorStop(1,'#0F4E85');
-  ctx.fillStyle=oceanG;ctx.fillRect(0,oceanTop,W,FLOOR-oceanTop);
-
-  // Ocean wave crests (animated)
-  for(let w=0;w<4;w++){
-    const woff=w*22;
-    const wParallax=w*0.18;
-    ctx.fillStyle=`rgba(255,255,255,${0.12+w*0.04})`;
-    ctx.beginPath();
-    ctx.moveTo(-10,oceanTop+woff);
-    for(let x=0;x<=W+10;x+=18){
-      const wy=oceanTop+woff+Math.sin(x*0.04-waveT*(1+w*0.3)+wParallax*cameraX*0.01)*3.5;
-      ctx.lineTo(x,wy);
-    }
-    ctx.lineTo(W+10,oceanTop+woff+16);ctx.lineTo(-10,oceanTop+woff+16);ctx.closePath();ctx.fill();
-  }
-
-  // Ocean surface foam line at beach edge
-  ctx.fillStyle='rgba(255,255,255,0.55)';
-  ctx.beginPath();
-  ctx.moveTo(-10,FLOOR-8);
-  for(let x=0;x<=W+10;x+=14){
-    ctx.lineTo(x, FLOOR-8+Math.sin(x*0.08+waveT*1.8)*2.5);
-  }
-  ctx.lineTo(W+10,FLOOR);ctx.lineTo(-10,FLOOR);ctx.closePath();ctx.fill();
-
-  // Ocean sparkle glints
-  for(let i=0;i<8;i++){
-    const gx=(tRand(i*3.1+Math.floor(waveT*0.3))*W);
-    const gy=oceanTop+tRand(i*7.2+11)*40;
-    const glint=Math.abs(Math.sin(waveT*3+i*2));
-    if(glint>0.7){
-      ctx.fillStyle=`rgba(255,255,255,${(glint-0.7)*2.5})`;
-      ctx.beginPath();ctx.arc(gx,gy,1.2,0,7);ctx.fill();
-    }
-  }
-
+// NEAR pass — drawn AFTER the night grade so dunes + palms sit in front of the
+// night water/moon. (Was the tail of drawL3Bg; the relic daytime ocean band that
+// used to sit here has been removed — the grade owns the water.)
+function drawL3BgNear(){
   // Beach sand fore-dunes (parallax 0.55x)
   for(let i=0;i<5;i++){
     const dx=((i*360-cameraX*0.55+80)%(W+400)+W+400)%(W+400)-120;
-    ctx.fillStyle='rgba(210,175,110,0.38)';
+    ctx.fillStyle='rgba(60,70,95,0.42)';   // night-toned dune silhouette
     ctx.beginPath();
     ctx.moveTo(dx-30,FLOOR);
     ctx.quadraticCurveTo(dx+50,FLOOR-22,dx+130,FLOOR);
     ctx.fill();
     // Ripple lines on dune
-    ctx.strokeStyle='rgba(160,120,60,0.2)';ctx.lineWidth=0.6;
+    ctx.strokeStyle='rgba(20,28,44,0.3)';ctx.lineWidth=0.6;
     for(let r=0;r<3;r++){
       ctx.beginPath();
       ctx.moveTo(dx-10,FLOOR-3-r*4);
@@ -8104,48 +8098,55 @@ function drawL3Bg(){
     }
   }
 
-  // Palm trees (near parallax 0.45x) — full detailed palms
+  // Palm trees (near parallax 0.45x) — full detailed palms, swaying in the breeze
   const palmXs=[180,560,920,1380,1820,2280];
+  const brz=Date.now()*0.001;                       // global breeze clock
   for(const wx of palmXs){
     const px=((wx-cameraX*0.45)%(W+300)+W+300)%(W+300)-80;
     if(px<-90||px>W+20)continue;
-    const lean=0.08;
-    // Trunk — curved, brown
-    ctx.strokeStyle='#7A5C2E';ctx.lineWidth=5;ctx.lineCap='round';
+    // per-tree breeze: a slow base sway + a faster gust, out of phase by world-x
+    const ph=wx*0.013;
+    const sway=Math.sin(brz*0.7+ph)*0.018 + Math.sin(brz*1.9+ph*1.7)*0.008;
+    const lean=0.08+sway;                            // trunk bend breathes with the wind
+    // Trunk — curved, brown (night-toned)
+    ctx.strokeStyle='#3E3320';ctx.lineWidth=5;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(px,FLOOR);
     ctx.quadraticCurveTo(px+10+lean*80,FLOOR-55,px+18+lean*120,FLOOR-120);ctx.stroke();
-    ctx.strokeStyle='#9B7A3E';ctx.lineWidth=3;
+    ctx.strokeStyle='#564326';ctx.lineWidth=3;
     ctx.beginPath();ctx.moveTo(px,FLOOR);ctx.quadraticCurveTo(px+8+lean*80,FLOOR-55,px+16+lean*120,FLOOR-120);ctx.stroke();
     // Trunk segment rings
-    ctx.strokeStyle='rgba(90,60,20,0.35)';ctx.lineWidth=1.2;
+    ctx.strokeStyle='rgba(20,14,4,0.4)';ctx.lineWidth=1.2;
     for(let s=0;s<6;s++){
       const ty=FLOOR-s*22;const tx=px+lean*s*22;
       ctx.beginPath();ctx.moveTo(tx-3,ty);ctx.lineTo(tx+5,ty);ctx.stroke();
     }
-    // Fronds
+    // Fronds — the whole crown rotates slightly with the gust; tip tracks the leaning trunk
     const tipX=px+18+lean*120, tipY=FLOOR-122;
+    const frondRot=Math.sin(brz*1.3+ph)*0.10 + Math.sin(brz*2.7+ph*2.1)*0.05;
     const fronds=[[0,-1.1,30,1],[0.9,-0.8,28,0.9],[-0.9,-0.8,28,0.85],[1.4,-0.3,24,0.8],[-1.4,-0.3,24,0.8],[0.5,0.3,20,0.7],[-0.5,0.3,20,0.7]];
-    for(const [fx,fy,len,alpha] of fronds){
-      ctx.globalAlpha=alpha*0.85;
-      ctx.strokeStyle='#3A7D1A';ctx.lineWidth=2.5;ctx.lineCap='round';
+    for(const [fx0,fy,len,alpha] of fronds){
+      // rotate each frond's direction by the crown sway (frond tips lag/lead the wind)
+      const fx=fx0*Math.cos(frondRot)-fy*Math.sin(frondRot)*0.4 + frondRot*0.5;
+      ctx.globalAlpha=alpha*0.8;
+      ctx.strokeStyle='#1F4A12';ctx.lineWidth=2.5;ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(tipX,tipY);
       const ex2=tipX+fx*len,ey2=tipY+fy*len;
       ctx.quadraticCurveTo(tipX+fx*len*0.5+fy*8,tipY+fy*len*0.5-fx*6,ex2,ey2);ctx.stroke();
       // Leaflets
-      ctx.strokeStyle='#4B9A22';ctx.lineWidth=0.8;
+      ctx.strokeStyle='#2C6418';ctx.lineWidth=0.8;
       for(let l=2;l<len;l+=4){
-        const t=l/len;
-        const lx=tipX+fx*l+fy*8*Math.sin(t*Math.PI);
-        const ly=tipY+fy*l-fx*6*Math.sin(t*Math.PI);
+        const tt=l/len;
+        const lx=tipX+fx*l+fy*8*Math.sin(tt*Math.PI);
+        const ly=tipY+fy*l-fx*6*Math.sin(tt*Math.PI);
         const perp=Math.atan2(fy,fx)+Math.PI/2;
-        const ls=3.5-t*2;
+        const ls=3.5-tt*2;
         ctx.beginPath();ctx.moveTo(lx+Math.cos(perp)*ls,ly+Math.sin(perp)*ls);
         ctx.lineTo(lx-Math.cos(perp)*ls,ly-Math.sin(perp)*ls);ctx.stroke();
       }
     }
     ctx.globalAlpha=1;
-    // Coconuts
-    ctx.fillStyle='#8B6010';
+    // Coconuts (ride the swaying crown)
+    ctx.fillStyle='#3A2906';
     ctx.beginPath();ctx.arc(tipX-4,tipY+8,3.5,0,7);ctx.fill();
     ctx.beginPath();ctx.arc(tipX+4,tipY+10,3,0,7);ctx.fill();
   }
@@ -8718,6 +8719,10 @@ function drawL3Platforms(){
         }
       }
     } else {
+      // Elevated — wooden pier planks. "give": dip the art by pl.squash on landing
+      // (collision top stays at p.y; only the rendered planks move).
+      const sq=p.squash||0;
+      ctx.save(); if(sq) ctx.translate(0,sq);
       // Elevated — wooden pier planks
       rr(px,p.y,p.w,p.h+14,3,'#9B7540','#5C3D1A');
       ctx.save();ctx.beginPath();ctx.roundRect(px,p.y,p.w,p.h+14,3);ctx.clip();
@@ -8741,6 +8746,7 @@ function drawL3Platforms(){
         const bx2=px+6+k*18+(tRand(p.x+k*3)*6);
         ctx.beginPath();ctx.arc(bx2,p.y+p.h+14,2+tRand(p.x+k)*2,0,7);ctx.fill();
       }
+      ctx.restore(); // end squash dip
     }
   }
 }
