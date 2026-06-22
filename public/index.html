@@ -1789,7 +1789,6 @@ function update(){
   const camTarget1 = Math.max(0, Math.min(s.x - W/3, WORLD_W - W));
   cameraX += (camTarget1 - cameraX) * 0.06;
   cameraX = Math.max(0, Math.min(cameraX, WORLD_W - W));
-  cameraX = Math.round(cameraX);
   // Vertical camera: follow Sawyer up when he climbs above the normal view (0 = ground at bottom)
   const camTargetY = Math.max(-300, Math.min(0, s.y - 150));
   cameraY += (camTargetY - cameraY) * 0.10;
@@ -5485,7 +5484,7 @@ function restart(resetLevel){
   showLevelPopup(popupTitles[currentLevel],'');
 }
 const STEP_MS=1000/60, MAX_STEPS=4, MAX_FRAME_MS=STEP_MS*MAX_STEPS;
-let _lastFrameT=0;
+let _lastFrameT=0, _stepAccum=0;
 function loop(){
   if(gamePaused){
     // Draw a simple pause overlay so the screen isn't frozen with no feedback
@@ -5501,7 +5500,7 @@ function loop(){
     ctx.fillText('Click "Resume" to continue',W/2,H/2+24);
     ctx.restore();
     requestAnimationFrame(loop);
-    _lastFrameT=0; // resuming next real frame shouldn't dump catch-up steps
+    _lastFrameT=0; _stepAccum=0; // resuming next real frame shouldn't dump catch-up steps
     return;
   }
   // --- Fixed-timestep accumulator (frame-rate independent) ---
@@ -5510,20 +5509,24 @@ function loop(){
   // a single step per callback runs everything in slow motion. Run catch-up
   // steps so wall-clock speed stays correct; draw still happens once per frame.
   const _now = performance.now();
-  if(_lastFrameT===0) _lastFrameT = _now - STEP_MS;
-  let _accum = (_now - _lastFrameT);
+  if(_lastFrameT===0) _lastFrameT = _now;
+  let _frameMs = _now - _lastFrameT;
   _lastFrameT = _now;
-  if(_accum > MAX_FRAME_MS) _accum = MAX_FRAME_MS; // clamp after stalls/tab-switch
-  let _steps = Math.max(1, Math.round(_accum / STEP_MS));
-  if(_steps > MAX_STEPS) _steps = MAX_STEPS;
-  for(let _s=0; _s<_steps; _s++){
+  if(_frameMs > MAX_FRAME_MS) _frameMs = MAX_FRAME_MS; // clamp after stalls/tab-switch
+  _stepAccum += _frameMs;
+  let _steps = 0;
+  // Drain whole steps; the sub-step remainder carries to next frame (no per-frame lurch)
+  while(_stepAccum >= STEP_MS && _steps < MAX_STEPS){
     if(currentLevel===2) updateLevel2();
     else if(currentLevel===3) updateLevel3();
     else if(currentLevel===4) updateLevel4();
     else if(currentLevel===5) updateLevel5();
     else if(currentLevel===6) updateLevel6();
     else update();
+    _stepAccum -= STEP_MS;
+    _steps++;
   }
+  if(_stepAccum > STEP_MS) _stepAccum = STEP_MS; // don't bank debt past the clamp
   
   // Update audio crossfading
   audioManager.update();
@@ -6420,7 +6423,6 @@ function updateLevel2(){
   const camTarget2 = Math.max(0, Math.min(s.x - W/3, L2_WORLD_W - W));
   cameraX += (camTarget2 - cameraX) * 0.06;
   cameraX = Math.max(0, Math.min(cameraX, L2_WORLD_W - W));
-  cameraX = Math.round(cameraX);
   // Vertical camera: follow Sawyer up the sky route so he never climbs off the ceiling
   const camTargetY2 = Math.max(-300, Math.min(0, s.y - 150));
   cameraY += (camTargetY2 - cameraY) * 0.10;
@@ -7156,7 +7158,6 @@ function updateLevel3(){
   const camTarget3 = Math.max(0, Math.min(s.x - 100, L3_WORLD_W - W));
   cameraX += (camTarget3 - cameraX) * 0.06;
   cameraX = Math.max(0, Math.min(cameraX, L3_WORLD_W - W));
-  cameraX = Math.round(cameraX);
   if(false && !checkpoint && s.x > 1600){
     checkpoint={x:1600,y:FLOOR};
     for(let i=0;i<16;i++) particles.push({x:1600-cameraX,y:FLOOR-20,vx:(Math.random()-0.5)*5,vy:-3-Math.random()*3,life:28,maxLife:28,type:'spark',color:'#FFD700'});
@@ -9277,7 +9278,6 @@ function updateGen(){
   const camTarget=Math.max(0,Math.min(s.x-100,lv.worldW-W));
   cameraX+=(camTarget-cameraX)*0.06;
   cameraX=Math.max(0,Math.min(cameraX,lv.worldW-W));
-  cameraX=Math.round(cameraX);
   if(currentLevel===6){ // vertical camera follows Sawyer up into the void
     const camYTarget=Math.max(-340, Math.min(0, s.y - H*0.5));
     cameraY+=(camYTarget-cameraY)*0.08; cameraY=Math.round(cameraY);
@@ -9769,7 +9769,6 @@ function updateSwim(){
   const camTarget=Math.max(0,Math.min(s.x-100,lv.worldW-W));
   cameraX+=(camTarget-cameraX)*0.06;
   cameraX=Math.max(0,Math.min(cameraX,lv.worldW-W));
-  cameraX=Math.round(cameraX);
 
   updateOttoSwim();
   updateBottles(s); updateHearts(s);
