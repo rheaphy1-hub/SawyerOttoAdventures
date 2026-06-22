@@ -1112,6 +1112,7 @@ document.addEventListener('keyup', e => { if (e.target && e.target.id === 'ne-in
 
 // ---- Gamepad support: drives the same keys{} state, menus, and on-screen keyboard ----
 let _gpHasPad = false;
+let _gpBlocked = false;   // set if navigator.getGamepads() is blocked by permissions policy (iframe previews)
 const _gpLatch = {}; // edge-trigger latches keyed by action name
 function _gpEdge(name, pressed){
   const was = _gpLatch[name] || false;
@@ -1130,7 +1131,10 @@ function _gpPrimaryPopupBtn(){
   return null;
 }
 function pollGamepad(){
-  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  if(_gpBlocked) return;                                        // permission denied earlier — stop trying
+  let pads = [];
+  try { pads = navigator.getGamepads ? navigator.getGamepads() : []; }
+  catch(e){ _gpBlocked = true; return; }                       // gamepad disallowed (e.g. cross-origin iframe preview)
   let gp = null;
   for(const p of pads){ if(p){ gp = p; break; } }
   const hadPad = _gpHasPad;
@@ -3820,6 +3824,149 @@ function drawYetiSprite(b,bx,by,flash){
   return true;
 }
 
+// =========================================================================
+// ── KING CRAB KRAWLEY SPRITE ATLAS (Level 3 boss) ────────────────────────────
+// Hand-drawn atlas, same playback layer as the Drifter/Yeti (tween + xfade +
+// per-state ease + procedural motion). Art untouched — smoothness added in code.
+const CRAB_ATLAS = new Image(); let crabReady=false;
+CRAB_ATLAS.onload=()=>{crabReady=true;};
+CRAB_ATLAS.src='assets/crab/crab_atlas.webp';
+const CRAB_FRAMES={"idle": [[27,56,367,236],[425,57,416,235],[853,44,404,248],[1289,56,375,236],[1692,56,413,236],[2137,56,367,236]], "walk": [[27,351,367,236],[425,351,416,236],[859,333,391,254],[1302,332,349,255],[1698,327,401,260],[2137,351,367,236]], "raise": [[6,606,410,276],[457,602,351,280],[884,593,342,289],[1300,623,354,259]], "lunge": [[1720,627,358,255],[2114,623,414,259],[35,915,352,262],[450,931,365,246]], "wide": [[884,893,342,284],[1307,892,340,285],[1727,892,343,285]], "spit": [[2133,941,376,236],[23,1237,375,235],[446,1237,374,235]], "death": [[868,1240,374,232],[1308,1206,338,266],[1718,1239,362,233]]};
+// States map onto frame subsets of the packed rows. Krawley is front-facing;
+// direction handled by horizontal flip (like the Yeti).
+//  idle  — front breathing crouch, slow loop
+//  walk  — lateral patrol, claws spread
+//  raise — claw windup (dark claws); enraged uses the wide-claw row
+//  slam  — overhead → strike → impact-spark(raise idx3) → recover
+//  charge— crouched forward lunge
+//  spit  — rear-back → mouth-forward brine heave
+//  death — recoil → collapse, hold last
+const CRAB_ANIM={
+  idle:  {row:'idle',  frames:[0,1,2,3,4,5],   fps:6,  loop:true,  ease:'sine'  },
+  walk:  {row:'walk',  frames:[0,1,2,3,4,5],   fps:9,  loop:true,  ease:'sine'  },
+  raise: {row:'raise', frames:[0,1,2],         fps:12, loop:false, next:'idle', ease:'inout'},
+  wide:  {row:'wide',  frames:[0,1,2,2,1],     fps:11, loop:false, next:'idle', ease:'inout'},
+  slam:  {row:'raise', frames:[1,2,3,3,1],     fps:15, loop:false, next:'idle', ease:'snap' },
+  charge:{row:'lunge', frames:[0,1,2,3],       fps:14, loop:true,  ease:'snap'  },
+  spit:  {row:'spit',  frames:[0,1,2,2],       fps:13, loop:false, next:'idle', ease:'snap' },
+  death: {row:'death', frames:[0,1,2],         fps:8,  loop:false, hold:true,   ease:'inout'}
+};
+const CRAB_XFADE=0.6;
+function crabEase(kind,u){
+  if(kind==='sine')  return 0.5-0.5*Math.cos(u*Math.PI);
+  if(kind==='inout') return u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+  if(kind==='snap')  return 1-Math.pow(1-u,3);
+  return u;
+}
+const CRAB_DISPLAY_H=130;                          // on-screen height of idle pose
+const CRAB_SCALE=CRAB_DISPLAY_H/CRAB_FRAMES.idle[0][3];
+function crabInitAnim(b){ b.animName='idle'; b.animFrame=0; b.animAcc=0; b.prevFrame=0; b.xfade=0; b.xfadeRow=null; b.xfadeFrame=0; }
+function crabSetAnim(b,name){
+  if(b.animName===name)return;
+  const cur=CRAB_ANIM[b.animName];
+  b.xfadeRow=cur?cur.row:null;
+  b.xfadeFrame=cur?(cur.frames[Math.min(b.animFrame,cur.frames.length-1)]):0;
+  b.xfade=CRAB_XFADE;
+  b.animName=name; b.animFrame=0; b.animAcc=0; b.prevFrame=0;
+}
+function crabAdvance(b){
+  const a=CRAB_ANIM[b.animName]; if(!a)return;
+  const n=a.frames.length;
+  if(b.xfade>0){ b.xfade-=a.fps/60; if(b.xfade<0)b.xfade=0; }
+  b.animAcc+=a.fps/60;
+  while(b.animAcc>=1){
+    b.animAcc-=1; b.prevFrame=b.animFrame; b.animFrame++;
+    if(b.animFrame>=n){
+      if(a.loop){ b.animFrame=0; }
+      else if(a.hold){ b.animFrame=n-1; b.animAcc=0; b.prevFrame=n-1; break; }
+      else { crabSetAnim(b,a.next||'idle'); break; }
+    }
+  }
+}
+function crabRect(animName,logicalIdx){
+  const a=CRAB_ANIM[animName]||CRAB_ANIM.idle;
+  const arr=CRAB_FRAMES[a.row];
+  const fi=a.frames[Math.min(logicalIdx,a.frames.length-1)];
+  return arr[Math.min(fi,arr.length-1)];
+}
+// Draw atlas crab; returns false to signal caller to use the vector fallback.
+function drawCrabSprite(b,bx,by,flash){
+  const a=CRAB_ANIM[b.animName]||CRAB_ANIM.idle;
+  const fr=crabRect(b.animName,b.animFrame);
+  if(!crabReady||!fr) return false;
+  const cx=bx+b.w/2;                               // bottom-center pivot
+  const baseGroundY=by+b.h;
+  const t=performance.now()*0.001;
+  const enr=(typeof globalThis.l3BossEnrage!=='undefined')?globalThis.l3BossEnrage:0;
+  const dwApprox=fr[2]*CRAB_SCALE, dhApprox=fr[3]*CRAB_SCALE;
+  const dyA=baseGroundY-dhApprox;
+  // grounding shade so the dark shell reads against the bright beach/sea grade
+  { const sX=cx, sY=dyA+dhApprox*0.62;
+    const shade=0.22+0.10*enr;
+    const sg=ctx.createRadialGradient(sX,sY,dwApprox*0.16,sX,sY,dwApprox*0.72);
+    sg.addColorStop(0,'rgba(8,20,16,'+shade+')');
+    sg.addColorStop(0.6,'rgba(10,24,20,'+(shade*0.55)+')');
+    sg.addColorStop(1,'rgba(10,24,20,0)');
+    ctx.save(); ctx.fillStyle=sg; ctx.beginPath();
+    ctx.ellipse(sX,sY,dwApprox*0.72,dhApprox*0.5,0,0,7); ctx.fill(); ctx.restore();
+  }
+  // sickly brine aura (brightens in phase 2 as the world bruises)
+  if(b.animName!=='death'){
+    const aX=cx, aY=dyA+dhApprox*0.5, pulse=0.85+0.15*Math.sin(t*2.2);
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    const halo=ctx.createRadialGradient(aX,aY,dwApprox*0.14,aX,aY,dwApprox*(0.9+enr*0.25)*pulse);
+    halo.addColorStop(0,'rgba('+(120+enr*120)+',230,'+(150-enr*80)+','+((0.12+enr*0.06))+')');
+    halo.addColorStop(0.55,'rgba(90,200,150,'+(0.04+enr*0.03)+')');
+    halo.addColorStop(1,'rgba(90,200,150,0)');
+    ctx.fillStyle=halo; ctx.beginPath(); ctx.ellipse(aX,aY,dwApprox*0.9*pulse,dhApprox*0.55*pulse,0,0,7); ctx.fill();
+    ctx.restore();
+  }
+  const fracRaw=Math.max(0,Math.min(1,b.animAcc||0));
+  const frac=crabEase(a.ease,fracRaw);
+  const curIdx=b.animFrame, prevIdx=(b.prevFrame!=null?b.prevFrame:curIdx);
+  // procedural motion the discrete frames can't supply (bottom-center anchored)
+  let bobY=0, bobX=0, lean=0, scaleY=1;
+  if(b.animName==='idle'){ bobY=Math.sin(t*1.6)*2.2; lean=Math.sin(t*0.7)*0.010; scaleY=1+Math.sin(t*1.6)*0.016; }
+  else if(b.animName==='walk'){ bobY=Math.abs(Math.sin(t*7))*-2.2; lean=Math.sin(t*7)*0.02; }
+  else if(b.animName==='raise'||b.animName==='wide'){ const u=b.animFrame/Math.max(1,a.frames.length-1); bobY=-Math.sin(u*Math.PI)*5; scaleY=1+Math.sin(u*Math.PI)*0.03; }
+  else if(b.animName==='slam'){ const u=b.animFrame/Math.max(1,a.frames.length-1); bobY = u<0.4 ? -Math.sin(u/0.4*Math.PI*0.5)*12 : 0; }
+  else if(b.animName==='charge'){ bobX=(b.facing>0?1:-1)*Math.abs(Math.sin(t*10))*5; bobY=Math.abs(Math.sin(t*10))*-2; }
+  else if(b.animName==='spit'){ const e=Math.sin(((curIdx+fracRaw)/a.frames.length)*Math.PI); bobX=(b.facing>0?-1:1)*e*6; }
+  if(flash) ctx.filter='brightness(2.4) saturate(0.5)';
+  const blit=(rect,alpha)=>{
+    if(alpha<=0.001||!rect)return;
+    const w=rect[2]*CRAB_SCALE, h=rect[3]*CRAB_SCALE;
+    let ddx=cx-w/2+bobX, ddy=baseGroundY-h+bobY;
+    ctx.save(); ctx.globalAlpha*=alpha;
+    if(b.facing>0){ ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0); }
+    if(lean){ ctx.translate(cx,baseGroundY); ctx.rotate(lean); ctx.translate(-cx,-baseGroundY); }
+    if(scaleY!==1){ ctx.translate(cx,baseGroundY); ctx.scale(1,scaleY); ctx.translate(-cx,-baseGroundY); }
+    // dark rim: a faint enlarged black silhouette behind, so his edge separates from the bright shore
+    if(!flash){
+      const rim=1.4;
+      ctx.save(); ctx.globalAlpha*=0.38; ctx.filter='brightness(0) saturate(0)';
+      for(const o of [[-rim,0],[rim,0],[0,-rim],[0,rim]])
+        ctx.drawImage(CRAB_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx+o[0],ddy+o[1],w,h);
+      ctx.restore();
+    }
+    ctx.drawImage(CRAB_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx,ddy,w,h);
+    ctx.restore();
+  };
+  if(b.xfade>0 && b.xfadeRow && CRAB_FRAMES[b.xfadeRow]){
+    const xa=Math.max(0,Math.min(1,b.xfade/CRAB_XFADE));
+    const oldArr=CRAB_FRAMES[b.xfadeRow];
+    const of=oldArr[Math.min(b.xfadeFrame,oldArr.length-1)];
+    blit(of, xa);
+    blit(crabRect(b.animName,curIdx), 1-xa);
+  } else {
+    blit(crabRect(b.animName,prevIdx), 1-frac);
+    blit(crabRect(b.animName,curIdx),  frac);
+  }
+  ctx.filter='none';
+  return true;
+}
+
+
 function drawBoss(){
   if (!boss) return;
   if (currentLevel===1 && !artifactCollected) return;   // The Drifter does not appear until the artifact is taken
@@ -6393,8 +6540,10 @@ function buildKingCrab(){
     x:3420, y:FLOOR-100, w:120, h:100,
     alive:true, active:false, phase:0, hp:8, maxHp:8,
     vx:1.4, facing:1, hitFlash:0, dieTimer:0, phaseIndex:0,
-    tell:0, tellMax:0, pending:null, actionTimer:90, clawRaise:0, onGround:true, vy:0
+    tell:0, tellMax:0, pending:null, actionTimer:90, clawRaise:0, onGround:true, vy:0,
+    animName:'idle', animFrame:0, animAcc:0, prevFrame:0, xfade:0, xfadeRow:null, xfadeFrame:0
   };
+  crabInitAnim(kingCrab);
 }
 const ICICLE_RESPAWN = 900;   // 15s @ 60fps — fallen icicles reform on their platform
 function killIcicle(ic){
@@ -7425,6 +7574,7 @@ function updateLevel3(){
         }
         if(kingCrab.hp<=0){
           kingCrab.alive=false;kingCrab.dieTimer=120;score+=1000;shakeIntensity=16;SFX.bossDie();
+          crabSetAnim(kingCrab,'death');
           // arena collapses: rafts splinter into the surf with a spray burst
           for(const r of l3Arena){
             if(r.hidden) continue;
@@ -7505,11 +7655,12 @@ function updateLevel3(){
         kc.vx*=0.8; kc.x+=kc.vx;
         if(kc.tell===0){
           if(kc.pending==='slam'){
+            crabSetAnim(kc,'slam');
             shockwaves.push({x:kc.x+kc.w/2,y:FLOOR,w:0,life:46,maxLife:46,dir:1,dmg:true});
             shockwaves.push({x:kc.x+kc.w/2,y:FLOOR,w:0,life:46,maxLife:46,dir:-1,dmg:true});
             shakeIntensity=12; sfx('rattle');
           } else if(kc.pending==='charge'){
-            kc.vx=kc.facing*(p2?9.5:7.2); sfx('rattle'); shakeIntensity=6;
+            kc.vx=kc.facing*(p2?9.5:7.2); sfx('rattle'); shakeIntensity=6; crabSetAnim(kc,'charge');
           } else if(kc.pending==='spit'){
             const ex=kc.x+kc.w/2, ey=kc.y+30;
             const lob=(off)=>{ const sp=4.2; venom.push({x:ex,y:ey,vx:kc.facing*sp+off,vy:-3.6,life:160,r:7,brine:true,grav:0.16}); };
@@ -7524,16 +7675,18 @@ function updateLevel3(){
         kc.clawRaise=Math.max(0,kc.clawRaise-0.08);
         if(Math.abs(kc.vx)>1.7){ kc.vx*=0.9; } else { kc.vx=(p2?1.9:1.4)*kc.facing; }
         kc.x+=kc.vx;
+        if(kc.animName==='charge'&&Math.abs(kc.vx)<=2.2){ crabSetAnim(kc,'idle'); }
+        else if(kc.animName==='idle'||kc.animName==='walk'){ crabSetAnim(kc, Math.abs(kc.vx)>0.6?'walk':'idle'); }
         kc.actionTimer--;
         if(kc.actionTimer<=0){
           const adx=Math.abs(dxp);
           if(p2 && Math.random()<0.4){
-            kc.mode='burrow'; kc.burrowT=0; kc.burrowX=s.x+s.w/2-kc.w/2; kc.submerge=0;
+            kc.mode='burrow'; kc.burrowT=0; kc.burrowX=s.x+s.w/2-kc.w/2; kc.submerge=0; crabSetAnim(kc,'charge');
             if(Math.random()<0.5) summonCrab();
           } else if(adx<150) kc.pending='slam';
           else if(adx>300 && Math.random()<0.6) kc.pending='spit';
           else kc.pending='charge';
-          if(!kc.mode){ kc.tell=p2?22:32; kc.tellMax=kc.tell; }
+          if(!kc.mode){ kc.tell=p2?22:32; kc.tellMax=kc.tell; crabSetAnim(kc, kc.pending==='spit'?'spit':(p2?'wide':'raise')); }
         }
       }
       if(kc.x<BL){kc.x=BL;kc.vx=Math.abs(kc.vx);}
@@ -8873,7 +9026,7 @@ function drawL3Enemies(){
   }
 }
 
-function drawKingCrab(){
+function drawKingCrabVector(){
   if(!kingCrab)return;
   if(!kingCrab.alive&&kingCrab.dieTimer<=0)return;
   const bx=kingCrab.x-cameraX,by=kingCrab.y;
@@ -9013,8 +9166,30 @@ function drawKingCrab(){
   ctx.restore(); // end 2× scale block
   ctx.restore(); // end dying block
   ctx.restore(); // end submerge clip
+}
 
-  // Health bar (not scaled)
+// Atlas-driven King Crab with vector fallback. Advances the playback layer, tries the
+// hand-drawn sprite, and falls back to the procedural vector art if the atlas is unready.
+function drawKingCrab(){
+  if(!kingCrab)return;
+  if(!kingCrab.alive&&kingCrab.dieTimer<=0)return;
+  // drive the animation (state transitions are issued from updateLevel3)
+  if(kingCrab.active||!kingCrab.alive) crabAdvance(kingCrab);
+  const bx=kingCrab.x-cameraX, by=kingCrab.y;
+  const onScreen=!(bx+kingCrab.w<-40||bx>W+40);
+  if(onScreen){
+    const subOff=(kingCrab.submerge||0)*90;
+    const flash=kingCrab.hitFlash>0&&Math.floor(kingCrab.hitFlash/2)%2===0;
+    const dying=!kingCrab.alive;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0,0,W,FLOOR+2); ctx.clip();         // submerge clip
+    if(dying){ ctx.globalAlpha=Math.max(0,kingCrab.dieTimer/120); }
+    // sprite is anchored to the live boss box; submerge pushes it down under the clip
+    const drew=drawCrabSprite(kingCrab, bx, by+subOff, flash);
+    ctx.restore();
+    if(!drew) drawKingCrabVector();                               // atlas not ready -> vector art
+  }
+  // Health bar (not scaled, always on top)
   if(kingCrab.active&&kingCrab.alive){
     const bw=240,bh=14,bxs=(W-bw)/2,bys=14;
     ctx.fillStyle='rgba(30,10,5,0.85)';ctx.beginPath();ctx.roundRect(bxs-4,bys-4,bw+8,bh+8,4);ctx.fill();
@@ -9022,7 +9197,6 @@ function drawKingCrab(){
     const hpPct=kingCrab.hp/kingCrab.maxHp;
     const hpCol=kingCrab.phaseIndex===1?'#FF2A2A':'#E85D3C';
     const l3FillW=bw*hpPct;
-    // Hit flash
     if(kingCrab.hitFlash>0){ ctx.save(); ctx.globalAlpha=kingCrab.hitFlash/8*0.6; ctx.fillStyle='#FFF'; ctx.beginPath(); ctx.roundRect(bxs,bys,bw+8,bh,3); ctx.fill(); ctx.restore(); }
     ctx.fillStyle=hpCol;ctx.beginPath();ctx.roundRect(bxs,bys,l3FillW,bh,3);ctx.fill();
     ctx.save(); ctx.beginPath(); ctx.roundRect(bxs,bys,l3FillW,bh/2,3); ctx.clip();
