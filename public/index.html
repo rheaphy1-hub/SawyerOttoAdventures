@@ -3826,21 +3826,13 @@ function drawYetiSprite(b,bx,by,flash){
 
 // =========================================================================
 // ── KING CRAB KRAWLEY SPRITE ATLAS (Level 3 boss) ────────────────────────────
-// Hand-drawn atlas, same playback layer as the Drifter/Yeti (tween + xfade +
-// per-state ease + procedural motion). Art untouched — smoothness added in code.
+// Uniform-cell atlas (every frame same slot size, sprite bottom-center registered)
+// so adjacent frames blit at identical width/x — no shimmer. Playback layer matches
+// the Drifter/Yeti: tween + per-state ease + cross-dissolve + procedural motion.
 const CRAB_ATLAS = new Image(); let crabReady=false;
 CRAB_ATLAS.onload=()=>{crabReady=true;};
 CRAB_ATLAS.src='assets/crab/crab_atlas.webp';
-const CRAB_FRAMES={"idle": [[27,52,367,236],[425,53,416,235],[853,40,404,248],[1289,52,375,236],[1692,52,413,236],[2137,52,367,236]], "walk": [[23,343,376,236],[445,343,375,236],[867,343,376,236],[1289,344,375,235],[1712,344,374,235],[2133,344,375,235]], "charge": [[22,633,377,237],[445,631,376,239],[866,632,377,238],[1288,633,378,237]], "raise": [[1721,603,355,267],[2116,594,410,276],[35,881,351,280],[456,902,354,259]], "wide": [[884,877,342,284],[1307,876,340,285],[1727,876,343,285]], "spit": [[2133,924,375,237],[23,1215,375,237]], "death": [[450,1206,365,246],[848,1193,414,259],[1298,1197,358,255],[1712,1220,374,232]]};
-// States map onto frame subsets of the packed rows. Krawley is front-facing;
-// direction handled by horizontal flip (like the Yeti).
-//  idle  — front breathing crouch, slow loop
-//  walk  — lateral patrol, claws spread
-//  raise — claw windup (dark claws); enraged uses the wide-claw row
-//  slam  — overhead → strike → impact-spark(raise idx3) → recover
-//  charge— crouched forward lunge
-//  spit  — rear-back → mouth-forward brine heave
-//  death — recoil → collapse, hold last
+const CRAB_FRAMES={"idle": [[0,0,432,301],[432,0,432,301],[864,0,432,301],[1296,0,432,301],[1728,0,432,301],[2160,0,432,301]], "walk": [[0,301,432,301],[432,301,432,301],[864,301,432,301],[1296,301,432,301],[1728,301,432,301],[2160,301,432,301]], "charge": [[0,602,432,301],[432,602,432,301],[864,602,432,301],[1296,602,432,301]], "raise": [[1728,602,432,301],[2160,602,432,301],[0,903,432,301],[432,903,432,301]], "wide": [[864,903,432,301],[1296,903,432,301],[1728,903,432,301]], "spit": [[2160,903,432,301],[0,1204,432,301]], "death": [[0,903,432,301],[2160,602,432,301],[864,0,432,301],[0,0,432,301]]};
 const CRAB_ANIM={
   idle:  {row:'idle',  frames:[0,1,2,3,4,5],   fps:6,  loop:true,  ease:'sine'  },
   walk:  {row:'walk',  frames:[0,1,2,3,4,5],   fps:9,  loop:true,  ease:'sine'  },
@@ -3849,17 +3841,19 @@ const CRAB_ANIM={
   slam:  {row:'raise', frames:[1,2,3,3,1],     fps:15, loop:false, next:'idle', ease:'snap' },
   charge:{row:'charge',frames:[0,1,2,3],       fps:14, loop:true,  ease:'snap'  },
   spit:  {row:'spit',  frames:[0,1,1,0],       fps:13, loop:false, next:'idle', ease:'snap' },
-  death: {row:'death', frames:[0,1,2,3],       fps:8,  loop:false, hold:true,   ease:'inout'}
+  death: {row:'death', frames:[0,1,2,3],       fps:7,  loop:false, hold:true,   ease:'inout'}
 };
-const CRAB_XFADE=0.6;
+const CRAB_XFADE=0.55;
 function crabEase(kind,u){
   if(kind==='sine')  return 0.5-0.5*Math.cos(u*Math.PI);
   if(kind==='inout') return u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
   if(kind==='snap')  return 1-Math.pow(1-u,3);
   return u;
 }
-const CRAB_DISPLAY_H=130;                          // on-screen height of idle pose
-const CRAB_SCALE=CRAB_DISPLAY_H/CRAB_FRAMES.idle[0][3];
+// All slots are the same size; SLOT taken from the first idle frame.
+const CRAB_SLOT_W=CRAB_FRAMES.idle[0][2], CRAB_SLOT_H=CRAB_FRAMES.idle[0][3];
+const CRAB_DISPLAY_H=150;                          // on-screen slot height
+const CRAB_SCALE=CRAB_DISPLAY_H/CRAB_SLOT_H;
 function crabInitAnim(b){ b.animName='idle'; b.animFrame=0; b.animAcc=0; b.prevFrame=0; b.xfade=0; b.xfadeRow=null; b.xfadeFrame=0; }
 function crabSetAnim(b,name){
   if(b.animName===name)return;
@@ -3889,56 +3883,54 @@ function crabRect(animName,logicalIdx){
   const fi=a.frames[Math.min(logicalIdx,a.frames.length-1)];
   return arr[Math.min(fi,arr.length-1)];
 }
-// Draw atlas crab; returns false to signal caller to use the vector fallback.
+// Draw atlas crab; returns false so caller can use the vector fallback.
+// `deathSink` 0..1 lets the death state sink+fade the sprite (no belly-up art exists).
 function drawCrabSprite(b,bx,by,flash){
-  const a=CRAB_ANIM[b.animName]||CRAB_ANIM.idle;
   const fr=crabRect(b.animName,b.animFrame);
   if(!crabReady||!fr) return false;
-  const cx=bx+b.w/2;                               // bottom-center pivot
+  const cx=bx+b.w/2;                               // bottom-center pivot (constant width => no jitter)
   const baseGroundY=by+b.h;
   const t=performance.now()*0.001;
-  const enr=(typeof globalThis.l3BossEnrage!=='undefined')?globalThis.l3BossEnrage:0;
-  const dwApprox=fr[2]*CRAB_SCALE, dhApprox=fr[3]*CRAB_SCALE;
-  const dyA=baseGroundY-dhApprox;
-  // sickly brine aura (brightens in phase 2 as the world bruises)
-  if(b.animName!=='death'){
-    const aX=cx, aY=dyA+dhApprox*0.5, pulse=0.85+0.15*Math.sin(t*2.2);
+  const enr=(typeof globalThis!=='undefined'&&globalThis.l3BossEnrage!=null)?globalThis.l3BossEnrage:(typeof l3BossEnrage!=='undefined'?l3BossEnrage:0);
+  const W0=CRAB_SLOT_W*CRAB_SCALE, H0=CRAB_SLOT_H*CRAB_SCALE;
+  const dyA=baseGroundY-H0;
+  const dead=b.animName==='death';
+  // death sink/fade: the only way the crab reads as defeated (no flipped art)
+  const sink=dead?Math.min(1,(b.animFrame+ (b.animAcc||0))/ (CRAB_ANIM.death.frames.length-0.001)):0;
+  // sickly brine aura (brightens in phase 2; fades out as he dies)
+  if(!dead){
+    const aX=cx, aY=dyA+H0*0.5, pulse=0.85+0.15*Math.sin(t*2.2);
     ctx.save(); ctx.globalCompositeOperation='lighter';
-    const halo=ctx.createRadialGradient(aX,aY,dwApprox*0.14,aX,aY,dwApprox*(0.9+enr*0.25)*pulse);
-    halo.addColorStop(0,'rgba('+(120+enr*120)+',230,'+(150-enr*80)+','+((0.12+enr*0.06))+')');
+    const halo=ctx.createRadialGradient(aX,aY,W0*0.14,aX,aY,W0*(0.62+enr*0.18)*pulse);
+    halo.addColorStop(0,'rgba('+Math.round(120+enr*120)+',230,'+Math.round(150-enr*80)+','+(0.12+enr*0.06)+')');
     halo.addColorStop(0.55,'rgba(90,200,150,'+(0.04+enr*0.03)+')');
     halo.addColorStop(1,'rgba(90,200,150,0)');
-    ctx.fillStyle=halo; ctx.beginPath(); ctx.ellipse(aX,aY,dwApprox*0.9*pulse,dhApprox*0.55*pulse,0,0,7); ctx.fill();
+    ctx.fillStyle=halo; ctx.beginPath(); ctx.ellipse(aX,aY,W0*0.62*pulse,H0*0.4*pulse,0,0,7); ctx.fill();
     ctx.restore();
   }
+  const a=CRAB_ANIM[b.animName]||CRAB_ANIM.idle;
   const fracRaw=Math.max(0,Math.min(1,b.animAcc||0));
   const frac=crabEase(a.ease,fracRaw);
   const curIdx=b.animFrame, prevIdx=(b.prevFrame!=null?b.prevFrame:curIdx);
-  // procedural motion the discrete frames can't supply (bottom-center anchored)
+  // procedural motion (bottom-center anchored). Subtle — the registration is now clean.
   let bobY=0, bobX=0, lean=0, scaleY=1;
-  if(b.animName==='idle'){ bobY=Math.sin(t*1.6)*2.2; lean=Math.sin(t*0.7)*0.010; scaleY=1+Math.sin(t*1.6)*0.016; }
-  else if(b.animName==='walk'){ bobY=Math.abs(Math.sin(t*7))*-2.2; lean=Math.sin(t*7)*0.02; }
-  else if(b.animName==='raise'||b.animName==='wide'){ const u=b.animFrame/Math.max(1,a.frames.length-1); bobY=-Math.sin(u*Math.PI)*5; scaleY=1+Math.sin(u*Math.PI)*0.03; }
-  else if(b.animName==='slam'){ const u=b.animFrame/Math.max(1,a.frames.length-1); bobY = u<0.4 ? -Math.sin(u/0.4*Math.PI*0.5)*12 : 0; }
-  else if(b.animName==='charge'){ bobX=(b.facing>0?1:-1)*Math.abs(Math.sin(t*10))*5; bobY=Math.abs(Math.sin(t*10))*-2; }
+  if(b.animName==='idle'){ bobY=Math.sin(t*1.6)*2.0; scaleY=1+Math.sin(t*1.6)*0.012; }
+  else if(b.animName==='walk'){ bobY=Math.abs(Math.sin(t*7))*-2.0; }
+  else if(b.animName==='raise'||b.animName==='wide'){ const u=curIdx/Math.max(1,a.frames.length-1); bobY=-Math.sin(u*Math.PI)*5; scaleY=1+Math.sin(u*Math.PI)*0.03; }
+  else if(b.animName==='slam'){ const u=curIdx/Math.max(1,a.frames.length-1); bobY=u<0.4?-Math.sin(u/0.4*Math.PI*0.5)*12:0; }
+  else if(b.animName==='charge'){ bobX=(b.facing>0?1:-1)*Math.abs(Math.sin(t*10))*4; bobY=Math.abs(Math.sin(t*10))*-2; }
   else if(b.animName==='spit'){ const e=Math.sin(((curIdx+fracRaw)/a.frames.length)*Math.PI); bobX=(b.facing>0?-1:1)*e*6; }
-  if(flash) ctx.filter='brightness(2.4) saturate(0.5)';
+  else if(dead){ bobY=sink*10; scaleY=1-sink*0.12; }   // sink + squash as it dies
+  if(flash) ctx.filter='brightness(2.3) saturate(0.55)';
+  // single clean blit — uniform width means no rim, no per-frame x-shift
   const blit=(rect,alpha)=>{
     if(alpha<=0.001||!rect)return;
-    const w=rect[2]*CRAB_SCALE, h=rect[3]*CRAB_SCALE;
-    let ddx=cx-w/2+bobX, ddy=baseGroundY-h+bobY;
-    ctx.save(); ctx.globalAlpha*=alpha;
+    const w=W0, h=H0;
+    const ddx=cx-w/2+bobX, ddy=baseGroundY-h+bobY;
+    ctx.save(); ctx.globalAlpha*=alpha*(dead?(1-sink*0.85):1);
     if(b.facing>0){ ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0); }
     if(lean){ ctx.translate(cx,baseGroundY); ctx.rotate(lean); ctx.translate(-cx,-baseGroundY); }
     if(scaleY!==1){ ctx.translate(cx,baseGroundY); ctx.scale(1,scaleY); ctx.translate(-cx,-baseGroundY); }
-    // dark rim: a faint enlarged black silhouette behind, so his edge separates from the bright shore
-    if(!flash){
-      const rim=1.4;
-      ctx.save(); ctx.globalAlpha*=0.38; ctx.filter='brightness(0) saturate(0)';
-      for(const o of [[-rim,0],[rim,0],[0,-rim],[0,rim]])
-        ctx.drawImage(CRAB_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx+o[0],ddy+o[1],w,h);
-      ctx.restore();
-    }
     ctx.drawImage(CRAB_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx,ddy,w,h);
     ctx.restore();
   };
@@ -5219,6 +5211,7 @@ function applyCutsceneCam(){
   const prev=cameraX;
   cameraX=Math.round(f.x - W/2);                 // center boss horizontally
   const focusY=Math.max(70, Math.min(H-70, f.y));
+  ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';   // clean atlas upscale on zoom
   ctx.translate(W/2, focusY); ctx.scale(z,z); ctx.translate(-W/2,-focusY);
   return prev;
 }
@@ -6537,6 +6530,7 @@ function buildLevel3Rocks(){
 
 let kingCrab = null;
 let l3BossEnrage = 0;   // 0→1 HP-linked grade ramp: bruises the night to violet/teal at phase 2
+let l3Portal = { open:0 };   // escape portal — closed until Krawley is defeated, then eases open
 let finishCardActive = false, finishCardTimer = 0;
 function buildKingCrab(){
   kingCrab = {
@@ -6544,9 +6538,11 @@ function buildKingCrab(){
     alive:true, active:false, phase:0, hp:8, maxHp:8,
     vx:1.4, facing:1, hitFlash:0, dieTimer:0, phaseIndex:0,
     tell:0, tellMax:0, pending:null, actionTimer:90, clawRaise:0, onGround:true, vy:0,
+    retreat:0, retreatDir:1, patrolDir:0,
     animName:'idle', animFrame:0, animAcc:0, prevFrame:0, xfade:0, xfadeRow:null, xfadeFrame:0
   };
   crabInitAnim(kingCrab);
+  l3Portal = { open:0 };   // portal sealed until Krawley falls
 }
 const ICICLE_RESPAWN = 900;   // 15s @ 60fps — fallen icicles reform on their platform
 function killIcicle(ic){
@@ -7647,7 +7643,8 @@ function updateLevel3(){
         if(r.spawnT!==undefined && r.spawnT<14){ r.spawnT++; }
         if(Math.random()<0.10) particles.push({x:r.x+Math.random()*r.w,y:r.y+r.h,vx:(Math.random()-.5)*0.6,vy:0.6+Math.random()*0.8,life:18,maxLife:18,type:'spark',color:'rgba(190,235,255,0.7)'});
       }
-      kc.facing=s.x<kc.x?-1:1;
+      // face the player except during a free patrol sweep (so he can roam the arena)
+      if(!(kc.tell<=0 && kc.retreat<=0 && !kc.mode && kc.patrolDir)) kc.facing=s.x<kc.x?-1:1;
       if(!kc.onGround){ kc.vy=(kc.vy||0)+0.55; kc.y+=kc.vy; if(kc.y>=FLOOR-kc.h){kc.y=FLOOR-kc.h;kc.vy=0;kc.onGround=true;} }
       if(kc.hitFlash>0)kc.hitFlash--;
       const BL=L3_ARENA_X0, BR=L3_ARENA_X1-40;
@@ -7695,16 +7692,33 @@ function updateLevel3(){
           }
           kc.pending=null;
           kc.actionTimer=p2?60+Math.random()*40:95+Math.random()*55;
+          // RETREAT: after attacking, back off toward the nearer arena edge so the player
+          // gets space to mount the rafts/platforms. Charge already lunges, so retreat after it too.
+          kc.retreat = (p2?34:48) + Math.floor(Math.random()*20);
+          kc.retreatDir = ((kc.x+kc.w/2) < (BL+BR)/2) ? -1 : 1;   // head to the closer edge
         }
       } else {
         // IDLE PATROL + cooldown
         kc.clawRaise=Math.max(0,kc.clawRaise-0.08);
-        if(Math.abs(kc.vx)>1.7){ kc.vx*=0.9; } else { kc.vx=(p2?1.9:1.4)*kc.facing; }
-        kc.x+=kc.vx;
+        if(kc.retreat>0){
+          // actively back away toward an arena edge, opening space for the player
+          kc.retreat--;
+          const spd=(p2?3.0:2.4);
+          kc.vx=kc.retreatDir*spd;
+          kc.x+=kc.vx;
+          kc.facing = s.x<kc.x?-1:1;                 // keep facing the player while moonwalking back
+        } else if(Math.abs(kc.vx)>1.7){ kc.vx*=0.9; kc.x+=kc.vx; }
+        else {
+          // wider patrol: sweep the arena rather than camping on the player
+          if(!kc.patrolDir) kc.patrolDir = kc.facing||1;
+          kc.vx=(p2?2.3:1.8)*kc.patrolDir;
+          kc.x+=kc.vx;
+          kc.facing=kc.patrolDir;                    // look where he's sweeping
+        }
         if(kc.animName==='charge'&&Math.abs(kc.vx)<=2.2){ crabSetAnim(kc,'idle'); }
         else if(kc.animName==='idle'||kc.animName==='walk'){ crabSetAnim(kc, Math.abs(kc.vx)>0.6?'walk':'idle'); }
         kc.actionTimer--;
-        if(kc.actionTimer<=0){
+        if(kc.actionTimer<=0 && kc.retreat<=0){
           const adx=Math.abs(dxp);
           if(p2 && Math.random()<0.4){
             kc.mode='burrow'; kc.burrowT=0; kc.burrowX=s.x+s.w/2-kc.w/2; kc.submerge=0; crabSetAnim(kc,'charge');
@@ -7712,16 +7726,18 @@ function updateLevel3(){
           } else if(adx<150) kc.pending='slam';
           else if(adx>300 && Math.random()<0.6) kc.pending='spit';
           else kc.pending='charge';
-          if(!kc.mode){ kc.tell=p2?22:32; kc.tellMax=kc.tell; crabSetAnim(kc, kc.pending==='spit'?'spit':(p2?'wide':'raise')); }
+          if(!kc.mode){ kc.tell=p2?22:32; kc.tellMax=kc.tell; kc.patrolDir=0; crabSetAnim(kc, kc.pending==='spit'?'spit':(p2?'wide':'raise')); }
         }
       }
-      if(kc.x<BL){kc.x=BL;kc.vx=Math.abs(kc.vx);}
-      if(kc.x>BR-kc.w){kc.x=BR-kc.w;kc.vx=-Math.abs(kc.vx);}
+      if(kc.x<BL){kc.x=BL;kc.vx=Math.abs(kc.vx);kc.patrolDir=1;kc.retreatDir=1;}
+      if(kc.x>BR-kc.w){kc.x=BR-kc.w;kc.vx=-Math.abs(kc.vx);kc.patrolDir=-1;kc.retreatDir=-1;}
       if(!kc.submerge&&s.invincible===0&&s.x+s.w>kc.x+16&&s.x<kc.x+kc.w-16&&s.y+s.h>kc.y+16&&s.y<kc.y+kc.h)hurt(s);
     }
   } else if(kingCrab&&!kingCrab.alive&&kingCrab.dieTimer>0){
     kingCrab.dieTimer--;
   }
+  // escape portal opens only after Krawley is defeated (eased)
+  if(kingCrab && !kingCrab.alive){ l3Portal.open += (1 - l3Portal.open)*0.05; }
 
   // Brine globs (boss ranged)
   for(const v of venom){
@@ -9206,7 +9222,7 @@ function drawKingCrab(){
 }
 
 function drawL3Flag(){
-  drawEscapePortal(L3_FLAG.x - cameraX + 24, FLOOR-50, 34, 1, performance.now()*0.004);
+  drawEscapePortal(L3_FLAG.x - cameraX + 24, FLOOR-50, 34, l3Portal.open, performance.now()*0.004);
 }
 
 
