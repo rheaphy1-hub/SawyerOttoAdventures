@@ -696,7 +696,7 @@ let cutsceneActive = false, cutsceneTimer = 0;
 
 // Otto power-up  0=none 1=giant 2=spray 3=cuteness
 let ottoPower = 0, ottoPowerTimer = 0;
-const POWER_DURATION = 600; // 10 sec at 60fps
+const POWER_DURATION = 900; // 15 sec at 60fps
 // Giant Otto charge power state
 let giantOttoPhase = 'idle'; // 'idle' | 'growing' | 'charging'
 let giantOttoTimer = 0;
@@ -1451,7 +1451,7 @@ function buildPlayers(){
     coyoteTimer:0, wasOnGround:false
   };
   otto = {
-    id:'otto', x:14, y:FLOOR-26, w:22, h:26,
+    id:'otto', x:14, y:FLOOR-29, w:25, h:29,
     skin:'#F2C9A3', hair:'#C9A878', onesie:'#B5D4F4', label:'#993C1D',
     name:'Otto', baby:true, ai:true,
     vx:0, vy:0, onGround:false, attackTimer:0, attackCooldown:0, invincible:0, facing:1,
@@ -2488,12 +2488,12 @@ function weed(x,y,len,sway,col){
 //  10. CHARACTER SPRITE ATLAS  (embedded image + frame metadata)
 // =========================================================================
 const CHAR_ATLAS_SRC="assets/char_atlas_v2.webp";
-const CHAR_META={"base":{"otto":{"walk":[[4,4,56,100,22.4,40.0,0.524,0.5074],[64,4,66,100,26.4,40.0,0.5837,0.4929],[134,4,70,98,28.0,39.2,0.5716,0.5084],[208,4,71,98,28.4,39.2,0.5894,0.5048],[283,4,56,100,22.4,40.0,0.5271,0.5074],[343,4,55,100,22.0,40.0,0.5213,0.505]],"jump":[[4,112,52,69,20.8,27.6,0.5161,0.5119],[60,112,68,74,27.2,29.6,0.5255,0.4829],[132,112,63,72,25.2,28.8,0.4381,0.4817],[199,112,55,84,22.0,33.6,0.4253,0.4555],[258,112,56,72,22.4,28.8,0.5514,0.5171],[318,112,53,63,21.2,25.2,0.5252,0.5207]],"attack":[[4,204,51,89,20.4,35.6,0.5073,0.508],[59,204,53,89,21.2,35.6,0.4688,0.5063],[116,204,60,84,24.0,33.6,0.532,0.5087],[180,204,65,84,26.0,33.6,0.5363,0.5051],[249,204,70,80,28.0,32.0,0.5345,0.5035],[323,204,51,89,20.4,35.6,0.5102,0.5072]],"climb":[[4,301,48,81,19.2,32.4,0.489,0.4402],[56,301,52,80,20.8,32.0,0.462,0.4456],[112,301,48,81,19.2,32.4,0.5067,0.4454],[164,301,51,80,20.4,32.0,0.5367,0.4453],[219,301,48,81,19.2,32.4,0.5045,0.4406],[271,301,47,80,18.8,32.0,0.5002,0.4442]],"swim":[[4,390,94,48,37.6,19.2,0.4846,0.5984],[102,390,91,53,36.4,21.2,0.4748,0.5557],[197,390,98,50,39.2,20.0,0.4973,0.577],[299,390,88,53,35.2,21.2,0.544,0.5276],[391,390,107,52,42.8,20.8,0.47,0.5739],[502,390,94,52,37.6,20.8,0.483,0.5644]],"idle":[[4,4,56,100,22.4,40.0,0.524,0.5074]]},"sawyer":{"walk":[[4,451,72,137,28.8,54.8,0.5102,0.5072],[80,451,67,136,26.8,54.4,0.4393,0.5101],[151,451,78,133,31.2,53.2,0.4725,0.511],[233,451,65,134,26.0,53.6,0.5554,0.5044],[302,451,68,135,27.2,54.0,0.4879,0.512],[374,451,54,135,21.6,54.0,0.5158,0.5002]],"attack":[[4,596,78,121,31.2,48.4,0.5175,0.4757],[86,596,73,128,29.2,51.2,0.6106,0.431],[163,596,78,125,31.2,50.0,0.4146,0.4392],[245,596,73,128,29.2,51.2,0.6106,0.431],[322,596,46,129,18.4,51.6,0.4852,0.5091]],"jump":[[4,733,60,85,24.0,34.0,0.5159,0.5349],[68,733,84,121,33.6,48.4,0.4927,0.4603],[156,733,55,100,22.0,40.0,0.4336,0.471],[215,733,54,128,21.6,51.2,0.4133,0.4342],[273,733,54,104,21.6,41.6,0.5124,0.5185],[331,733,60,82,24.0,32.8,0.5124,0.5367]],"climb":[[4,869,47,124,18.8,49.6,0.5494,0.427],[55,869,51,126,20.4,50.4,0.5129,0.4273],[110,869,49,122,19.6,48.8,0.503,0.4176],[163,869,48,126,19.2,50.4,0.456,0.4278],[215,869,49,124,19.6,49.6,0.4771,0.4244],[268,869,49,126,19.6,50.4,0.529,0.426]],"swim":[[4,1003,94,55,37.6,22.0,0.5535,0.5439],[102,1003,91,59,36.4,23.6,0.6071,0.5471],[197,1003,84,63,33.6,25.2,0.5734,0.5316],[285,1003,99,61,39.6,24.4,0.5576,0.5353],[388,1003,107,59,42.8,23.6,0.5593,0.5764]],"idle":[[4,451,72,137,28.8,54.8,0.5102,0.5072]]}}};
+const CHAR_META={"base":{"otto":{"walk":[[4,4,56,100,22.4,40.0,0.524,0.5074],[64,4,66,100,26.4,40.0,0.5837,0.4929],[134,4,70,98,28.0,39.2,0.5716,0.5084],[208,4,71,98,28.4,39.2,0.5894,0.5048],[283,4,56,100,22.4,40.0,0.5271,0.5074],[343,4,55,100,22.0,40.0,0.5213,0.505]],"jump":[[4,112,52,69,20.8,27.6,0.5161,0.5119],[60,112,68,74,27.2,29.6,0.5255,0.4829],[132,112,63,72,25.2,28.8,0.4381,0.4817],[199,112,55,84,22.0,33.6,0.4253,0.4555],[258,112,56,72,22.4,28.8,0.5514,0.5171],[318,112,53,63,21.2,25.2,0.5252,0.5207]],"attack":[[4,204,51,89,20.4,35.6,0.5073,0.508],[59,204,53,89,21.2,35.6,0.4688,0.5063],[116,204,60,84,24.0,33.6,0.532,0.5087],[180,204,65,84,26.0,33.6,0.5363,0.5051],[249,204,70,80,28.0,32.0,0.5345,0.5035],[323,204,51,89,20.4,35.6,0.5102,0.5072]],"climb":[[4,301,48,81,19.2,32.4,0.489,0.4402],[56,301,52,80,20.8,32.0,0.462,0.4456],[112,301,48,81,19.2,32.4,0.5067,0.4454],[164,301,51,80,20.4,32.0,0.5367,0.4453],[219,301,48,81,19.2,32.4,0.5045,0.4406],[271,301,47,80,18.8,32.0,0.5002,0.4442]],"swim":[[4,390,94,48,37.6,19.2,0.4846,0.5984],[102,390,91,53,36.4,21.2,0.4748,0.5557],[197,390,98,50,39.2,20.0,0.4973,0.577],[299,390,88,53,35.2,21.2,0.544,0.5276],[391,390,107,52,42.8,20.8,0.47,0.5739],[502,390,94,52,37.6,20.8,0.483,0.5644]],"idle":[[4,4,56,100,22.4,40.0,0.524,0.5074]],"giantCharge":[[116,204,60,84,24.0,33.6,0.532,0.5087],[180,204,65,84,26.0,33.6,0.5363,0.5051],[249,204,70,80,28.0,32.0,0.5345,0.5035],[180,204,65,84,26.0,33.6,0.5363,0.5051]]},"sawyer":{"walk":[[4,451,72,137,28.8,54.8,0.5102,0.5072],[80,451,67,136,26.8,54.4,0.4393,0.5101],[151,451,78,133,31.2,53.2,0.4725,0.511],[233,451,65,134,26.0,53.6,0.5554,0.5044],[302,451,68,135,27.2,54.0,0.4879,0.512],[374,451,54,135,21.6,54.0,0.5158,0.5002]],"attack":[[4,596,78,121,31.2,48.4,0.5175,0.4757],[86,596,73,128,29.2,51.2,0.6106,0.431],[163,596,78,125,31.2,50.0,0.4146,0.4392],[245,596,73,128,29.2,51.2,0.6106,0.431],[322,596,46,129,18.4,51.6,0.4852,0.5091]],"jump":[[4,733,60,85,24.0,34.0,0.5159,0.5349],[68,733,84,121,33.6,48.4,0.4927,0.4603],[156,733,55,100,22.0,40.0,0.4336,0.471],[215,733,54,128,21.6,51.2,0.4133,0.4342],[273,733,54,104,21.6,41.6,0.5124,0.5185],[331,733,60,82,24.0,32.8,0.5124,0.5367]],"climb":[[4,869,47,124,18.8,49.6,0.5494,0.427],[55,869,51,126,20.4,50.4,0.5129,0.4273],[110,869,49,122,19.6,48.8,0.503,0.4176],[163,869,48,126,19.2,50.4,0.456,0.4278],[215,869,49,124,19.6,49.6,0.4771,0.4244],[268,869,49,126,19.6,50.4,0.529,0.426]],"swim":[[4,1003,94,55,37.6,22.0,0.5535,0.5439],[102,1003,91,59,36.4,23.6,0.6071,0.5471],[197,1003,84,63,33.6,25.2,0.5734,0.5316],[285,1003,99,61,39.6,24.4,0.5576,0.5353],[388,1003,107,59,42.8,23.6,0.5593,0.5764]],"idle":[[4,451,72,137,28.8,54.8,0.5102,0.5072]]}}};
 const charAtlas=new Image(); let charAtlasReady=false;
 charAtlas.onload=()=>{charAtlasReady=true;}; charAtlas.src=CHAR_ATLAS_SRC;
-const SPRITE_ANCHOR={idle:1,walk:1,attack:1,jump:1,swim:0,climb:1,space:0};
+const SPRITE_ANCHOR={idle:1,walk:1,attack:1,jump:1,swim:0,climb:1,space:0,giantCharge:1};
 const SPRITE_YOFF={sawyer:0, otto:0};
-const SPRITE_SCALE={sawyer:1.12, otto:0.82};
+const SPRITE_SCALE={sawyer:1.12, otto:0.92};
 const SPRITE_ANIM_MULT={sawyer:{swim:1.0, space:1.0, jump:0.94}, otto:{swim:1.0, space:1.0, jump:0.94}};
 // Per-(char,anim) horizontal flip override. The swim frames for Otto are authored
 // facing the opposite way from his land frames, so invert his swim flip so he points
@@ -2505,7 +2505,7 @@ const SPRITE_ANIM_YOFF={sawyer:{swim:0, space:0}, otto:{swim:0, space:0}};
 // Leave empty {} to use all 6 frames in order.
 const SPRITE_SEQ={sawyer:{}, otto:{}};
 // Playback speed (frames/sec) for the looping moves. Higher=faster cycling.
-const SPRITE_FPS={walk:6, swim:7, climb:6, space:4};
+const SPRITE_FPS={walk:6, swim:7, climb:6, space:4, giantCharge:7};
 // Distance per animation frame (px of travel). Couples gait to speed → no foot-sliding.
 const SPRITE_STRIDE={sawyer:11, otto:7};
 function charCostume(){ if(currentLevel===2 && CHAR_META.winter) return 'winter'; if(currentLevel===3 && CHAR_META.beach) return 'beach'; if(currentLevel===5 && CHAR_META.spooky) return 'spooky'; if(currentLevel===6 && CHAR_META.spacesuit) return 'spacesuit'; return 'base'; }
@@ -2539,6 +2539,83 @@ function drawOttoHeartEyes(){
   }
   ctx.restore();
 }
+// Power auras anchored to Otto's live drawn sprite. mode 1=giant impact, 2=spray cloud.
+function ottoAura(mode){
+  if(!ottoSpriteRect) return;
+  const r=ottoSpriteRect, t=Date.now()/1000;
+  const cx=r.x+r.w/2, cy=r.y+r.h/2, feet=r.y+r.h;
+  ctx.save();
+  if(mode===1){
+    // GIANT — weighty pulsing rim glow + dust kicked from the feet
+    const pulse=0.5+0.5*Math.sin(t*4);
+    const rg=ctx.createRadialGradient(cx,cy,r.w*0.30,cx,cy,r.w*0.95);
+    rg.addColorStop(0,'rgba(181,212,244,0)');
+    rg.addColorStop(0.7,'rgba(181,212,244,'+(0.10+pulse*0.10).toFixed(3)+')');
+    rg.addColorStop(1,'rgba(120,170,230,0)');
+    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(cx,cy,r.w*0.95,0,7); ctx.fill();
+    // ground dust puffs
+    for(let i=0;i<7;i++){
+      const ph=(t*0.9+i*0.31)%1;
+      const dx=cx+(i-3)*r.w*0.16 + Math.sin(t*2+i)*4;
+      const dy=feet-ph*r.h*0.30;
+      const al=0.32*(1-ph), rad=r.w*(0.10+ph*0.16);
+      if(al<=0) continue;
+      ctx.globalAlpha=al; ctx.fillStyle='#D8E4F2';
+      ctx.beginPath(); ctx.arc(dx,dy,rad,0,7); ctx.fill();
+    }
+  } else if(mode===2){
+    // SPRAY — whimsical opaque billowy cloud Otto is nestled in (back layer)
+    sprayCloud(cx,cy,r.w,r.h,t,false);
+  } else if(mode===3){
+    // SPRAY foreground lobes over the feet (drawn after the sprite)
+    sprayCloud(cx,cy,r.w,r.h,t,true);
+  }
+  ctx.restore();
+}
+// A single billowy lobe: blue-grey shadowed underside + bright white top.
+function _sprayLobe(bx,by,rr,topA){
+  let g=ctx.createRadialGradient(bx,by+rr*0.18,0,bx,by+rr*0.18,rr);
+  g.addColorStop(0,'rgba(214,226,242,0.95)');
+  g.addColorStop(0.7,'rgba(206,220,240,0.85)');
+  g.addColorStop(1,'rgba(206,220,240,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(bx,by+rr*0.12,rr,0,7); ctx.fill();
+  let h=ctx.createRadialGradient(bx-rr*0.2,by-rr*0.25,0,bx-rr*0.2,by-rr*0.25,rr*0.8);
+  h.addColorStop(0,'rgba(255,255,255,'+topA+')');
+  h.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=h; ctx.beginPath(); ctx.arc(bx-rr*0.1,by-rr*0.18,rr*0.85,0,7); ctx.fill();
+}
+function sprayCloud(cx,cy,rw,rh,t,front){
+  ctx.save();
+  if(front){
+    const fl=4;
+    for(let i=0;i<fl;i++){
+      const a=t*0.7+i*(Math.PI*2/fl);
+      const px=cx+Math.cos(a)*rw*0.42;
+      const py=cy+rh*0.40+Math.sin(t*2+i)*3;
+      _sprayLobe(px,py,rw*0.26,'0.95');
+    }
+    ctx.restore(); return;
+  }
+  const lobes=8;
+  for(let i=0;i<lobes;i++){
+    const a=i*(Math.PI*2/lobes)-t*0.55;
+    const px=cx+Math.cos(a)*rw*0.66*(0.95+0.1*Math.sin(t+i));
+    const py=cy+Math.sin(a)*rh*0.52 - rh*0.06;
+    _sprayLobe(px,py,rw*(0.36+0.05*Math.sin(t*2+i)),'0.9');
+  }
+  for(let i=0;i<lobes-2;i++){
+    const a=i*(Math.PI*2/(lobes-2))+t*0.7;
+    const px=cx+Math.cos(a)*rw*0.38;
+    const py=cy+Math.sin(a)*rh*0.30 - rh*0.05;
+    _sprayLobe(px,py,rw*0.30,'1.0');
+  }
+  let cg=ctx.createRadialGradient(cx,cy-rh*0.05,0,cx,cy-rh*0.05,rw*0.6);
+  cg.addColorStop(0,'rgba(255,255,255,0.92)');
+  cg.addColorStop(0.6,'rgba(240,246,255,0.7)');
+  cg.addColorStop(1,'rgba(230,238,250,0)');
+  ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,cy-rh*0.05,rw*0.6,0,7); ctx.fill();
+  ctx.restore();
+}
 function spriteSeq(p,anim){
   const s=SPRITE_SEQ[p.id]&&SPRITE_SEQ[p.id][anim];
   if(s&&s.length) return s;
@@ -2547,6 +2624,7 @@ function spriteSeq(p,anim){
   return Array.from({length:n},(_,i)=>i);
 }
 function spriteAnim(p){
+  if(p.id==='otto' && typeof ottoPower!=='undefined' && ottoPower===1 && typeof giantOttoPhase!=='undefined' && giantOttoPhase!=='idle') return 'giantCharge';
   if(p.climbing) return 'climb';
   if(currentLevel===4) return 'swim';
   if(p.attackTimer>0) return 'attack';
@@ -2566,7 +2644,7 @@ function spriteFrameIdx(p,anim,N){
     const stride=SPRITE_STRIDE[p.id]||14;
     return seq[Math.floor(p._animPhase/stride)%seq.length];
   }
-  if(anim==='swim'||anim==='space'){
+  if(anim==='swim'||anim==='space'||anim==='giantCharge'){
     const seq=spriteSeq(p,anim); const fps=SPRITE_FPS[anim]||10;
     return seq[Math.floor(Date.now()/(1000/fps))%seq.length];
   }
@@ -6084,6 +6162,7 @@ function loop(){
       : 1;
     const sc = 1.0 + growPct * 1.5; // 1.0 → 2.5 (visual only; sprite scales via ottoPower in drawCharSprite)
     drawPlayer(otto);   // giant sprite (drawCharSprite applies the grow multiplier)
+    ottoAura(1);        // impact rim glow + ground dust, scaled to live sprite
     // Glow ring
     ctx.save();ctx.globalAlpha=0.18+growPct*0.12;ctx.fillStyle='#B5D4F4';
     ctx.beginPath();ctx.arc(ox+otto.w/2,oy+otto.h/2,30+growPct*20,0,7);ctx.fill();ctx.restore();
@@ -6102,6 +6181,7 @@ function loop(){
     // draw sawyer normally
     drawPlayer(sawyer);
   } else if(!bikeEscape.active && !victoryActive) {
+    if(ottoPower===2){ const v=otto.invincible===0||Math.floor(otto.invincible/5)%2===0; if(v) ottoAura(2); }
     drawPlayer(otto); drawPlayer(sawyer);
   }
   // Bike escape rider overlay
@@ -6124,6 +6204,11 @@ function loop(){
   }
   drawBottles(); drawHearts();
   
+  // Power 2 — foreground cloud lobes over Otto's feet (back layer drawn pre-sprite)
+  if(ottoPower===2){
+    const visible=otto.invincible===0||Math.floor(otto.invincible/5)%2===0;
+    if(visible) ottoAura(3);
+  }
   // Power 3 — heart eyes (cuteness daze), anchored to Otto's sprite
   if(ottoPower===3){
     const visible=otto.invincible===0||Math.floor(otto.invincible/5)%2===0;
