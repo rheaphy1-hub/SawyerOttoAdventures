@@ -318,6 +318,23 @@
     <button id="restart-overlay-btn" onclick="restartCurrentLevel()">&#8635; Play Again</button>
   </div>
 
+  <div id="name-entry" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,4,18,0.82);align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;">
+    <div style="background:linear-gradient(160deg,#1a1030,#2a1440);border:2px solid #9B6BFF;border-radius:16px;padding:26px 28px;max-width:340px;width:86%;text-align:center;box-shadow:0 18px 60px rgba(0,0,0,0.6);">
+      <div style="font-size:26px;font-weight:900;color:#FFD86B;text-shadow:0 2px 8px rgba(255,160,40,0.5);">YOU WON!</div>
+      <div id="ne-total" style="margin-top:6px;font-size:16px;font-weight:700;color:#7CFFC4;">Total Score: 0</div>
+      <div style="margin-top:14px;font-size:13px;color:rgba(255,255,255,0.82);">Add your name to the global leaderboard:</div>
+      <input id="ne-input" type="text" maxlength="16" placeholder="Enter name (or leave blank)" autocomplete="off"
+        style="margin-top:10px;width:100%;box-sizing:border-box;padding:10px 12px;border-radius:9px;border:1.5px solid #9B6BFF;background:#120c26;color:#fff;font-size:15px;text-align:center;outline:none;"
+        onkeydown="if(event.key==='Enter'){finishNameEntry(true);}" />
+      <div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.5);">Blank = a fun random name</div>
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;">
+        <button onclick="finishNameEntry(true)"
+          style="flex:1;padding:11px 0;border:none;border-radius:9px;cursor:pointer;font-weight:800;font-size:14px;color:#1a0f04;background:linear-gradient(180deg,#FFE08A,#FF9A2E);">SUBMIT</button>
+        <button onclick="finishNameEntry(false)"
+          style="flex:1;padding:11px 0;border:1.5px solid rgba(155,107,255,0.6);border-radius:9px;cursor:pointer;font-weight:700;font-size:14px;color:#cdbcff;background:transparent;">SKIP</button>
+      </div>
+    </div>
+  </div>
   <div id="game-footer">
     <span id="score-display">Score: 0 &nbsp;|&nbsp; &#10084;&#65039; 5</span>
     <span class="ctrls">
@@ -409,8 +426,6 @@ document.addEventListener('fullscreenchange', setupHiDPI);
 document.addEventListener('webkitfullscreenchange', setupHiDPI);
 window.addEventListener('orientationchange', ()=>setTimeout(setupHiDPI,200));
 const ottoConfidentImg = new Image(); ottoConfidentImg.src = 'assets/otto_confident.webp';
-const transponderImg = new Image(); let transponderReady=false;
-transponderImg.onload=()=>{transponderReady=true;}; transponderImg.src='assets/transponder.webp';
 const GRAVITY = 0.55, FLOOR = H - 56;
 // ---- Boss-stage geometry: a long empty no-enemy run leads into an isolated arena ----
 const ARENA_X0   = 3260;          // left edge of the isolated boss arena floor
@@ -426,7 +441,7 @@ let bossEnrage = 0;
 let bossArena = { active:false, spawnT:0, deathBurst:0 };
 
 let musicOn = true, sfxOn = true;
-let score = 0, lives = 5, gameOver = false, won = false;
+let score = 0, levelStartScore = 0, lives = 5, gameOver = false, won = false;
 
 // High score persistence
 function getBestScore(level){
@@ -829,6 +844,59 @@ function drawHearts(){
 
 // Victory animation
 let victoryActive = false, victoryTimer = 0;
+// ---- Leaderboard state (final-level name entry + global board) ----
+let nameEntryActive = false;       // showing the name-entry overlay
+let nameEntryDone = false;         // submitted/skipped this run
+let leaderboardData = null;        // cached top-N once fetched
+let leaderboardLoading = false;
+let leaderboardError = false;
+const LB_API = '';                 // same-origin /api on Vercel
+function sillyName(){
+  const a=['Wobbly','Sneaky','Turbo','Cosmic','Grumpy','Zippy','Dizzy','Mighty','Sleepy','Spooky','Sparkly','Rowdy','Bouncy','Cranky','Fuzzy','Galactic'];
+  const b=['Cactus','Pickle','Noodle','Comet','Waffle','Goblin','Otter','Yeti','Crab','Bandit','Muffin','Rocket','Pelican','Burrito','Nugget','Walrus'];
+  const r=x=>x[Math.floor(Math.random()*x.length)];
+  return r(a)+' '+r(b)+' '+(Math.floor(Math.random()*90)+10);
+}
+function cleanName(raw){
+  let n=(raw||'').replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ').trim().slice(0,16);
+  return n || sillyName();
+}
+async function submitScore(name){
+  try{
+    await fetch(LB_API+'/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:name,score:score})});
+  }catch(e){ /* offline: silently skip, credits still play */ }
+}
+async function fetchLeaderboard(){
+  if(leaderboardLoading) return;
+  leaderboardLoading=true; leaderboardError=false;
+  try{
+    const r=await fetch(LB_API+'/api/top');
+    if(!r.ok) throw new Error('bad');
+    leaderboardData=await r.json();
+  }catch(e){ leaderboardError=true; leaderboardData=[]; }
+  leaderboardLoading=false;
+}
+function startNameEntry(){
+  if(nameEntryDone) return;
+  nameEntryActive=true;
+  const ov=document.getElementById('name-entry'); if(!ov) return;
+  const fsEl=document.fullscreenElement||document.webkitFullscreenElement;
+  const host=fsEl||document.body; if(ov.parentElement!==host) host.appendChild(ov);
+  document.getElementById('ne-total').textContent='Total Score: '+score;
+  const inp=document.getElementById('ne-input'); inp.value='';
+  ov.style.display='flex'; setTimeout(()=>inp.focus(),50);
+}
+function finishNameEntry(useName){
+  if(nameEntryDone) return;
+  nameEntryDone=true; nameEntryActive=false;
+  const inp=document.getElementById('ne-input');
+  const name=cleanName(useName?inp.value:'');
+  const ov=document.getElementById('name-entry'); if(ov) ov.style.display='none';
+  submitScore(name);
+  fetchLeaderboard();
+  won=true;  // proceed to credits (board renders there once loaded)
+}
 
 // ===== Rolling tumbleweeds (Level 1 living desert decor) =====
 let tumbleweeds = [], tumbleTimer = 90;
@@ -862,7 +930,7 @@ function drawTumbleweeds(){
 let artifact = null, artifactCollected = false, barrier = null;
 function buildArtifactGate(){
   if(currentLevel===1){
-    artifact = { x:2473, y:FLOOR-270-32, w:44, got:false, bobT:0 };   // centered on the plateau top (2410..2580); width matches the transponder sprite
+    artifact = { x:2484, y:FLOOR-270-32, w:22, got:false, bobT:0 };   // centered on the plateau top (2410..2580)
     barrier  = null;                                                  // no physical gate — the boss simply won't spawn until the artifact is taken
   } else { artifact=null; barrier=null; }
   artifactCollected = false;
@@ -877,7 +945,7 @@ function updateArtifact(s){
       artifact.got=true; artifactCollected=true;
       if(barrier) barrier.sealed=false;
       SFX.win(); shakeIntensity=10;
-      for(let i=0;i<28;i++) particles.push({x:artifact.x+artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9CF0FF':'#B98AF6'});
+      for(let i=0;i<28;i++) particles.push({x:artifact.x+artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#FFE08A':'#FFF6D8'});
       break;
     }
   }
@@ -896,55 +964,29 @@ function drawArtifact(){
   const ax=artifact.x-cameraX, ay=artifact.y+Math.sin(artifact.bobT)*4, cx=ax+artifact.w/2, cy=ay+16;
   const t=performance.now()*0.001, pulse=0.5+0.5*Math.sin(artifact.bobT*2);
   ctx.save();
-
-  // ---- Mystical aura (additive). Cyan→violet to echo the transponder's energy core. ----
   ctx.save(); ctx.globalCompositeOperation='lighter';
-  // tall beacon shaft so it's spotted from across the level
-  const bg=ctx.createLinearGradient(cx,cy-230,cx,cy+10);
-  bg.addColorStop(0,'rgba(120,220,255,0)'); bg.addColorStop(1,'rgba(120,220,255,'+(0.16+0.12*pulse)+')');
-  ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(cx-8,cy); ctx.lineTo(cx+8,cy); ctx.lineTo(cx+3,cy-230); ctx.lineTo(cx-3,cy-230); ctx.closePath(); ctx.fill();
-  // swirling portal disc behind the relic
-  const portalR=34+pulse*8;
-  for(let ring=0; ring<3; ring++){
-    const rr=portalR*(1-ring*0.22), rot=t*(0.7+ring*0.5)*(ring%2?-1:1);
-    const pg=ctx.createRadialGradient(cx,cy,2,cx,cy,rr);
-    pg.addColorStop(0,'rgba(150,240,255,'+(0.30+0.18*pulse)+')');
-    pg.addColorStop(0.6,'rgba(150,90,230,0.14)');
-    pg.addColorStop(1,'rgba(120,60,220,0)');
-    ctx.fillStyle=pg;
-    ctx.beginPath();
-    for(let k=0;k<=40;k++){ const a=rot+k/40*Math.PI*2; const wob=1+0.16*Math.sin(a*3+t*2); ctx.lineTo(cx+Math.cos(a)*rr*wob, cy+Math.sin(a)*rr*wob*0.62); }
-    ctx.closePath(); ctx.fill();
-  }
-  // orbiting arcane runes / sparks
-  ctx.strokeStyle='rgba(190,250,255,'+(0.35+0.3*pulse)+')'; ctx.lineWidth=2;
-  for(let i=0;i<7;i++){
-    const a=t*0.9+i*Math.PI*2/7, orb=portalR+6+Math.sin(t*2+i)*4;
-    const ox=cx+Math.cos(a)*orb, oy=cy+Math.sin(a)*orb*0.6;
-    ctx.beginPath(); ctx.arc(ox,oy,1.6+1.2*(0.5+0.5*Math.sin(t*3+i)),0,7); ctx.stroke();
-  }
+  // tall light beacon so the artifact is spotted from across the level
+  const bg=ctx.createLinearGradient(cx,cy-220,cx,cy+10);
+  bg.addColorStop(0,'rgba(255,224,140,0)'); bg.addColorStop(1,'rgba(255,224,140,'+(0.20+0.14*pulse)+')');
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(cx-7,cy); ctx.lineTo(cx+7,cy); ctx.lineTo(cx+3,cy-220); ctx.lineTo(cx-3,cy-220); ctx.closePath(); ctx.fill();
+  const g=ctx.createRadialGradient(cx,cy,2,cx,cy,40+pulse*12);
+  g.addColorStop(0,'rgba(255,224,140,'+(0.6+0.3*pulse)+')'); g.addColorStop(0.55,'rgba(255,200,90,0.22)'); g.addColorStop(1,'rgba(255,200,90,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,40+pulse*12,0,7); ctx.fill();
+  ctx.strokeStyle='rgba(255,240,190,'+(0.25+0.25*pulse)+')'; ctx.lineWidth=2;
+  for(let i=0;i<6;i++){ const a=t*0.6+i*Math.PI/3; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*8,cy+Math.sin(a)*8); ctx.lineTo(cx+Math.cos(a)*(22+pulse*6),cy+Math.sin(a)*(22+pulse*6)); ctx.stroke(); }
   ctx.restore();
-
-  // ---- The transponder relic itself ----
-  if(transponderReady && transponderImg.naturalWidth){
-    const iw=44, ih=iw*transponderImg.naturalHeight/transponderImg.naturalWidth;
-    // faint glow halo hugging the sprite
-    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.35+0.25*pulse;
-    ctx.filter='blur(3px)';
-    ctx.drawImage(transponderImg, cx-iw/2, cy-ih/2, iw, ih);
-    ctx.filter='none'; ctx.restore();
-    ctx.drawImage(transponderImg, cx-iw/2, cy-ih/2, iw, ih);
-  } else {
-    // fallback diamond until the sprite loads
-    const grd=ctx.createLinearGradient(cx,cy-14,cx,cy+12); grd.addColorStop(0,'#CFF6FF'); grd.addColorStop(0.5,'#6FB8F6'); grd.addColorStop(1,'#7A4BD8');
-    ctx.fillStyle=grd; ctx.strokeStyle='#3A5E9A'; ctx.lineWidth=1.2;
-    ctx.beginPath(); ctx.moveTo(cx,cy-15); ctx.lineTo(cx+9,cy-2); ctx.lineTo(cx,cy+12); ctx.lineTo(cx-9,cy-2); ctx.closePath(); ctx.fill(); ctx.stroke();
-  }
-
+  ctx.translate(cx,cy);
+  ctx.fillStyle='#7A5210'; ctx.beginPath(); ctx.ellipse(0,15,10,3,0,0,7); ctx.fill();
+  ctx.fillStyle='#C8901E'; ctx.beginPath(); ctx.roundRect(-8,10,16,5,2); ctx.fill();
+  const grd=ctx.createLinearGradient(0,-14,0,12); grd.addColorStop(0,'#FFF3C4'); grd.addColorStop(0.5,'#F6C84B'); grd.addColorStop(1,'#C9881A');
+  ctx.fillStyle=grd; ctx.strokeStyle='#8A5E12'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(9,-2); ctx.lineTo(0,12); ctx.lineTo(-9,-2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='rgba(120,80,20,0.5)'; ctx.lineWidth=0.8;
+  ctx.beginPath(); ctx.moveTo(-9,-2); ctx.lineTo(9,-2); ctx.moveTo(0,-15); ctx.lineTo(0,12); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(4,-7); ctx.lineTo(0,-4); ctx.lineTo(-3,-8); ctx.closePath(); ctx.fill();
   ctx.restore();
-  ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#BFE9FF'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
-  ctx.shadowColor='rgba(90,160,255,0.8)'; ctx.shadowBlur=6;
-  ctx.fillText('TRANSPONDER', cx, cy-34); ctx.restore();
+  ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#5A3A10'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
+  ctx.fillText('ARTIFACT', cx, cy-30); ctx.restore();
 }
 function drawBarrier(){
   if(!barrier) return;
@@ -1168,8 +1210,7 @@ function buildPlayers(){
     skin:'#F2C9A3', hair:'#C9A878', onesie:'#B5D4F4', label:'#993C1D',
     name:'Otto', baby:true, ai:true,
     vx:0, vy:0, onGround:false, attackTimer:0, attackCooldown:0, invincible:0, facing:1,
-    cheer:0, cower:0,
-    crumbs:[], crumbTick:0, hopCd:0, crossingPit:0   // breadcrumb follower state
+    cheer:0, cower:0
   };
 }
 
@@ -1471,134 +1512,7 @@ function nearestThreat(fromX, fromY, range){
   return best;
 }
 
-// =========================================================================
-//  OTTO BREADCRUMB FOLLOWER  (shared core for L1-L3)
-//  Otto retraces Sawyer's recent safe footsteps instead of beelining at a
-//  single trailing point. He jumps where Sawyer jumped (predictive ballistic
-//  arc solved from the real gap), smooth-boosts to catch up when he lags, and
-//  only hard-teleports when genuinely lost — snapping to a safe crumb, not
-//  onto Sawyer. opts: {resolve, groundAhead, worldW, enemies}
-// =========================================================================
-function ottoFollowCore(opts){
-  const o=otto, s=sawyer;
-  const {resolve, groundAhead, worldW, enemies} = opts;
-
-  if(o.onGround) o.crossingPit=0;
-  // Giant-Otto form: unchanged behaviour, just settle to floor.
-  if(ottoPower===1 && giantOttoPhase!=='idle'){
-    o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy;
-    if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return;
-  }
-
-  // ---- 1. Record Sawyer's trail (a crumb every few frames while he moves) ----
-  if(o.crumbTick>0) o.crumbTick--;
-  const lastC = o.crumbs[o.crumbs.length-1];
-  const movedEnough = !lastC || Math.hypot(s.x-lastC.x, s.y-lastC.y) > 8;
-  if(o.crumbTick<=0 && movedEnough){
-    o.crumbs.push({x:s.x, y:s.y, g:s.onGround});
-    o.crumbTick=2;
-    if(o.crumbs.length>60) o.crumbs.shift();
-  }
-
-  // ---- 2. Target = a point trailing just behind Sawyer's CURRENT position. ----
-  // (Anchoring to Sawyer's live X means Otto is always on the correct side and
-  //  can't overshoot onto the wrong side when Sawyer turns around.)
-  const trail = 30;                              // base follow distance
-  const desiredX = s.x - s.facing*trail;
-  const dx = desiredX - o.x;
-  const gap = Math.abs(s.x - o.x);
-
-  // ---- 3. Horizontal pursuit with smooth catch-up boost (no teleport). ----
-  const lag = Math.max(0, gap-70)/200;
-  const maxSpd = Math.min(7.5, 4.2 + lag*4);
-  const accel = 0.55 + lag*0.5;
-  if(Math.abs(dx)>6) o.vx += Math.sign(dx)*accel; else o.vx*=0.7;
-  o.vx = Math.max(-maxSpd, Math.min(maxSpd, o.vx));
-  if(o.crossingPit && !o.onGround) o.vx = o.crossingPit*Math.min(maxSpd,5);
-  o.facing = sawyer.facing;
-
-  // ---- 4. Jump decision. Only two reasons to hop, both strictly gated. ----
-  const dir  = Math.sign(dx) || (Math.sign(s.x-o.x)||1);
-  const mdir = (Math.abs(o.vx)>0.4 ? Math.sign(o.vx) : dir);
-  if(o.hopCd>0) o.hopCd--;
-
-  // (a) Gap ahead in the direction Otto is travelling toward Sawyer.
-  const pit = !groundAhead(o, mdir);
-  const wantCross = pit && Math.sign(s.x-o.x)===mdir && gap>14;
-
-  // (b) Climb: Sawyer is meaningfully ABOVE Otto and roughly overhead. Use
-  //     Sawyer's live position (stable), not jittery crumb y-values, so Otto
-  //     does NOT hop on flat ground.
-  const heightGap = (o.y) - (s.y);               // >0 when Sawyer is higher
-  const overhead  = Math.abs(s.x - o.x) < 130;
-  const climb = heightGap > 30 && overhead && !wantCross;
-
-  const needHop = o.onGround && o.hopCd<=0 && (wantCross || climb);
-  if(needHop){
-    // Brief reaction delay so Otto follows a beat behind Sawyer instead of
-    // jumping in lockstep (less "Siamese twin"). Arms a countdown, hops when it fires.
-    if(o.hopDelay==null || o.hopDelay<=0) o.hopDelay = 8;
-  }
-  if(o.hopDelay>0){
-    o.hopDelay--;
-    if(o.hopDelay<=0 && o.onGround){
-      if(wantCross){
-        o.vy = -11.5;
-        o.vx = mdir*4.6;
-        o.crossingPit = mdir;
-        o.hopCd = 14;
-      } else {
-        o.vy = -Math.max(9, Math.min(11.5, 9 + heightGap*0.07));
-        o.hopCd = 12;
-      }
-      o.onGround=false; SFX.jumpBaby();
-    }
-  }
-
-  // ---- 5. Integrate + collide. ----
-  o.vy += GRAVITY; o.x += o.vx; o.y += o.vy;
-  resolve(o);
-  if(o.x<0) o.x=0;
-  if(o.x>worldW-o.w) o.x=worldW-o.w;
-
-  // ---- 6. Recovery: only when truly lost. Snap to a SAFE crumb, not onto Sawyer. ----
-  const fell = o.y > H+40;
-  const tooFar = gap > 420;
-  if(fell || tooFar){
-    // find the most recent grounded crumb to land on
-    let safe=null;
-    for(let i=o.crumbs.length-1;i>=0;i--){ if(o.crumbs[i].g){ safe=o.crumbs[i]; break; } }
-    if(!safe) safe={x:s.x-s.facing*28, y:s.y-6};
-    o.x=safe.x; o.y=safe.y-6; o.vx=0; o.vy=0; o.crossingPit=0;
-  }
-
-  // ---- 7. Timers + cheer/cower + passive auto-spit (unchanged). ----
-  if(o.attackCooldown>0) o.attackCooldown--;
-  if(o.attackTimer>0) o.attackTimer--;
-  if(o.cheer>0) o.cheer--;
-  if(o.cower>0) o.cower--;
-  o.facing = sawyer.facing;
-
-  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
-    let nearestE=null, nearestD=180;
-    for(const e of enemies){
-      if(!e.alive) continue;
-      const d=Math.abs(e.x-o.x);
-      if(d<nearestD && Math.sign(e.x-s.x)===s.facing){ nearestD=d; nearestE=e; }
-    }
-    if(nearestE){
-      o.attackTimer=8; o.attackCooldown=240;
-      projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5});
-      SFX.barf();
-    }
-  }
-}
-
 function updateOtto(){
-  return ottoFollowCore({resolve, groundAhead, worldW:WORLD_W, enemies});
-}
-
-function _updateOtto_OLD(){
   const o = otto, s = sawyer;
   if(o.onGround) o.crossingPit=0;
   if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
@@ -2241,9 +2155,6 @@ function hurt(p){
   if (lives<=0){ gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return; }
   const sp = respawnSpot(p);
   p.x=sp.x; p.y=sp.y; p.vx=0; p.vy=-4; p.invincible=90;
-  // Sawyer jumped to a checkpoint: wipe Otto's trail + warp him in so he doesn't
-  // chase the stale path across the level.
-  if(!p.ai && otto){ otto.crumbs=[]; otto.x=sp.x-12; otto.y=sp.y-6; otto.vx=0; otto.vy=0; otto.crossingPit=0; }
 }
 
 function rr(x,y,w,h,r,fill,stroke){
@@ -4417,17 +4328,17 @@ function drawBossWarning(){
   // ominous text with jitter + red glow
   const jx=(Math.random()-0.5)*2.2, jy=(Math.random()-0.5)*2.2;
   ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.font='900 26px Georgia,"Times New Roman",serif';
+  ctx.font='900 30px Georgia,"Times New Roman",serif';
   const cx=W/2+jx, cy=H/2+jy;
   ctx.shadowColor='rgba(255,40,30,'+(0.9*fade)+')';
   ctx.shadowBlur=18+pulse*14;
   ctx.fillStyle='rgba(120,6,6,'+fade+')';
-  ctx.fillText('FIND THE PORTAL', cx, cy-18);
-  ctx.fillText('TRANSPONDER TO ESCAPE', cx, cy+18);
+  ctx.fillText('FIND THE ARTIFACT', cx, cy-18);
+  ctx.fillText('TO ESCAPE', cx, cy+18);
   ctx.shadowBlur=0;
   ctx.fillStyle='rgba(255,196,150,'+(fade*(0.65+0.35*pulse))+')';
-  ctx.fillText('FIND THE PORTAL', cx, cy-18);
-  ctx.fillText('TRANSPONDER TO ESCAPE', cx, cy+18);
+  ctx.fillText('FIND THE ARTIFACT', cx, cy-18);
+  ctx.fillText('TO ESCAPE', cx, cy+18);
   ctx.restore();
 }
 // Towering wind-wall of sand that rises from the horizon to isolate the boss arena.
@@ -5132,10 +5043,13 @@ function drawVictoryAnimation(){
   // Main text
   ctx.fillStyle = victoryColor;
   ctx.fillText(victoryText, W/2, H/3);
-  // Score
-  ctx.font = 'bold 20px system-ui,sans-serif';
+  // Score: this level's points + running total
+  ctx.font = 'bold 18px system-ui,sans-serif';
   ctx.fillStyle = '#fff';
-  ctx.fillText('Final Score: ' + score, W/2, H/3+44);
+  ctx.fillText('Level: ' + (score - levelStartScore), W/2, H/3+40);
+  ctx.font = 'bold 22px system-ui,sans-serif';
+  ctx.fillStyle = '#FFD700';
+  ctx.fillText('Total: ' + score, W/2, H/3+66);
   ctx.restore();
 
   // Celebratory sparkle burst (vector stars, no emojis)
@@ -5242,13 +5156,55 @@ function drawFinishCard(){
   ctx.fillText('LEVEL COMPLETE!', W/2, cy2+92);
   ctx.font='600 15px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)';
   ctx.fillText(lvlNames[currentLevel]||'', W/2, cy2+114);
-  // Score
+  // Score: level subtotal + running total
   ctx.font='600 14px system-ui,sans-serif'; ctx.fillStyle='#A8F0C6';
-  ctx.fillText('Score: ' + score, W/2, cy2+140);
+  ctx.fillText('Level: ' + (score - levelStartScore) + '   Total: ' + score, W/2, cy2+140);
   // Best
   const best=getBestScore(currentLevel);
   if(best>0){ ctx.font='600 12px system-ui,sans-serif'; ctx.fillStyle='#FFD700'; ctx.fillText('🏆 Best: '+best+' pts',W/2,cy2+162); }
   ctx.restore();
+}
+
+function drawLeaderboardPanel(c, t){
+  const pw=300, px=(W-pw)/2, py=80, rows=5, rowH=17, ph=28+rows*rowH;
+  c.save();
+  c.fillStyle='rgba(10,8,26,0.66)';
+  c.beginPath(); c.roundRect(px,py,pw,ph,10); c.fill();
+  c.strokeStyle='rgba(155,107,255,0.55)'; c.lineWidth=1.5;
+  c.beginPath(); c.roundRect(px,py,pw,ph,10); c.stroke();
+  c.textAlign='center'; c.font='800 13px system-ui,sans-serif';
+  c.fillStyle='#FFD86B'; c.fillText('\u2605  GLOBAL LEADERBOARD  \u2605', W/2, py+19);
+  if(leaderboardLoading || leaderboardData===null){
+    c.fillStyle='rgba(255,255,255,0.6)'; c.font='600 12px system-ui,sans-serif';
+    c.fillText('Loading scores' + '.'.repeat((Math.floor(t/20))%4), W/2, py+ph/2+6);
+    c.restore(); return;
+  }
+  if(leaderboardError){
+    c.fillStyle='rgba(255,180,180,0.75)'; c.font='600 11px system-ui,sans-serif';
+    c.fillText('Leaderboard offline \u2014 deploy /api to enable', W/2, py+ph/2+6);
+    c.restore(); return;
+  }
+  const list=(leaderboardData||[]).slice(0,rows);
+  if(!list.length){
+    c.fillStyle='rgba(255,255,255,0.6)'; c.font='600 12px system-ui,sans-serif';
+    c.fillText('Be the first on the board!', W/2, py+ph/2+6);
+    c.restore(); return;
+  }
+  const x0=px+16, x1=px+pw-16, baseY=py+34;
+  c.font='700 12px system-ui,sans-serif';
+  for(let i=0;i<list.length;i++){
+    const e=list[i], ry=baseY+i*rowH;
+    const mine = (e.score===score);
+    c.textAlign='left';
+    c.fillStyle = i===0?'#FFD700' : i===1?'#D8D8E8' : i===2?'#E6A86B' : 'rgba(255,255,255,0.82)';
+    if(mine){ c.fillStyle='#7CFFC4'; }
+    c.fillText((i+1)+'.', x0, ry);
+    const nm=(e.name||'???').slice(0,16);
+    c.fillText(nm, x0+22, ry);
+    c.textAlign='right';
+    c.fillText(String(e.score), x1, ry);
+  }
+  c.restore();
 }
 
 function drawCreditsOverlay(){
@@ -5311,8 +5267,12 @@ function drawCreditsOverlay(){
   ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)';
   ctx.fillText('Sawyer & Otto conquered all six worlds \u2728', W/2, 68);
 
-  // ── Scrolling credits (clipped band) ──
-  const bandTop=82, bandBot=H-44, bandH=bandBot-bandTop;
+  // ── Global leaderboard panel ──
+  if(leaderboardData===null && !leaderboardLoading){ fetchLeaderboard(); }
+  drawLeaderboardPanel(ctx, t);
+
+  // ── Scrolling credits (clipped band) — pushed below leaderboard panel ──
+  const bandTop=80+28+5*17+12, bandBot=H-40, bandH=bandBot-bandTop;
   const lines=[
     ['title','\u2014  CREDITS  \u2014'],
     ['gap',''],
@@ -5382,7 +5342,8 @@ function drawCreditsOverlay(){
 // =========================================================================
 function restartCurrentLevel(){
   const lvl = currentLevel||1;
-  score=0; lives=5; gameOver=false; won=false; cameraX=0;
+  score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
+  nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
@@ -5403,7 +5364,8 @@ function restartCurrentLevel(){
   showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
 }
 function jumpToLevel(n){
-  score=0; lives=5; gameOver=false; won=false; cameraX=0;
+  score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
+  nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
@@ -5434,7 +5396,8 @@ function jumpToLevel(n){
 }
 function restart(resetLevel){
   const lvl = resetLevel ? 1 : (currentLevel||1);
-  score=0; lives=5; gameOver=false; won=false; cameraX=0;
+  score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
+  nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
@@ -6672,7 +6635,43 @@ function updateLevel2(){
   document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
 }
 
-function updateOttoL2(){ return ottoFollowCore({resolve:resolveL2, groundAhead:groundAheadL2, worldW:L2_WORLD_W, enemies:l2Enemies}); }
+function updateOttoL2(){
+  const o=otto,s=sawyer;
+  if(o.onGround)o.crossingPit=0;
+  if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
+  const desiredX=s.x-s.facing*40;
+  const dx=desiredX-o.x;
+  const accel=0.5,maxSpd=3.6;
+  if(Math.abs(dx)>6)o.vx+=Math.sign(dx)*accel; else o.vx*=0.7;
+  o.vx=Math.max(-maxSpd,Math.min(maxSpd,o.vx));
+  if(o.crossingPit&&!o.onGround)o.vx=o.crossingPit*maxSpd;
+  // Otto always faces the direction Sawyer is facing (for shooting)
+  o.facing = sawyer.facing;
+  const dir=Math.sign(dx)||1;
+  const toS=Math.sign(s.x-o.x)||dir;
+  const mdir=(Math.abs(o.vx)>0.3?Math.sign(o.vx):toS);
+  if(o.hopCd>0) o.hopCd--;
+  const pit=!groundAheadL2(o,mdir);
+  const wantCross=pit&&(Math.sign(s.x-o.x)===mdir||Math.abs(s.x-o.x)<24);
+  const climb=(s.y<o.y-50)&&!s.onGround&&!wantCross;
+  const needHop=o.onGround&&o.hopCd<=0&&(wantCross||climb);
+  if(needHop){o.vy=-11.5;o.onGround=false;o.hopCd=12;if(wantCross){o.vx=mdir*4.4;o.crossingPit=mdir;}sfx('jumpBaby');}
+  o.vy+=GRAVITY;o.x+=o.vx;o.y+=o.vy;
+  resolveL2(o);
+  if(o.x<0)o.x=0; if(o.x>L2_WORLD_W-o.w)o.x=L2_WORLD_W-o.w;
+  if(o.y>H+40||Math.abs(o.x-s.x)>460){o.x=s.x-s.facing*40;o.y=s.y-6;o.vx=0;o.vy=0;}
+  if(o.attackCooldown>0)o.attackCooldown--;
+  if(o.attackTimer>0)o.attackTimer--;
+  if(o.cheer>0)o.cheer--;
+  if(o.cower>0)o.cower--;
+
+  // Passive auto-spit L2
+  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
+    let nearestE=null, nearestD=180;
+    for(const e of l2Enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
+    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); SFX.barf(); }
+  }
+}
 
 function resolveL2(p){
   p.onGround=false; p.standPlat=null; p.onSlick=false;
@@ -7020,10 +7019,14 @@ function updateLevel3(){
     return;
   }
 
-  // Finish card countdown — show level complete card, then credits overlay
+  // Finish card countdown — show level complete card, then name entry (final level) -> credits
   if(finishCardActive){
     finishCardTimer--;
-    if(finishCardTimer<=0){ finishCardActive=false; won=true; }
+    if(finishCardTimer<=0){
+      finishCardActive=false;
+      if(currentLevel===6 && !nameEntryDone){ startNameEntry(); }
+      else { won=true; }
+    }
     s.vx=0;
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
     return;
@@ -7316,7 +7319,42 @@ function updateLevel3(){
   document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
 }
 
-function updateOttoL3(){ return ottoFollowCore({resolve:resolveL3, groundAhead:groundAheadL3, worldW:L3_WORLD_W, enemies:l3Enemies}); }
+function updateOttoL3(){
+  const o=otto,s=sawyer;
+  if(o.onGround)o.crossingPit=0;
+  if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
+  const desiredX=s.x-s.facing*40;
+  const dx=desiredX-o.x;
+  const accel=0.5,maxSpd=3.6;
+  if(Math.abs(dx)>6)o.vx+=Math.sign(dx)*accel; else o.vx*=0.7;
+  o.vx=Math.max(-maxSpd,Math.min(maxSpd,o.vx));
+  if(o.crossingPit&&!o.onGround)o.vx=o.crossingPit*maxSpd;
+  o.facing=sawyer.facing;
+  const dir=Math.sign(dx)||1;
+  const toS=Math.sign(s.x-o.x)||dir;
+  const mdir=(Math.abs(o.vx)>0.3?Math.sign(o.vx):toS);
+  if(o.hopCd>0) o.hopCd--;
+  const pit=!groundAheadL3(o,mdir);
+  const wantCross=pit&&(Math.sign(s.x-o.x)===mdir||Math.abs(s.x-o.x)<24);
+  const climb=(s.y<o.y-50)&&!s.onGround&&!wantCross;
+  const needHop=o.onGround&&o.hopCd<=0&&(wantCross||climb);
+  if(needHop){o.vy=-11.5;o.onGround=false;o.hopCd=12;if(wantCross){o.vx=mdir*4.4;o.crossingPit=mdir;}sfx('jumpBaby');}
+  o.vy+=GRAVITY;o.x+=o.vx;o.y+=o.vy;
+  resolveL3(o);
+  if(o.x<0)o.x=0; if(o.x>L3_WORLD_W-o.w)o.x=L3_WORLD_W-o.w;
+  if(o.y>H+40||Math.abs(o.x-s.x)>460){o.x=s.x-s.facing*40;o.y=s.y-6;o.vx=0;o.vy=0;}
+  if(o.attackCooldown>0)o.attackCooldown--;
+  if(o.attackTimer>0)o.attackTimer--;
+  if(o.cheer>0)o.cheer--;
+  if(o.cower>0)o.cower--;
+
+  // Passive auto-spit L3
+  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
+    let nearestE=null, nearestD=180;
+    for(const e of l3Enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
+    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); SFX.barf(); }
+  }
+}
 
 function resolveL3(p){
   p.onGround=false;
@@ -10955,7 +10993,7 @@ function buildLevelContent(n){
   buildBottles();
 }
 function goToLevel(n){
-  currentLevel=n; cameraX=0;
+  currentLevel=n; cameraX=0; levelStartScore=score;
   projectiles=[]; venom=[]; particles=[]; killCombo=0;
   cutsceneActive=false; victoryActive=false; victoryTimer=0;
   finishCardActive=false; finishCardTimer=0; shockwaves=[]; icicles=[];
