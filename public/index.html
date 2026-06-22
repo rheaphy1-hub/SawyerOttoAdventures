@@ -4000,32 +4000,47 @@ const cosmicGlow = (function(){
     ctx.restore();
   }
 
-  // L3 — beach at NIGHT so bioluminescence reads; restrained glow
+  // L3 — beach at NIGHT so bioluminescence reads; restrained glow.
+  // HP-LINKED GRADE: at phase 2 (l3BossEnrage 0→1) the night bruises toward violet
+  // over deep-teal water while the moon/glow brighten — the world dims as the crab
+  // brightens. Colors stay numeric [r,g,b,a] arrays until the final css() string (§5).
   function gradeBeach(){
     const oceanTop=FLOOR-55;
+    const enr = (typeof l3BossEnrage!=='undefined') ? l3BossEnrage : 0;
+    const mix=(a,b,f)=>a+(b-a)*f;
+    const lerpA=(c1,c2,f)=>[mix(c1[0],c2[0],f),mix(c1[1],c2[1],f),mix(c1[2],c2[2],f),mix(c1[3],c2[3],f)];
+    const css=c=>`rgba(${Math.round(c[0])},${Math.round(c[1])},${Math.round(c[2])},${c[3].toFixed(2)})`;
     ctx.save();
+    // sky band: cool night → bruised violet (phase 2)
+    const sky0 = lerpA([8,10,34,0.88],   [34,8,52,0.93], enr);
+    const sky1 = lerpA([28,22,66,0.74],  [56,14,78,0.82], enr);
+    const sky2 = lerpA([120,54,86,0.50], [96,20,86,0.62], enr);
+    const sky3 = lerpA([180,90,80,0.40], [120,28,72,0.55], enr);
     const g=ctx.createLinearGradient(0,0,0,oceanTop);
-    g.addColorStop(0,   'rgba(8,10,34,0.88)');
-    g.addColorStop(0.55,'rgba(28,22,66,0.74)');
-    g.addColorStop(0.85,'rgba(120,54,86,0.50)');
-    g.addColorStop(1,   'rgba(180,90,80,0.40)');
+    g.addColorStop(0,   css(sky0));
+    g.addColorStop(0.55,css(sky1));
+    g.addColorStop(0.85,css(sky2));
+    g.addColorStop(1,   css(sky3));
     ctx.fillStyle=g; ctx.fillRect(0,0,W,oceanTop);
-    ctx.fillStyle='rgba(4,10,32,0.74)'; ctx.fillRect(0,oceanTop,W,FLOOR-oceanTop);
-    if(stars){ ctx.globalAlpha=0.6; ctx.drawImage(stars,0,0); ctx.globalAlpha=1; }
+    // water/ground band: ink → deep teal (phase 2)
+    const water = lerpA([4,10,32,0.74], [4,30,40,0.84], enr);
+    ctx.fillStyle=css(water); ctx.fillRect(0,oceanTop,W,FLOOR-oceanTop);
+    if(stars){ ctx.globalAlpha=0.6*(1-enr*0.35); ctx.drawImage(stars,0,0); ctx.globalAlpha=1; }
     ctx.globalCompositeOperation='lighter';
-    // cool low moon
-    const mx=W*0.72, my=oceanTop-44, ms=100;
-    ctx.globalAlpha=0.5; ctx.drawImage(gMoon, mx-ms/2, my-ms/2, ms, ms);
-    ctx.globalAlpha=1; ctx.fillStyle='rgba(210,224,255,0.9)'; ctx.beginPath(); ctx.arc(mx,my,16,0,7); ctx.fill();
-    // bioluminescent surf — fewer, but glowing against the dark
+    // cool low moon — brightens as the world bruises (threat reads brighter)
+    const mx=W*0.72, my=oceanTop-44, ms=100*(1+enr*0.25);
+    ctx.globalAlpha=0.5+0.30*enr; ctx.drawImage(gMoon, mx-ms/2, my-ms/2, ms, ms);
+    ctx.globalAlpha=1; ctx.fillStyle=css(lerpA([210,224,255,0.9],[235,210,255,0.95],enr)); ctx.beginPath(); ctx.arc(mx,my,16+enr*3,0,7); ctx.fill();
+    // bioluminescent surf — shifts cyan → teal-green and intensifies with enrage
+    const surfGlow = enr>0.01 ? gCyan : gCyan;
     const n=12;
     for(let i=0;i<n;i++){ const x=((i+0.5)/n)*W + Math.sin(t*0.8+i*1.7)*12;
-      const y=oceanTop + ((i*61)%(FLOOR-oceanTop-4)) + 2; const sz=8+Math.sin(t*2.0+i)*4;
-      ctx.globalAlpha=0.30; ctx.drawImage(gCyan, x-sz/2, y-sz/2, sz, sz); }
-    for(let x=0;x<=W;x+=26){ const yy=FLOOR-8+Math.sin(x*0.08+t*1.8)*2.5; const sz=9;
-      ctx.globalAlpha=0.38; ctx.drawImage(gCyan, x-sz/2, yy-sz/2, sz, sz); }
+      const y=oceanTop + ((i*61)%(FLOOR-oceanTop-4)) + 2; const sz=(8+Math.sin(t*2.0+i)*4)*(1+enr*0.3);
+      ctx.globalAlpha=(0.30+0.16*enr); ctx.drawImage(surfGlow, x-sz/2, y-sz/2, sz, sz); }
+    for(let x=0;x<=W;x+=26){ const yy=FLOOR-8+Math.sin(x*0.08+t*1.8)*2.5; const sz=9*(1+enr*0.2);
+      ctx.globalAlpha=(0.38+0.14*enr); ctx.drawImage(surfGlow, x-sz/2, yy-sz/2, sz, sz); }
     ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
-    vignette(0.46);
+    vignette(0.46+0.18*enr);
     ctx.restore();
   }
 
@@ -5217,7 +5232,7 @@ function restartCurrentLevel(){
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   buildPlayers();
   if(currentLevel===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
-  else if(currentLevel===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); }
+  else if(currentLevel===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); }
   else if(currentLevel>=4&&currentLevel<=6){ buildLevelContent(currentLevel); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
@@ -5274,7 +5289,7 @@ function restart(resetLevel){
   if(currentLevel===2){
     buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}}
   } else if(currentLevel===3){
-    buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves();
+    buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena();
   } else if(currentLevel>=4&&currentLevel<=6){
     buildLevel4to6Jump(currentLevel);
   } else {
@@ -5344,7 +5359,7 @@ function loop(){
     drawL2BossWarning();
   } else if(currentLevel===3){
     drawL3Bg(); cosmicGlow(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
-    drawL3Enemies(); drawL3Waves(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawCheckpoint();
+    drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel===4){
     drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls();
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
@@ -5874,9 +5889,36 @@ function buildIcicles(){
 // =========================================================================
 //  17. LEVEL 3 — SANDY SHORES
 // =========================================================================
-const L3_WORLD_W = 3400;
-const L3_BOSS_GATE = 2600;
+const L3_WORLD_W = 3900;   // widened (+500) to carve an empty approach before the isolated arena
+const L3_BOSS_GATE = 3150; // cutscene trigger — sits at the end of the 370px quiet approach run
 const L3_FLAG = { x: L3_WORLD_W - 140, y: FLOOR };
+
+// ── L3 ISOLATED BOSS ARENA (sea-themed) ───────────────────────────────────────
+// Doc pattern: empty no-enemy approach → environmental "swallow" (here a darkening
+// sky + sea-spray haze, no wall) → hidden themed arena ledges that spawn on the
+// cutscene, bob + drift on staggered sines, share the world's particles, and crumble
+// on boss death. Explicit ARENA bounds; escape flag at the far edge.
+const L3_ARENA_X0  = 3200;          // left edge of the isolated tidal arena (past the empty approach)
+const L3_ARENA_X1  = 3760;          // right edge (escape flag sits just beyond)
+const L3_GAP_START = 2780;          // empty no-enemy run begins (just after the last platform); swallow eases in across to ARENA_X0
+let seaSwallow = 0;                 // 0 open beach → 1 fully closed-in storm (eased on player-x)
+// Floating driftwood rafts — bob vertically AND drift horizontally on independent
+// phases (sea-tossed), each hidden until the fight begins, crumble on crab death.
+let l3Arena = [];
+function buildL3Arena(){
+  l3Arena = [
+    { x:3300, baseX:3300, y:FLOOR-104, baseY:FLOOR-104, w:96, h:18, bob:18, bobSpeed:0.021, bobPhase:0.0, driftX:26, driftSpeed:0.012, driftPhase:0.4, dx:0, dy:0, hidden:true },
+    { x:3490, baseX:3490, y:FLOOR-150, baseY:FLOOR-150, w:78, h:18, bob:24, bobSpeed:0.026, bobPhase:1.9, driftX:20, driftSpeed:0.016, driftPhase:2.4, dx:0, dy:0, hidden:true },
+    { x:3650, baseX:3650, y:FLOOR-110, baseY:FLOOR-110, w:92, h:18, bob:20, bobSpeed:0.018, bobPhase:3.4, driftX:30, driftSpeed:0.010, driftPhase:4.1, dx:0, dy:0, hidden:true },
+  ];
+  seaSwallow = 0;
+  l3BossEnrage = 0;
+}
+function resetL3Arena(){
+  for(const r of l3Arena){ r.hidden=true; r.x=r.baseX; r.y=r.baseY; r.dx=0; r.dy=0; }
+  seaSwallow = 0;
+}
+
 
 const l3Platforms = [
   makePlatform(0, FLOOR, 420),
@@ -5884,20 +5926,23 @@ const l3Platforms = [
   makePlatform(980, FLOOR, 500),
   makePlatform(1530, FLOOR, 440),
   makePlatform(2020, FLOOR, L3_WORLD_W-2020),
-  makePlatform(180, FLOOR-100, 120),
-  makePlatform(370, FLOOR-160, 90),
-  makePlatform(520, FLOOR-80, 110),
-  makePlatform(690, FLOOR-170, 80),
-  makePlatform(860, FLOOR-110, 130),
-  makePlatform(1060, FLOOR-150, 100),
-  makePlatform(1230, FLOOR-80, 110),
-  makePlatform(1430, FLOOR-170, 90),
-  makePlatform(1620, FLOOR-120, 120),
-  makePlatform(1840, FLOOR-160, 100),
-  makePlatform(2020, FLOOR-100, 110),
-  makePlatform(2230, FLOOR-155, 100),
-  makePlatform(2420, FLOOR-170, 90),
-  makePlatform(2650, FLOOR-160, 100),
+  // ── ascending safe path with VARIETY: a zig-zag climb (tops trend FLOOR-85 ->
+  //    FLOOR-205) where each rung still clears the rising tide at its x by >=42px.
+  //    The dips force read-and-react jumps; the trend forces the climb. ──
+  makePlatform(180, FLOOR-85, 120),
+  makePlatform(370, FLOOR-130, 100),
+  makePlatform(520, FLOOR-100, 110),
+  makePlatform(690, FLOOR-150, 95),
+  makePlatform(860, FLOOR-120, 130),
+  makePlatform(1060, FLOOR-165, 110),
+  makePlatform(1230, FLOOR-135, 120),
+  makePlatform(1430, FLOOR-180, 100),
+  makePlatform(1620, FLOOR-150, 120),
+  makePlatform(1840, FLOOR-190, 110),
+  makePlatform(2020, FLOOR-165, 120),
+  makePlatform(2230, FLOOR-200, 110),
+  makePlatform(2420, FLOOR-178, 100),
+  makePlatform(2650, FLOOR-205, 110),
 ];
 
 let l3Enemies = [];
@@ -5928,7 +5973,7 @@ function summonCrab(){
   if(!kingCrab)return;
   if(l3Enemies.filter(e=>e.alive&&e.summoned).length>=3)return;
   let fp=l3Platforms[0];
-  for(const pl of l3Platforms){ if(pl.y===FLOOR && pl.x<=2900 && pl.x+pl.w>=3000){ fp=pl; break; } }
+  for(const pl of l3Platforms){ if(pl.y===FLOOR && pl.x<=L3_ARENA_X0+50 && pl.x+pl.w>=L3_ARENA_X1-50){ fp=pl; break; } }
   let sx=kingCrab.x+(Math.random()<0.5?-60:kingCrab.w+30);
   sx=Math.max(fp.x+10,Math.min(sx,fp.x+fp.w-40));
   l3Enemies.push({ x:sx, y:FLOOR-26, w:28, h:26, vx:1.3, facing:kingCrab.facing,
@@ -5962,10 +6007,11 @@ function buildLevel3Rocks(){
 }
 
 let kingCrab = null;
+let l3BossEnrage = 0;   // 0→1 HP-linked grade ramp: bruises the night to violet/teal at phase 2
 let finishCardActive = false, finishCardTimer = 0;
 function buildKingCrab(){
   kingCrab = {
-    x:2820, y:FLOOR-100, w:120, h:100,
+    x:3420, y:FLOOR-100, w:120, h:100,
     alive:true, active:false, phase:0, hp:8, maxHp:8,
     vx:1.4, facing:1, hitFlash:0, dieTimer:0, phaseIndex:0,
     tell:0, tellMax:0, pending:null, actionTimer:90, clawRaise:0, onGround:true, vy:0
@@ -6458,6 +6504,7 @@ function updateLevel2(){
       buildLevel3Rocks();
       buildKingCrab();
       buildL3Waves();
+      buildL3Arena();
       audioManager.play(3);
     }
     s.vx=0;
@@ -6583,92 +6630,216 @@ function updateL2Platforms(){
 }
 
 // ── LEVEL 3 WAVE HAZARD ──────────────────────────────────────────────────────
-// Rolling surf waves spawn from the left edge of each ground segment and sweep right.
-// They only hurt Sawyer when he's standing on the beach sand (not on raised piers).
+// ── SWEEPING SURF WAVES (grow taller with progress) ───────────────────────────
+// Discrete breaking waves swoop in from off the RIGHT edge and roll leftward
+// toward the player. Each new wave is TALLER the deeper Sawyer is in the level
+// (its height scales with his x-progress), and taller waves travel slightly
+// SLOWER. As the swells grow, standing on the low beach stops being safe —
+// Sawyer must climb to platforms higher than the incoming wave to dodge it.
 let l3Waves = [];
-let l3WaveTimer = 180; // frames until next wave
-const L3_WAVE_INTERVAL = 300; // ~5 sec at 60fps
+let l3WaveTimer = 110;                 // frames until the first wave
+const L3_WAVE_INTERVAL = 230;          // base gap between waves (frames)
+const L3_WAVE_X0 = 360;                // progress start: waves begin small here
+const L3_WAVE_X1 = L3_GAP_START - 60;  // progress end: waves at full height just before the empty approach
+const L3_WAVE_H_MIN = 30;              // shortest wave (early beach)
+const L3_WAVE_H_MAX = 120;             // tallest wave (late, towering swell)
+const L3_WAVE_SPD_TALL = 2.4;          // speed of the biggest waves (slower)
+const L3_WAVE_SPD_SHORT = 4.4;         // speed of the smallest waves (faster)
 
 function buildL3Waves(){
   l3Waves = [];
-  l3WaveTimer = 180;
+  l3WaveTimer = 110;
+}
+
+// progress 0..1 across the level (clamped), drives wave height + speed
+function l3WaveProgress(px){
+  return Math.max(0, Math.min(1, (px - L3_WAVE_X0) / (L3_WAVE_X1 - L3_WAVE_X0)));
 }
 
 function updateL3Waves(s){
-  // Stop spawning waves once king crab is defeated
-  if(kingCrab && !kingCrab.alive){ l3Waves=[]; return; }
+  // No surf once the crab is down, or inside the boss arena (kept dry for the fight)
+  if((kingCrab && !kingCrab.alive) || (kingCrab && kingCrab.active) || cutsceneActive){
+    l3Waves = [];
+    return;
+  }
   l3WaveTimer--;
   if(l3WaveTimer <= 0){
-    l3WaveTimer = L3_WAVE_INTERVAL + Math.floor(Math.random()*80);
-    // Spawn from just off the RIGHT edge — waves come from in front, roll leftward
-    const spawnX = cameraX + W + 50;
-    l3Waves.push({ x: spawnX, w: 46, speed: -4.2, life: 200, maxLife: 200, anim: 0 });
+    const prog = l3WaveProgress(s.x);
+    const eased = prog*prog*(3-2*prog);                 // smoothstep growth
+    const h = L3_WAVE_H_MIN + (L3_WAVE_H_MAX - L3_WAVE_H_MIN) * eased;
+    // taller waves are slower; lerp speed by the same growth factor
+    const spd = L3_WAVE_SPD_SHORT + (L3_WAVE_SPD_TALL - L3_WAVE_SPD_SHORT) * eased;
+    // bigger swells are a touch wider, and arrive a bit less often (more dread per wave)
+    const w = 44 + h * 0.55;
+    l3WaveTimer = L3_WAVE_INTERVAL + Math.floor(eased*120) + Math.floor(Math.random()*70);
+    const spawnX = cameraX + W + 60;
+    l3Waves.push({ x: spawnX, w, h, speed: -spd, life: 320, maxLife: 320, anim: Math.random()*6 });
   }
   for(const w of l3Waves){
-    w.x += w.speed;   // negative = moving left toward player
+    w.x += w.speed;        // negative = moving left toward the player
     w.life--;
-    w.anim += 0.25;
-    // Only hurt Sawyer if he's standing on the beach sand (not elevated platforms)
-    const onSand = s.onGround && s.y + s.h > FLOOR - 5;
-    if(onSand && s.invincible===0){
-      const wx = w.x, ww = w.w;
-      const sx = s.x, sw = s.w;
-      if(sx + sw > wx && sx < wx + ww){
-        hurt(s);
+    w.anim += 0.22;
+    // Hit test: the wave hurts Sawyer if he overlaps it horizontally AND his feet
+    // are below the wave's crest height (i.e. he isn't on a platform above the swell).
+    if(s.invincible===0){
+      const overlapX = (s.x + s.w > w.x) && (s.x < w.x + w.w);
+      if(overlapX){
+        const crestY = FLOOR - w.h;            // top of the wave (world Y)
+        const feet = s.y + s.h;
+        if(feet > crestY + 6){                 // not clearly above the crest -> caught
+          for(let i=0;i<8;i++) particles.push({x:s.x+s.w/2+(Math.random()-.5)*16,y:Math.min(feet,FLOOR),vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:18,maxLife:18,type:'spark',color:'#BFEFFF'});
+          hurt(s);
+        }
       }
     }
   }
-  // Remove waves that have scrolled past behind the player or expired
-  l3Waves = l3Waves.filter(w => w.life > 0 && w.x + w.w > cameraX - 80);
+  l3Waves = l3Waves.filter(w => w.life > 0 && w.x + w.w > cameraX - 100);
 }
 
 function drawL3Waves(){
   for(const w of l3Waves){
     const wx = w.x - cameraX;
-    if(wx + w.w < -10 || wx > W + 10) continue;
-    const wy = FLOOR - 10;
+    if(wx + w.w < -20 || wx > W + 20) continue;
+    const baseY = FLOOR;                        // wave sits on the beach line
+    const topY  = FLOOR - w.h;                  // crest height grows with w.h
     const lifeFrac = w.life / w.maxLife;
     ctx.save();
-    ctx.globalAlpha = Math.min(1, lifeFrac * 3) * 0.85;
-    // Wave body — steep breaking face on left side (direction of travel)
-    const waveGrad = ctx.createLinearGradient(wx, wy-20, wx, wy+10);
-    waveGrad.addColorStop(0, '#4AADE8');
-    waveGrad.addColorStop(0.5, '#2E8BB5');
-    waveGrad.addColorStop(1, 'rgba(46,139,181,0)');
+    ctx.globalAlpha = Math.min(1, lifeFrac * 4) * 0.9;
+    const fo = Math.sin(w.anim) * (3 + w.h*0.03);   // crest wobble scales a little with size
+
+    // ---- wave body: steep breaking face on the LEFT (direction of travel) ----
+    const waveGrad = ctx.createLinearGradient(wx, topY, wx, baseY);
+    waveGrad.addColorStop(0,   '#5AB6EE');
+    waveGrad.addColorStop(0.45,'#2E8BB5');
+    waveGrad.addColorStop(1,   'rgba(28,96,150,0.85)');
     ctx.fillStyle = waveGrad;
-    const fo = Math.sin(w.anim) * 3;
     ctx.beginPath();
-    // Steep face on left, gentle slope on right (breaking wave shape)
-    ctx.moveTo(wx, wy + 10);
-    ctx.lineTo(wx, wy - 8 + fo);           // steep left face
-    ctx.bezierCurveTo(wx + w.w*0.15, wy - 20 - fo, wx + w.w*0.5, wy - 18, wx + w.w, wy - 6 + fo*0.4);
-    ctx.lineTo(wx + w.w, wy + 10);
+    ctx.moveTo(wx, baseY);
+    ctx.lineTo(wx, topY + 10 + fo);                                   // steep left face
+    ctx.bezierCurveTo(wx + w.w*0.14, topY - fo, wx + w.w*0.5, topY + w.h*0.10, wx + w.w, topY + w.h*0.55 + fo*0.4);
+    ctx.lineTo(wx + w.w, baseY);
     ctx.closePath();
     ctx.fill();
-    // White foam crest along top
-    ctx.strokeStyle = 'rgba(255,255,255,0.88)';
-    ctx.lineWidth = 3;
+
+    // ---- deep shadow under the curl (gives the swell volume) ----
+    ctx.fillStyle = 'rgba(18,70,116,0.40)';
+    ctx.beginPath();
+    ctx.moveTo(wx, topY + 12 + fo);
+    ctx.bezierCurveTo(wx + w.w*0.16, topY + 2 - fo, wx + w.w*0.34, topY + w.h*0.18, wx + w.w*0.30, topY + w.h*0.34);
+    ctx.lineTo(wx, topY + w.h*0.34);
+    ctx.closePath(); ctx.fill();
+
+    // ---- white foam crest along the top ----
+    ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+    ctx.lineWidth = Math.max(3, w.h*0.06);
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(wx + 2, wy - 10 + fo);
-    ctx.bezierCurveTo(wx + w.w*0.18, wy - 22 - fo, wx + w.w*0.55, wy - 19, wx + w.w, wy - 7 + fo*0.4);
+    ctx.moveTo(wx + 2, topY + 8 + fo);
+    ctx.bezierCurveTo(wx + w.w*0.16, topY - 2 - fo, wx + w.w*0.55, topY + w.h*0.08, wx + w.w, topY + w.h*0.5 + fo*0.4);
     ctx.stroke();
-    // Curling foam lip at the break point (left edge)
-    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+
+    // ---- curling foam lip at the break point (left edge) ----
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    const lipR = 6 + w.h*0.06;
     ctx.beginPath();
-    ctx.ellipse(wx + 6, wy - 10 + fo, 7, 4, -0.3, 0, Math.PI*2);
+    ctx.ellipse(wx + lipR*0.9, topY + 8 + fo, lipR, lipR*0.6, -0.35, 0, Math.PI*2);
     ctx.fill();
-    // Foam bubble dots trailing behind (right side)
+
+    // ---- trailing foam bubbles down the back face ----
     ctx.fillStyle = 'rgba(255,255,255,0.65)';
-    for(let b=0; b<4; b++){
-      const bx2 = wx + w.w*0.4 + b * (w.w*0.16) + Math.sin(w.anim+b)*2;
-      const by2 = wy - 4 + Math.sin(w.anim*1.5+b*1.3)*2;
-      ctx.beginPath(); ctx.arc(bx2, by2, 2.2 - b*0.2, 0, Math.PI*2); ctx.fill();
+    const nb = 4 + Math.floor(w.h*0.04);
+    for(let b=0; b<nb; b++){
+      const bx2 = wx + w.w*0.38 + b * (w.w*0.5/nb) + Math.sin(w.anim+b)*2;
+      const by2 = topY + w.h*0.3 + b*(w.h*0.10) + Math.sin(w.anim*1.5+b*1.3)*2;
+      ctx.beginPath(); ctx.arc(bx2, by2, Math.max(1.4, (2.6 - b*0.2)), 0, Math.PI*2); ctx.fill();
+    }
+
+    // ---- spray flecks flung off the crest (more on bigger waves) ----
+    ctx.fillStyle = 'rgba(235,248,253,0.8)';
+    const ns = Math.floor(w.h*0.08);
+    for(let k=0;k<ns;k++){
+      const sxk = wx + 4 + Math.sin(w.anim*1.3 + k)*6 + (k%3)*4;
+      const syk = topY + 4 + fo - (k*2) - Math.abs(Math.sin(w.anim + k))*8;
+      ctx.fillRect(sxk, syk, 2, 2);
     }
     ctx.restore();
   }
 }
 // ── END L3 WAVE HAZARD ────────────────────────────────────────────────────────
+
+// Darkening sky + sea-spray haze that closes in on the boss arena (no wall).
+function drawL3SeaSwallow(){
+  if(seaSwallow < 0.01) return;
+  const k = seaSwallow;
+  ctx.save();
+  // stormy darkening — a cool slate veil over the whole frame, heavier with k
+  const dg = ctx.createLinearGradient(0,0,0,H);
+  dg.addColorStop(0, `rgba(28,46,74,${0.55*k})`);
+  dg.addColorStop(0.6, `rgba(22,52,82,${0.40*k})`);
+  dg.addColorStop(1, `rgba(14,38,64,${0.30*k})`);
+  ctx.fillStyle = dg; ctx.fillRect(0,0,W,H);
+  // drifting spray/mist bands blowing across (deterministic, world-anchored)
+  const t = performance.now()*0.001;
+  ctx.globalAlpha = 0.5*k;
+  for(let i=0;i<5;i++){
+    const baseY = 40 + i*46;
+    const drift = ((t*30*(0.6+i*0.15)) % (W+240)) - 120;
+    const grad = ctx.createLinearGradient(drift,0,drift+240,0);
+    grad.addColorStop(0,'rgba(210,232,245,0)');
+    grad.addColorStop(0.5,`rgba(210,232,245,${0.5})`);
+    grad.addColorStop(1,'rgba(210,232,245,0)');
+    ctx.fillStyle = grad;
+    const yy = baseY + Math.sin(t*0.8+i)*8;
+    ctx.fillRect(drift, yy, 240, 26);
+  }
+  // blowing spray flecks
+  ctx.globalAlpha = 0.6*k;
+  ctx.fillStyle = '#EAF6FD';
+  for(let i=0;i<22;i++){
+    const fx = ((i*113 + t*220) % (W+40)) - 20;
+    const fy = (i*61 + Math.sin(t*2+i)*30) % H;
+    ctx.fillRect(fx, fy, 2.2, 1.4);
+  }
+  ctx.restore();
+}
+
+// Floating driftwood rafts — the isolated arena's bobbing/drifting ledges.
+function drawL3Arena(){
+  for(const r of l3Arena){
+    if(r.hidden) continue;
+    const sx = r.x - cameraX, sy = r.y;
+    if(sx + r.w < -20 || sx > W+20) continue;
+    const sc = (r.spawnT!==undefined && r.spawnT<14) ? (r.spawnT/14) : 1; // spawn-pop scale-in
+    ctx.save();
+    ctx.translate(sx + r.w/2, sy + r.h/2);
+    ctx.scale(1, sc);
+    ctx.translate(-(sx + r.w/2), -(sy + r.h/2));
+    // wet reflection sheen under the raft
+    ctx.fillStyle = 'rgba(120,180,220,0.18)';
+    ctx.beginPath(); ctx.ellipse(sx+r.w/2, sy+r.h+8, r.w*0.55, 6, 0, 0, Math.PI*2); ctx.fill();
+    // raft body — lashed driftwood planks
+    const plankN = Math.max(4, Math.round(r.w/16));
+    const pw = r.w/plankN;
+    for(let i=0;i<plankN;i++){
+      const px = sx + i*pw;
+      const shade = (i%2===0) ? '#7A5638' : '#8B6442';
+      ctx.fillStyle = shade;
+      rr(px+1, sy, pw-2, r.h, 3); ctx.fill();
+      // grain
+      ctx.strokeStyle='rgba(40,26,16,0.35)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(px+3, sy+r.h*0.4); ctx.lineTo(px+pw-3, sy+r.h*0.4); ctx.stroke();
+    }
+    // dark wet rim + lashing ropes
+    ctx.strokeStyle='rgba(30,20,12,0.5)'; ctx.lineWidth=2; rr(sx, sy, r.w, r.h, 4); ctx.stroke();
+    ctx.strokeStyle='rgba(60,44,28,0.8)'; ctx.lineWidth=2.5;
+    ctx.beginPath(); ctx.moveTo(sx+r.w*0.25, sy-1); ctx.lineTo(sx+r.w*0.25, sy+r.h+1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx+r.w*0.72, sy-1); ctx.lineTo(sx+r.w*0.72, sy+r.h+1); ctx.stroke();
+    // damp top highlight
+    ctx.fillStyle='rgba(190,225,245,0.25)';
+    rr(sx+2, sy, r.w-4, 3, 2); ctx.fill();
+    ctx.restore();
+  }
+}
 
 // ----- Level 3 · update logic -----
 function updateLevel3(){
@@ -6680,6 +6851,12 @@ function updateLevel3(){
     cutsceneTimer--;
     if(cutsceneTimer<=0){
       cutsceneActive=false; kingCrab.active=true; otto.cower=120; SFX.rattle();
+      // arena rafts surge up out of the surf as the fight begins (spawn-pop + spray)
+      for(const r of l3Arena){
+        r.hidden=false; r.x=r.baseX; r.y=r.baseY; r.dx=0; r.dy=0; r.spawnT=0;
+        for(let i=0;i<10;i++) particles.push({x:r.x+r.w/2+(Math.random()-.5)*r.w,y:r.baseY+8,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:22,maxLife:22,type:'spark',color:'#BFEFFF'});
+      }
+      shakeIntensity=10;
     }
     s.vx=0; s.vy=Math.min(s.vy+GRAVITY,12); resolveL3(s);
     if(s.y+s.h>FLOOR){s.y=FLOOR-s.h;s.vy=0;}
@@ -6775,6 +6952,15 @@ function updateLevel3(){
   // Update wave hazard
   updateL3Waves(s);
 
+  // Environmental swallow: across the empty approach run the sky darkens and sea
+  // spray closes in, isolating the arena (themed equivalent of L1 sandwall / L2 whiteout).
+  {
+    const target = (kingCrab && kingCrab.alive)
+      ? Math.max(0, Math.min(1, (s.x - L3_GAP_START) / (L3_ARENA_X0 - L3_GAP_START)))
+      : 0;
+    seaSwallow += (target - seaSwallow) * 0.06;
+  }
+
   // Update baby bottles
   updateBottles(s); updateHearts(s);
 
@@ -6858,6 +7044,12 @@ function updateLevel3(){
         }
         if(kingCrab.hp<=0){
           kingCrab.alive=false;kingCrab.dieTimer=120;score+=1000;shakeIntensity=16;SFX.bossDie();
+          // arena collapses: rafts splinter into the surf with a spray burst
+          for(const r of l3Arena){
+            if(r.hidden) continue;
+            for(let i=0;i<14;i++) particles.push({x:r.x+Math.random()*r.w,y:r.y+Math.random()*r.h,vx:(Math.random()-.5)*6,vy:-1-Math.random()*4,life:26,maxLife:26,type:'spark',color:i%2?'#BFEFFF':'#B98A5A'});
+            r.hidden=true;
+          }
         }
       }
     }
@@ -6884,10 +7076,24 @@ function updateLevel3(){
     if(kingCrab.active){
       const kc=kingCrab, p2=kc.phaseIndex===1;
       kc.phase+=0.07;
+      // HP-linked grade ramp: bruise the night toward violet/teal once enraged (phase 2)
+      l3BossEnrage += ((p2?1:0) - l3BossEnrage) * 0.05;
+      // float the arena rafts: bob (vertical) + drift (horizontal) on independent
+      // sines; carry riders via dx/dy. Spawn-pop scales them in for a few frames.
+      for(const r of l3Arena){
+        if(r.hidden) continue;
+        const prevX=r.x, prevY=r.y;
+        r.bobPhase+=r.bobSpeed; r.driftPhase+=r.driftSpeed;
+        r.y = r.baseY + Math.sin(r.bobPhase)*r.bob;
+        r.x = r.baseX + Math.sin(r.driftPhase)*r.driftX;
+        r.dx = r.x-prevX; r.dy = r.y-prevY;
+        if(r.spawnT!==undefined && r.spawnT<14){ r.spawnT++; }
+        if(Math.random()<0.10) particles.push({x:r.x+Math.random()*r.w,y:r.y+r.h,vx:(Math.random()-.5)*0.6,vy:0.6+Math.random()*0.8,life:18,maxLife:18,type:'spark',color:'rgba(190,235,255,0.7)'});
+      }
       kc.facing=s.x<kc.x?-1:1;
       if(!kc.onGround){ kc.vy=(kc.vy||0)+0.55; kc.y+=kc.vy; if(kc.y>=FLOOR-kc.h){kc.y=FLOOR-kc.h;kc.vy=0;kc.onGround=true;} }
       if(kc.hitFlash>0)kc.hitFlash--;
-      const BL=2660, BR=3120;
+      const BL=L3_ARENA_X0, BR=L3_ARENA_X1-40;
       const dxp=(s.x+s.w/2)-(kc.x+kc.w/2);
       if(kc.mode==='burrow'){
         // PHASE-2 BURROW -> ERUPT ambush
@@ -7037,11 +7243,25 @@ function resolveL3(p){
       p.vy=0;p.onGround=true;
     }
   }
+  // floating arena rafts (carry riders by their per-frame dx/dy)
+  for(const pl of l3Arena){
+    if(pl.hidden) continue;
+    const inX=p.x+p.w>pl.x&&p.x<pl.x+pl.w;
+    const wasAbove=(p.y+p.h-p.vy)<=pl.y+3;
+    if(inX&&wasAbove&&p.y+p.h>=pl.y&&p.y+p.h<=pl.y+pl.h+12){
+      p.y=pl.y-p.h; p.vy=0; p.onGround=true;
+      p.x+=pl.dx; p.y+=pl.dy;            // ride the raft's drift/bob
+    }
+  }
 }
 
 function groundAheadL3(p,dir){
   const probeX=p.x+p.w/2+dir*26, footY=p.y+p.h;
   for(const pl of l3Platforms){
+    if(probeX>pl.x&&probeX<pl.x+pl.w&&footY>=pl.y-4&&footY<=pl.y+30)return true;
+  }
+  for(const pl of l3Arena){
+    if(pl.hidden) continue;
     if(probeX>pl.x&&probeX<pl.x+pl.w&&footY>=pl.y-4&&footY<=pl.y+30)return true;
   }
   return false;
@@ -7941,6 +8161,35 @@ function drawL3Platforms(){
       ctx.fillStyle='#E8C46A';ctx.fillRect(px,p.y,4,10);
       ctx.fillStyle='#B8943C';ctx.fillRect(px+p.w-4,p.y,4,H-p.y);
       ctx.fillStyle='#E8C46A';ctx.fillRect(px+p.w-4,p.y,4,10);
+      // ── ARENA FLOOR IDENTITY: tide-washed dark wet sand inside the arena bounds,
+      //    faded in by seaSwallow so crossing the threshold visibly changes the ground. ──
+      if(seaSwallow>0.01){
+        const aL=Math.max(p.x, L3_ARENA_X0), aR=Math.min(p.x+p.w, L3_ARENA_X1);
+        const t=performance.now()*0.001;
+        if(aR>aL){
+          const sxL=aL-cameraX, segW=aR-aL;
+          if(sxL+segW>0 && sxL<W){
+            ctx.save();
+            ctx.beginPath();ctx.rect(sxL,p.y,segW,H-p.y);ctx.clip();
+            // wet dark sand wash
+            ctx.fillStyle=`rgba(26,40,46,${0.55*seaSwallow})`; ctx.fillRect(sxL,p.y,segW,H-p.y);
+            // glossy tide sheen along the top edge
+            const sh=ctx.createLinearGradient(0,p.y,0,p.y+18);
+            sh.addColorStop(0,`rgba(150,200,220,${0.30*seaSwallow})`);
+            sh.addColorStop(1,'rgba(150,200,220,0)');
+            ctx.fillStyle=sh; ctx.fillRect(sxL,p.y,segW,18);
+            // receding foam lines (deterministic, gentle drift)
+            ctx.strokeStyle=`rgba(220,240,250,${0.35*seaSwallow})`; ctx.lineWidth=1.5; ctx.lineCap='round';
+            for(let fl=0;fl<3;fl++){
+              const fy=p.y+8+fl*5+Math.sin(t*1.2+fl)*2;
+              ctx.beginPath();
+              for(let xx=0;xx<=segW;xx+=12){ const yy=fy+Math.sin((aL+xx)*0.05+t*1.4+fl)*2; if(xx===0)ctx.moveTo(sxL+xx,yy);else ctx.lineTo(sxL+xx,yy); }
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        }
+      }
     } else {
       // Elevated — wooden pier planks
       rr(px,p.y,p.w,p.h+14,3,'#9B7540','#5C3D1A');
@@ -10610,7 +10859,7 @@ function drawGenFlag(){
 function buildLevel4to6Jump(n){ if(n===4)buildLevel4(); else if(n===5)buildLevel5(); else buildLevel6(); }
 function buildLevelContent(n){
   if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
-  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); }
+  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); }
   else if(n===4){ buildLevel4(); }
   else if(n===5){ buildLevel5(); }
   else if(n===6){ buildLevel6(); }
