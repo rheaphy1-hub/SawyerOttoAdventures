@@ -2493,17 +2493,21 @@ const charAtlas=new Image(); let charAtlasReady=false;
 charAtlas.onload=()=>{charAtlasReady=true;}; charAtlas.src=CHAR_ATLAS_SRC;
 const SPRITE_ANCHOR={idle:1,walk:1,attack:1,jump:1,swim:0,climb:1,space:0};
 const SPRITE_YOFF={sawyer:0, otto:0};
-const SPRITE_SCALE={sawyer:1.0, otto:1.0};
-const SPRITE_ANIM_MULT={sawyer:{swim:1.0, space:1.0}, otto:{swim:1.0, space:1.0}};
+const SPRITE_SCALE={sawyer:1.12, otto:0.82};
+const SPRITE_ANIM_MULT={sawyer:{swim:1.0, space:1.0, jump:0.94}, otto:{swim:1.0, space:1.0, jump:0.94}};
+// Per-(char,anim) horizontal flip override. The swim frames for Otto are authored
+// facing the opposite way from his land frames, so invert his swim flip so he points
+// the same direction he's actually swimming. true = flip relative to normal facing rule.
+const SPRITE_FLIP={otto:{swim:true}, sawyer:{}};
 const SPRITE_ANIM_YOFF={sawyer:{swim:0, space:0}, otto:{swim:0, space:0}};
 // Frame selection for looping moves (walk/swim/space). Pick a subset/reorder to
 // drop awkward poses or smooth motion, e.g. SPRITE_SEQ.sawyer.walk=[0,2,4].
 // Leave empty {} to use all 6 frames in order.
 const SPRITE_SEQ={sawyer:{}, otto:{}};
 // Playback speed (frames/sec) for the looping moves. Higher=faster cycling.
-const SPRITE_FPS={walk:4, swim:4, climb:6, space:4};
+const SPRITE_FPS={walk:6, swim:7, climb:6, space:4};
 // Distance per animation frame (px of travel). Couples gait to speed → no foot-sliding.
-const SPRITE_STRIDE={sawyer:14, otto:10};
+const SPRITE_STRIDE={sawyer:11, otto:7};
 function charCostume(){ if(currentLevel===2 && CHAR_META.winter) return 'winter'; if(currentLevel===3 && CHAR_META.beach) return 'beach'; if(currentLevel===5 && CHAR_META.spooky) return 'spooky'; if(currentLevel===6 && CHAR_META.spacesuit) return 'spacesuit'; return 'base'; }
 let ottoSpriteRect=null;
 function pathHeart(c,cx,cy,s){ c.beginPath(); c.moveTo(cx,cy+s*0.28); c.bezierCurveTo(cx,cy-s*0.10,cx-s*0.5,cy-s*0.18,cx-s*0.5,cy+s*0.06); c.bezierCurveTo(cx-s*0.5,cy+s*0.30,cx-s*0.20,cy+s*0.42,cx,cy+s*0.62); c.bezierCurveTo(cx+s*0.20,cy+s*0.42,cx+s*0.5,cy+s*0.30,cx+s*0.5,cy+s*0.06); c.bezierCurveTo(cx+s*0.5,cy-s*0.18,cx,cy-s*0.10,cx,cy+s*0.28); c.closePath(); }
@@ -2620,7 +2624,9 @@ function drawCharSprite(p,drawY){
   dy += (SPRITE_YOFF[p.id]||0) + ay + idleBob;
   if(p.id==='otto') ottoSpriteRect={x:dx,y:dy,w:dW,h:dH,facing:p.facing,anim:anim};
   const c=ctx; c.save();
-  if(p.facing<0){ c.translate(cx,0); c.scale(-1,1); c.translate(-cx,0); }
+  const flipOverride=(SPRITE_FLIP[p.id]&&SPRITE_FLIP[p.id][anim])||false;
+  let flip=(p.facing<0); if(flipOverride) flip=!flip;
+  if(flip){ c.translate(cx,0); c.scale(-1,1); c.translate(-cx,0); }
   c.drawImage(charAtlas,sx,sy,sw,sh,dx,dy,dW,dH);
   c.restore(); return true;
 }
