@@ -214,6 +214,22 @@
   #name-entry .ne-prompt{
     font-size:11px; line-height:1.5; color:rgba(232,230,236,0.74); margin-bottom:10px;
   }
+  #osk{ margin-top:12px; }
+  .osk-hint{ font-size:10px; color:rgba(232,230,236,0.5); margin-bottom:8px; letter-spacing:0.04em; }
+  #osk-grid{ display:flex; flex-direction:column; gap:5px; align-items:center; }
+  .osk-row{ display:flex; gap:5px; justify-content:center; }
+  .osk-key{
+    min-width:26px; height:30px; padding:0 6px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; font-weight:700; color:#e8e6ec;
+    background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.14);
+    border-radius:6px; box-sizing:border-box; user-select:none;
+  }
+  .osk-key.wide{ min-width:60px; font-size:11px; letter-spacing:0.05em; }
+  .osk-key.osk-cursor{
+    background:var(--neon); color:#0b0b10; border-color:var(--neon);
+    box-shadow:0 0 14px -2px var(--neon);
+  }
   #ne-input{
     width:100%; box-sizing:border-box; margin-bottom:6px;
     padding:10px 12px; text-align:center;
@@ -371,6 +387,10 @@
       <div class="ne-row">
         <button class="ne-btn" onclick="finishNameEntry(true)">Submit</button>
         <button class="ne-btn ne-skip" onclick="finishNameEntry(false)">Skip</button>
+      </div>
+      <div id="osk" style="display:none">
+        <div class="osk-hint">Left stick / D-pad to move &nbsp;&bull;&nbsp; A to type</div>
+        <div id="osk-grid"></div>
       </div>
     </div>
   </div>
@@ -926,6 +946,7 @@ function startNameEntry(){
   document.getElementById('ne-total').textContent='TOTAL SCORE: '+score;
   const inp=document.getElementById('ne-input'); inp.value='';
   ov.style.display='flex'; setTimeout(()=>inp.focus(),50);
+  oskSync();
 }
 function finishNameEntry(useName){
   if(nameEntryDone) return;
@@ -933,6 +954,7 @@ function finishNameEntry(useName){
   const inp=document.getElementById('ne-input');
   const name=cleanName(useName?inp.value:'');
   const ov=document.getElementById('name-entry'); if(ov) ov.style.display='none';
+  oskVisible=false; const osk=document.getElementById('osk'); if(osk) osk.style.display='none';
   submitScore(name);
   fetchLeaderboard();
   won=true;  // proceed to credits (board renders there once loaded)
@@ -1087,6 +1109,147 @@ document.addEventListener('keydown', e => {
   if (e.code === 'KeyR' && (gameOver || won)) restartCurrentLevel();
 });
 document.addEventListener('keyup', e => { if (e.target && e.target.id === 'ne-input') return; keys[e.code] = false; });
+
+// ---- Gamepad support: drives the same keys{} state, menus, and on-screen keyboard ----
+let _gpHasPad = false;
+const _gpLatch = {}; // edge-trigger latches keyed by action name
+function _gpEdge(name, pressed){
+  const was = _gpLatch[name] || false;
+  _gpLatch[name] = pressed;
+  return pressed && !was; // true only on the press transition
+}
+function _gpPrimaryPopupBtn(){
+  // Returns the "Play" button of whichever level popup is currently visible, else null
+  const ids = ['level-popup','level2-popup','level3-popup','level4-popup','level5-popup','level6-popup'];
+  for(const id of ids){
+    const el = document.getElementById(id);
+    if(el && el.style.display !== 'none' && getComputedStyle(el).opacity !== '0'){
+      return el.querySelector('.play-btn');
+    }
+  }
+  return null;
+}
+function pollGamepad(){
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let gp = null;
+  for(const p of pads){ if(p){ gp = p; break; } }
+  const hadPad = _gpHasPad;
+  _gpHasPad = !!gp;
+  // If a pad just connected while name entry is open, reveal the on-screen keyboard
+  if(_gpHasPad && !hadPad && nameEntryActive) oskSync();
+  if(!gp) return;
+
+  const A     = gp.buttons[0]?.pressed;                       // jump / swim up / confirm
+  const B     = gp.buttons[1]?.pressed;                       // back / skip
+  const START = gp.buttons[9]?.pressed;                       // pause
+  const LT    = gp.buttons[6]?.pressed, RT = gp.buttons[7]?.pressed; // triggers -> throw ball
+  const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0;
+  const DZ = 0.4;
+  const dpL = gp.buttons[14]?.pressed, dpR = gp.buttons[15]?.pressed;
+  const dpU = gp.buttons[12]?.pressed, dpD = gp.buttons[13]?.pressed;
+  const left  = dpL || ax < -DZ, right = dpR || ax >  DZ;
+  const up    = dpU || ay < -DZ, down  = dpD || ay >  DZ;
+
+  // --- On-screen keyboard mode: stick/d-pad moves cursor, A types, triggers = backspace ---
+  if(nameEntryActive && oskVisible){
+    if(_gpEdge('oskL', left))  oskMove(-1, 0);
+    if(_gpEdge('oskR', right)) oskMove( 1, 0);
+    if(_gpEdge('oskU', up))    oskMove( 0,-1);
+    if(_gpEdge('oskD', down))  oskMove( 0, 1);
+    if(_gpEdge('oskA', A))     oskPress();
+    if(_gpEdge('oskBk', LT||RT)) oskBackspace();
+    if(_gpEdge('oskStart', START)) finishNameEntry(true);
+    // Clear gameplay keys so the hero doesn't move during entry
+    keys['ArrowLeft']=keys['ArrowRight']=keys['ArrowUp']=keys['ArrowDown']=keys['Space']=false;
+    return;
+  }
+
+  // --- Menu popup mode: A starts the level (clicks Play) ---
+  const playBtn = _gpPrimaryPopupBtn();
+  if(playBtn){
+    if(_gpEdge('menuA', A)) playBtn.click();
+    keys['ArrowLeft']=keys['ArrowRight']=keys['ArrowUp']=keys['ArrowDown']=keys['Space']=false;
+    return;
+  }
+
+  // --- Gameplay mode ---
+  keys['ArrowLeft']  = left;
+  keys['ArrowRight'] = right;
+  keys['ArrowUp']    = A || up;     // A = jump / swim up
+  keys['ArrowDown']  = down;
+  keys['Space']      = LT || RT;    // triggers = throw ball
+
+  if(_gpEdge('pause', START)) togglePause();
+  if(_gpEdge('restart', B) && (gameOver || won)) restartCurrentLevel();
+}
+
+// ---- On-screen QWERTY keyboard (gamepad-only; mobile uses native, desktop uses physical) ----
+const OSK_ROWS = [
+  ['Q','W','E','R','T','Y','U','I','O','P'],
+  ['A','S','D','F','G','H','J','K','L'],
+  ['Z','X','C','V','B','N','M'],
+  ['SPACE','DEL','OK']
+];
+let oskVisible = false, oskR = 0, oskC = 0;
+function oskBuild(){
+  const grid = document.getElementById('osk-grid');
+  if(!grid || grid.dataset.built) return;
+  OSK_ROWS.forEach((row, r)=>{
+    const rowEl = document.createElement('div');
+    rowEl.className = 'osk-row';
+    row.forEach((k, c)=>{
+      const keyEl = document.createElement('div');
+      keyEl.className = 'osk-key' + (k.length>1 ? ' wide' : '');
+      keyEl.textContent = k === 'SPACE' ? '␣ SPACE' : k;
+      keyEl.dataset.r = r; keyEl.dataset.c = c;
+      keyEl.onclick = ()=>{ oskR=r; oskC=c; oskRender(); oskPress(); };
+      rowEl.appendChild(keyEl);
+    });
+    grid.appendChild(rowEl);
+  });
+  grid.dataset.built = '1';
+}
+function oskRender(){
+  const grid = document.getElementById('osk-grid');
+  if(!grid) return;
+  grid.querySelectorAll('.osk-key').forEach(el=>{
+    el.classList.toggle('osk-cursor', +el.dataset.r===oskR && +el.dataset.c===oskC);
+  });
+}
+function oskMove(dx, dy){
+  if(dy!==0){
+    oskR = (oskR + dy + OSK_ROWS.length) % OSK_ROWS.length;
+    if(oskC > OSK_ROWS[oskR].length-1) oskC = OSK_ROWS[oskR].length-1;
+  }
+  if(dx!==0){
+    oskC = (oskC + dx + OSK_ROWS[oskR].length) % OSK_ROWS[oskR].length;
+  }
+  oskRender();
+}
+function oskPress(){
+  const inp = document.getElementById('ne-input');
+  if(!inp) return;
+  const k = OSK_ROWS[oskR][oskC];
+  if(k === 'OK'){ finishNameEntry(true); return; }
+  if(k === 'DEL'){ oskBackspace(); return; }
+  if(k === 'SPACE'){ if(inp.value.length < inp.maxLength) inp.value += ' '; return; }
+  if(inp.value.length < inp.maxLength) inp.value += k;
+}
+function oskBackspace(){
+  const inp = document.getElementById('ne-input');
+  if(inp) inp.value = inp.value.slice(0, -1);
+}
+// Show/hide the OSK based on whether a gamepad is present during name entry
+function oskSync(){
+  const wrap = document.getElementById('osk');
+  if(!wrap) return;
+  if(nameEntryActive && _gpHasPad){
+    oskBuild(); oskR=0; oskC=0; oskRender();
+    wrap.style.display='block'; oskVisible=true;
+  } else {
+    wrap.style.display='none'; oskVisible=false;
+  }
+}
 // ---- Touch controls: drive the same keys{} state ----
 (function(){
   const tc = document.getElementById('touch-controls');
@@ -5486,6 +5649,7 @@ function restart(resetLevel){
 const STEP_MS=1000/60, MAX_STEPS=4, MAX_FRAME_MS=STEP_MS*MAX_STEPS;
 let _lastFrameT=0, _stepAccum=0;
 function loop(){
+  pollGamepad();
   if(gamePaused){
     // Draw a simple pause overlay so the screen isn't frozen with no feedback
     ctx.save();
