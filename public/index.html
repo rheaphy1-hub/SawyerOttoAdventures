@@ -669,18 +669,18 @@ function popPoints(wx, wy, amount, color){
     life:46, maxLife:46, type:'float', txt:'+'+amount, color: color||'#FFE08A' });
 }
 // ── Acquired-items tray (transponder / ember / etc.) — resets each level ──
-let acquiredItems = [];               // [{key,label,color,glyph,pop}]
+let acquiredItems = [];               // [{key,label,color,icon,pop}]
 function acquireItem(key){
   const DEF = {
-    transponder:{ label:'TRANSPONDER', color:'#9FD8FF', glyph:'\u{1F4E1}' },
-    ember:      { label:'EMBER STONE', color:'#FF9A3A', glyph:'\u{1F525}' },
-    relic:      { label:'RELIC',       color:'#C9B6FF', glyph:'\u{1F48E}' },
-    pearl:      { label:'PEARL',       color:'#BFefff', glyph:'\u{1F90D}' },
-    key:        { label:'KEY',         color:'#FFD27A', glyph:'\u{1F511}' }
+    transponder:{ label:'TRANSPONDER', color:'#9FD8FF', icon:'transponder' },
+    ember:      { label:'EMBER STONE', color:'#FF9A3A', icon:'ember' },
+    relic:      { label:'RELIC',       color:'#C9B6FF', icon:'relic' },
+    pearl:      { label:'PEARL',       color:'#BFEFFF', icon:'pearl' },
+    key:        { label:'KEY',         color:'#FFD27A', icon:'key' }
   };
   if(acquiredItems.some(it=>it.key===key)) return;
-  const d = DEF[key] || { label:key.toUpperCase(), color:'#FFD27A', glyph:'\u2726' };
-  acquiredItems.push({ key, label:d.label, color:d.color, glyph:d.glyph, pop:1 });
+  const d = DEF[key] || { label:key.toUpperCase(), color:'#FFD27A', icon:'gem' };
+  acquiredItems.push({ key, label:d.label, color:d.color, icon:d.icon, pop:1 });
 }
 
 
@@ -5521,31 +5521,72 @@ function drawHUD(){
   drawAcquiredTray();
 }
 // ── Acquired-items tray: small glyph chips, top-left, resets per level ──
+function drawAcquiredIcon(c, type, cx, cy, r, color){
+  // Compact version of each item's in-game art. r = icon half-extent.
+  c.save();
+  if(type==='transponder'){
+    if(transponderImg.complete && transponderImg.naturalWidth){
+      const ih=r*2, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+      c.imageSmoothingEnabled=true; c.imageSmoothingQuality='high';
+      c.drawImage(transponderImg, cx-iw/2, cy-ih/2, iw, ih);
+    } else {
+      c.fillStyle=color; c.beginPath();
+      if(c.roundRect) c.roundRect(cx-r*0.8,cy-r*0.5,r*1.6,r,3); else c.rect(cx-r*0.8,cy-r*0.5,r*1.6,r);
+      c.fill();
+    }
+  } else if(type==='ember'){
+    const g=c.createRadialGradient(cx,cy,1,cx,cy,r);
+    g.addColorStop(0,'#FFE6A8'); g.addColorStop(0.45,'#FF8A2A'); g.addColorStop(1,'#A8350A');
+    c.fillStyle=g; c.strokeStyle='#6E2206'; c.lineWidth=1;
+    c.beginPath(); c.moveTo(cx,cy-r); c.lineTo(cx+r*0.85,cy-r*0.25); c.lineTo(cx+r*0.5,cy+r*0.9);
+    c.lineTo(cx-r*0.5,cy+r*0.9); c.lineTo(cx-r*0.85,cy-r*0.25); c.closePath(); c.fill(); c.stroke();
+    c.strokeStyle='rgba(110,34,6,0.55)'; c.lineWidth=0.7;
+    c.beginPath(); c.moveTo(cx-r*0.85,cy-r*0.25); c.lineTo(cx+r*0.85,cy-r*0.25);
+    c.moveTo(cx,cy-r); c.lineTo(cx,cy+r*0.9); c.stroke();
+  } else if(type==='relic' || type==='gem'){
+    const g=c.createLinearGradient(cx,cy-r,cx,cy+r);
+    g.addColorStop(0,'#EBDBFF'); g.addColorStop(0.5,'#C9B6FF'); g.addColorStop(1,'#8A6FD4');
+    c.fillStyle=g; c.strokeStyle='#5A4690'; c.lineWidth=1;
+    c.beginPath(); c.moveTo(cx,cy-r); c.lineTo(cx+r*0.78,cy); c.lineTo(cx,cy+r);
+    c.lineTo(cx-r*0.78,cy); c.closePath(); c.fill(); c.stroke();
+    c.strokeStyle='rgba(90,70,144,0.5)'; c.lineWidth=0.7;
+    c.beginPath(); c.moveTo(cx-r*0.78,cy); c.lineTo(cx+r*0.78,cy); c.moveTo(cx,cy-r); c.lineTo(cx,cy+r); c.stroke();
+  } else if(type==='pearl'){
+    const g=c.createRadialGradient(cx-r*0.3,cy-r*0.3,1,cx,cy,r);
+    g.addColorStop(0,'#FFFFFF'); g.addColorStop(0.6,'#BFEFFF'); g.addColorStop(1,'#7FB8D6');
+    c.fillStyle=g; c.beginPath(); c.arc(cx,cy,r*0.9,0,7); c.fill();
+    c.fillStyle='rgba(255,255,255,0.7)'; c.beginPath(); c.arc(cx-r*0.3,cy-r*0.3,r*0.25,0,7); c.fill();
+  } else if(type==='key'){
+    c.strokeStyle=color; c.lineWidth=Math.max(2,r*0.28);
+    c.beginPath(); c.arc(cx-r*0.35,cy,r*0.45,0,7); c.stroke();
+    c.beginPath(); c.moveTo(cx,cy); c.lineTo(cx+r*0.8,cy); c.stroke();
+    c.beginPath(); c.moveTo(cx+r*0.55,cy); c.lineTo(cx+r*0.55,cy+r*0.4); c.stroke();
+  }
+  c.restore();
+}
 function drawAcquiredTray(){
   if(!acquiredItems.length) return;
   const c = ctx; c.save();
   c.shadowColor='transparent'; c.shadowBlur=0; c.filter='none'; c.globalAlpha=1;
-  const chip = 30, gap = 7, x0 = 12, y0 = 12;
-  for(let i=0;i<acquiredItems.length;i++){
+  const chip = 30, gap = 8, n = acquiredItems.length;
+  const totalW = n*chip + (n-1)*gap;
+  const startX = (W - totalW)/2;          // centered across the top
+  const y0 = 10;
+  for(let i=0;i<n;i++){
     const it = acquiredItems[i];
-    const cx = x0 + i*(chip+gap), cy = y0;
-    if(it.pop > 0){ it.pop = Math.max(0, it.pop-0.04); } // one-time pop-in shrink
-    const sc = 1 + it.pop*0.45;
+    const cx = startX + i*(chip+gap), cy = y0;
+    if(it.pop > 0){ it.pop = Math.max(0, it.pop-0.04); }   // one-time pop-in shrink
+    const sc = 1 + it.pop*0.5;
     const w = chip*sc, h = chip*sc, px = cx - (w-chip)/2, py = cy - (h-chip)/2;
-    // chip backplate
+    const mx = px+w/2, my = py+h/2;
     c.beginPath();
     if(c.roundRect) c.roundRect(px, py, w, h, 7); else c.rect(px,py,w,h);
-    c.fillStyle = 'rgba(14,10,30,0.78)'; c.fill();
-    c.lineWidth = 1.5; c.strokeStyle = it.color; c.globalAlpha = 0.85; c.stroke();
+    c.fillStyle = 'rgba(14,10,30,0.80)'; c.fill();
+    c.lineWidth = 1.5; c.strokeStyle = it.color; c.globalAlpha = 0.9; c.stroke();
     c.globalAlpha = 1;
-    // glyph
-    c.font = (16*sc).toFixed(1)+'px system-ui,-apple-system,sans-serif';
-    c.textAlign='center'; c.textBaseline='middle';
-    c.shadowColor = it.color; c.shadowBlur = 6;
-    c.fillStyle = '#fff';
-    c.fillText(it.glyph, px+w/2, py+h/2+1);
+    c.shadowColor = it.color; c.shadowBlur = 7;
+    drawAcquiredIcon(c, it.icon, mx, my, w*0.30, it.color);
     c.shadowBlur = 0;
-    c.textBaseline='alphabetic';
   }
   c.restore();
 }
