@@ -663,6 +663,26 @@ let shakeX = 0, shakeY = 0, shakeIntensity = 0;
 
 // Particles (dust, sparks, etc)
 let particles = [];
+// ── Floating "+N" point popups (rises & fades above collected objects) ──
+function popPoints(wx, wy, amount, color){
+  particles.push({ x:wx, y:wy, vx:(Math.random()-.5)*0.4, vy:-1.15,
+    life:46, maxLife:46, type:'float', txt:'+'+amount, color: color||'#FFE08A' });
+}
+// ── Acquired-items tray (transponder / ember / etc.) — resets each level ──
+let acquiredItems = [];               // [{key,label,color,glyph,pop}]
+function acquireItem(key){
+  const DEF = {
+    transponder:{ label:'TRANSPONDER', color:'#9FD8FF', glyph:'\u{1F4E1}' },
+    ember:      { label:'EMBER STONE', color:'#FF9A3A', glyph:'\u{1F525}' },
+    relic:      { label:'RELIC',       color:'#C9B6FF', glyph:'\u{1F48E}' },
+    pearl:      { label:'PEARL',       color:'#BFefff', glyph:'\u{1F90D}' },
+    key:        { label:'KEY',         color:'#FFD27A', glyph:'\u{1F511}' }
+  };
+  if(acquiredItems.some(it=>it.key===key)) return;
+  const d = DEF[key] || { label:key.toUpperCase(), color:'#FFD27A', glyph:'\u2726' };
+  acquiredItems.push({ key, label:d.label, color:d.color, glyph:d.glyph, pop:1 });
+}
+
 
 // Combo system
 let lastKillTime = 0, killCombo = 0;
@@ -727,7 +747,7 @@ function updateGiantOttoCharge(curEnemies){
     for(const e of curEnemies){
       if(!e.alive)continue;
       if(gx+gw>e.x&&gx<e.x+e.w&&gy+gh>e.y&&gy<e.y+e.h){
-        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=150;SFX.squash();
+        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=150;popPoints(e.x+e.w/2,e.y-6,150,'#FFB0B0');SFX.squash();
         for(let i=0;i<12;i++) particles.push({
           x:e.x+e.w/2,y:e.y+e.h/2,
           vx:Math.cos(i/12*Math.PI*2)*4,vy:Math.sin(i/12*Math.PI*2)*4-2,
@@ -1006,6 +1026,7 @@ function updateArtifact(s){
     if(p && p.x+p.w>artifact.x-6 && p.x<artifact.x+artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+40){
       artifact.got=true; artifactCollected=true;
       if(barrier) barrier.sealed=false;
+      acquireItem('transponder'); popPoints(artifact.x+artifact.w/2, ay-6, 500, '#9FD8FF'); score+=500;
       SFX.win(); shakeIntensity=10;
       for(let i=0;i<28;i++) particles.push({x:artifact.x+artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
       break;
@@ -1945,7 +1966,7 @@ function update(){
         // emit hearts while dazed
         if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
         if(e.cutenessTimer<=0){
-          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;SFX.squash();
+          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'});
         }
       }
@@ -2101,7 +2122,7 @@ function update(){
     for (const e of enemies){
       if (!e.alive) continue;
       if (pr.x>e.x-4 && pr.x<e.x+e.w+4 && pr.y>e.y-4 && pr.y<e.y+e.h+4){
-        e.alive=false; e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y); score+=100; SFX.squash(); pr.life=0;
+        e.alive=false; e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y); score+=100; popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0'); SFX.squash(); pr.life=0;
         const pc2=e.type==='scorpion'?10:e.type==='snake'?12:9;
         for(let i=0;i<pc2;i++){const angle=(i/pc2)*Math.PI*2;const spd2=e.type==='scorpion'?3.5:e.type==='snake'?2.8:3;
           particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:Math.cos(angle)*spd2+(Math.random()-.5)*.5,vy:Math.sin(angle)*spd2-1.5+Math.random()*.5,life:22,maxLife:22,type:'squash',color:e.type==='scorpion'?'#993C1D':e.type==='snake'?'#639922':'#854F0B'});}
@@ -2138,7 +2159,7 @@ function update(){
     for (const p of [sawyer, otto]){
       if (p.x+p.w>r.x && p.x<r.x+18 && p.y+p.h>r.y && p.y<r.y+18){ 
         r.got=true; 
-        score += r.points; 
+        score += r.points; popPoints(r.x+9, r.y-4, r.points, '#FFE08A');
         SFX.ball();
         // Particle burst on rock collect - more for valuable rocks
         const particleCount = r.type === 'large' ? 12 : r.type === 'shiny' ? 10 : 8;
@@ -4066,6 +4087,11 @@ function drawPitVoids(){
     ctx.restore();
     // Darkness glow at pit bottom
     ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(rx,H-20,lx-rx,20);
+    // ── Bright warning lip on both pit edges (reads the drop clearly) ──
+    ctx.fillStyle='#F4C24B'; ctx.fillRect(rx-8,FLOOR-3,8,3);
+    ctx.fillStyle='rgba(255,240,200,0.9)'; ctx.fillRect(rx-8,FLOOR-3,8,1);
+    ctx.fillStyle='#F4C24B'; ctx.fillRect(lx,FLOOR-3,8,3);
+    ctx.fillStyle='rgba(255,240,200,0.9)'; ctx.fillRect(lx,FLOOR-3,8,1);
   }
 }
 function pl_squash(p){ return p.squash||0; }
@@ -5492,6 +5518,36 @@ function drawHUD(){
   c.fillStyle = sg; c.shadowColor = 'rgba(150,90,255,0.55)'; c.shadowBlur = 6;
   c.fillText(txt, rightX, sy);
   c.restore();
+  drawAcquiredTray();
+}
+// ── Acquired-items tray: small glyph chips, top-left, resets per level ──
+function drawAcquiredTray(){
+  if(!acquiredItems.length) return;
+  const c = ctx; c.save();
+  c.shadowColor='transparent'; c.shadowBlur=0; c.filter='none'; c.globalAlpha=1;
+  const chip = 30, gap = 7, x0 = 12, y0 = 12;
+  for(let i=0;i<acquiredItems.length;i++){
+    const it = acquiredItems[i];
+    const cx = x0 + i*(chip+gap), cy = y0;
+    if(it.pop > 0){ it.pop = Math.max(0, it.pop-0.04); } // one-time pop-in shrink
+    const sc = 1 + it.pop*0.45;
+    const w = chip*sc, h = chip*sc, px = cx - (w-chip)/2, py = cy - (h-chip)/2;
+    // chip backplate
+    c.beginPath();
+    if(c.roundRect) c.roundRect(px, py, w, h, 7); else c.rect(px,py,w,h);
+    c.fillStyle = 'rgba(14,10,30,0.78)'; c.fill();
+    c.lineWidth = 1.5; c.strokeStyle = it.color; c.globalAlpha = 0.85; c.stroke();
+    c.globalAlpha = 1;
+    // glyph
+    c.font = (16*sc).toFixed(1)+'px system-ui,-apple-system,sans-serif';
+    c.textAlign='center'; c.textBaseline='middle';
+    c.shadowColor = it.color; c.shadowBlur = 6;
+    c.fillStyle = '#fff';
+    c.fillText(it.glyph, px+w/2, py+h/2+1);
+    c.shadowBlur = 0;
+    c.textBaseline='alphabetic';
+  }
+  c.restore();
 }
 
 function drawOverlay(msg,sub){
@@ -5714,7 +5770,7 @@ function restartCurrentLevel(){
   const lvl = currentLevel||1;
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
-  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
+  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
   shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
@@ -5722,7 +5778,7 @@ function restartCurrentLevel(){
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   buildPlayers();
   if(currentLevel===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
-  else if(currentLevel===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); }
+  else if(currentLevel===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); buildL3Artifact(); }
   else if(currentLevel>=4&&currentLevel<=6){ buildLevelContent(currentLevel); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
@@ -5736,7 +5792,7 @@ function restartCurrentLevel(){
 function jumpToLevel(n){
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
-  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0;
+  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
   currentLevel=n;
@@ -5750,7 +5806,7 @@ function jumpToLevel(n){
   audioManager.stop();
   buildPlayers();
   if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
-  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); }
+  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); buildL3Artifact(); }
   else if(n>=4&&n<=6){ buildLevel4to6Jump(n); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
@@ -5768,7 +5824,7 @@ function restart(resetLevel){
   const lvl = resetLevel ? 1 : (currentLevel||1);
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
-  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0;
+  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0;
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
   checkpoint=null;
@@ -5781,7 +5837,7 @@ function restart(resetLevel){
   if(currentLevel===2){
     buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}}
   } else if(currentLevel===3){
-    buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena();
+    buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); buildL3Artifact();
   } else if(currentLevel>=4&&currentLevel<=6){
     buildLevel4to6Jump(currentLevel);
   } else {
@@ -5873,7 +5929,9 @@ function loop(){
     drawL2BossWarning();
   } else if(currentLevel===3){
     drawL3BgFar(); cosmicGlow(); drawL3BgNear(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
+    drawL3Artifact();
     drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawCheckpoint();
+    drawL3BossWarning();
   } else if(currentLevel===4){
     drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls();
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
@@ -5932,9 +5990,22 @@ function loop(){
       ctx.beginPath();
       ctx.moveTo(0,1);ctx.bezierCurveTo(-5,-3,-10,2,-5,6);ctx.lineTo(0,10);ctx.lineTo(5,6);ctx.bezierCurveTo(10,2,5,-3,0,1);
       ctx.fill();ctx.restore();
+    } else if (p.type === 'float'){
+      // Rising "+N" score popup — fades & drifts up; no gravity
+      const fr = lifeFrac;
+      const fy = p.y;
+      const pop = p.life > p.maxLife-6 ? 1 + (p.life-(p.maxLife-6))/6*0.5 : 1; // brief bloom-in
+      ctx.globalAlpha = Math.min(1, fr*1.6);
+      ctx.font = '900 ' + (13*pop).toFixed(1) + 'px system-ui,-apple-system,sans-serif';
+      ctx.textAlign = 'center'; ctx.lineJoin = 'round';
+      ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(8,4,16,0.85)';
+      ctx.strokeText(p.txt, dx, fy);
+      ctx.fillStyle = p.color || '#FFE08A';
+      ctx.fillText(p.txt, dx, fy);
     }
     ctx.restore();
-    p.x += p.vx; p.y += p.vy; p.vy += 0.15; // gravity
+    if(p.type==='float'){ p.x += p.vx; p.y += p.vy; p.vy *= 0.92; } // float: ease up, no gravity
+    else { p.x += p.vx; p.y += p.vy; p.vy += 0.15; } // gravity
   }
   
   // Power 1: giant Otto grow + charge
@@ -6231,7 +6302,7 @@ function updateEmberStone(){
   const ay = emberStone.y + Math.sin(emberStone.bobT)*4;
   for(const p of [sawyer,otto]){
     if(p && p.x+p.w>emberStone.x-6 && p.x<emberStone.x+emberStone.w+6 && p.y+p.h>ay-6 && p.y<ay+44){
-      emberStone.got=true; emberCollected=true; score+=300; sfx('win'); shakeIntensity=Math.max(shakeIntensity,8);
+      emberStone.got=true; emberCollected=true; score+=300; acquireItem('ember'); popPoints(emberStone.x+12, ay-4, 300, '#FF9A3A'); sfx('win'); shakeIntensity=Math.max(shakeIntensity,8);
       // grabbing the fire melts the ice it was frozen in — the whole apex platform melts away
       const apex=l2Platforms.find(pp=>pp.apex); if(apex){ apex.meltState=true; apex.meltT=0; apex.alpha=1;
         for(const ic of icicles){ if(ic.plat===apex && !ic.dissolved){ ic.dissolving=true; ic.dissolveT=0; } } }
@@ -6309,7 +6380,7 @@ function updateL2Artifact(){
   const ay = l2Artifact.y + Math.sin(l2Artifact.bobT)*4;
   for(const p of [sawyer,otto]){
     if(p && p.x+p.w>l2Artifact.x-6 && p.x<l2Artifact.x+l2Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+l2Artifact.h+8){
-      l2Artifact.got=true; l2ArtifactCollected=true; score+=400; sfx('win'); shakeIntensity=Math.max(shakeIntensity,9);
+      l2Artifact.got=true; l2ArtifactCollected=true; score+=400; acquireItem('transponder'); popPoints(l2Artifact.x+14, ay-4, 400, '#9FD8FF'); sfx('win'); shakeIntensity=Math.max(shakeIntensity,9);
       for(let i=0;i<32;i++) particles.push({x:l2Artifact.x+14, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
     }
   }
@@ -6538,10 +6609,41 @@ let kingCrab = null;
 let l3BossEnrage = 0;   // 0→1 HP-linked grade ramp: bruises the night to violet/teal at phase 2
 let l3Portal = { open:0 };   // escape portal — closed until Krawley is defeated, then eases open
 let finishCardActive = false, finishCardTimer = 0;
+// ── L3 TRANSPONDER (boss key) ─────────────────────────────────────────────────
+// Sits on a sea-worn barrel on the GROUND, directly beneath the last elevated rung
+// (x:2650, FLOOR-205). The player drops down to grab it, then must climb back up the
+// rungs and hop across to clear the largest swell before the boss gate. Krawley will
+// not initiate until it is collected (L1 pattern: warning text, no physical wall).
+let l3Artifact = null, l3ArtifactCollected = false, l3BossWarnT = 0;
+let l3Barrel = null;
+function buildL3Artifact(){
+  // Sea-worn barrel = a SOLID obstacle on the ground beneath the last rung. Sawyer
+  // must hop over it. The transponder rides on the barrel cap; grab it, then backtrack
+  // up the rungs to clear the largest swell before the boss gate.
+  const bw=46, bh=52, bx=2674;
+  l3Barrel = { x:bx, y:FLOOR-bh, w:bw, h:bh };
+  l3Artifact = { x:bx+bw/2-11, y:FLOOR-bh-26, w:22, got:false, bobT:0 };  // hovers above the cap
+  l3ArtifactCollected = false;
+  l3BossWarnT = 0;
+}
+function updateL3Artifact(s){
+  if(l3BossWarnT>0) l3BossWarnT--;
+  if(!l3Artifact || l3Artifact.got) return;
+  l3Artifact.bobT += 0.05;
+  const ay = l3Artifact.y + Math.sin(l3Artifact.bobT)*4;
+  for(const p of [s, otto]){
+    if(p && p.x+p.w>l3Artifact.x-6 && p.x<l3Artifact.x+l3Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+40){
+      l3Artifact.got=true; l3ArtifactCollected=true;
+      sfx('ball'); shakeIntensity=Math.max(shakeIntensity,6);
+      score+=250; acquireItem('relic'); popPoints(l3Artifact.x+l3Artifact.w/2, ay-6, 250, '#C9B6FF');
+      for(let i=0;i<28;i++) particles.push({x:l3Artifact.x+l3Artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
+    }
+  }
+}
 function buildKingCrab(){
   kingCrab = {
     x:3420, y:FLOOR-100, w:120, h:100,
-    alive:true, active:false, phase:0, hp:8, maxHp:8,
+    alive:true, active:false, phase:0, hp:18, maxHp:18,
     vx:1.4, facing:1, hitFlash:0, dieTimer:0, phaseIndex:0,
     tell:0, tellMax:0, pending:null, actionTimer:90, clawRaise:0, onGround:true, vy:0,
     retreat:0, retreatDir:1, patrolDir:0,
@@ -6731,7 +6833,7 @@ function updateLevel2(){
         e.cutenessTimer--;
         if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
         if(e.cutenessTimer<=0){
-          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;SFX.squash();
+          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'});
         }
       }
@@ -6817,7 +6919,7 @@ function updateLevel2(){
     for(const e of l2Enemies){
       if(!e.alive)continue;
       if(pr.x>e.x-4&&pr.x<e.x+e.w+4&&pr.y>e.y-4&&pr.y<e.y+e.h+4){
-        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;SFX.squash();pr.life=0;
+        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();pr.life=0;
         for(let i=0;i<10;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*6,vy:-2-Math.random()*3,life:20,maxLife:20,type:'snow',color:'#B0D4F1'});
       }
     }
@@ -6855,7 +6957,7 @@ function updateLevel2(){
     if(r.got)continue;
     for(const p of [sawyer,otto]){
       if(p.x+p.w>r.x&&p.x<r.x+18&&p.y+p.h>r.y&&p.y<r.y+18){
-        r.got=true;score+=r.points;SFX.ball();
+        r.got=true;score+=r.points;popPoints(r.x+9, r.y-4, r.points,'#FFE08A');SFX.ball();
         const pc=r.type==='large'?12:r.type==='shiny'?10:8;
         for(let i=0;i<pc;i++) particles.push({x:r.x+9,y:r.y+9,vx:Math.cos(i*Math.PI*2/pc)*3,vy:Math.sin(i*Math.PI*2/pc)*3,life:16,maxLife:16,type:'spark',color:r.hue});
       }
@@ -7302,6 +7404,94 @@ function drawL3Waves(){
 }
 // ── END L3 WAVE HAZARD ────────────────────────────────────────────────────────
 
+// Sea-worn barrel (a solid obstacle Sawyer hops over) with the transponder bobbing
+// above it (boss key). Cyan-violet beacon so it reads from a distance. The barrel
+// stays drawn after the transponder is taken; only the beacon/sprite disappear.
+function drawL3Artifact(){
+  if(!l3Barrel) return;
+  const b = l3Barrel;
+  const bxl = b.x - cameraX, byT = b.y, bw = b.w, bh = b.h;
+  if(bxl+bw < -60 || bxl > W+60) return;
+  const cx = bxl + bw/2;
+  const groundY = b.y + b.h;
+  ctx.save();
+  // shadow
+  ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.beginPath(); ctx.ellipse(cx, groundY-2, bw*0.55, 7, 0, 0, Math.PI*2); ctx.fill();
+  // staves (curved barrel body)
+  const bodyGrad=ctx.createLinearGradient(bxl,0,bxl+bw,0);
+  bodyGrad.addColorStop(0,'#4A3526'); bodyGrad.addColorStop(0.5,'#6E4E34'); bodyGrad.addColorStop(1,'#3E2C1F');
+  ctx.fillStyle=bodyGrad;
+  ctx.beginPath();
+  ctx.moveTo(bxl+4, byT+2);
+  ctx.quadraticCurveTo(bxl-4, byT+bh*0.5, bxl+4, byT+bh-2);
+  ctx.lineTo(bxl+bw-4, byT+bh-2);
+  ctx.quadraticCurveTo(bxl+bw+4, byT+bh*0.5, bxl+bw-4, byT+2);
+  ctx.closePath(); ctx.fill();
+  // stave seams
+  ctx.strokeStyle='rgba(30,20,12,0.55)'; ctx.lineWidth=1.5;
+  for(let i=1;i<5;i++){ const sx=bxl+4+(bw-8)*i/5; ctx.beginPath(); ctx.moveTo(sx, byT+3); ctx.lineTo(sx, byT+bh-3); ctx.stroke(); }
+  // rusted metal bands
+  ctx.fillStyle='#5B5048';
+  for(const by of [byT+7, byT+bh*0.5-3, byT+bh-11]){ ctx.fillRect(bxl-2, by, bw+4, 5); }
+  ctx.fillStyle='rgba(120,150,140,0.25)'; // algae streaks
+  ctx.fillRect(bxl+6, byT+10, 4, bh-18); ctx.fillRect(bxl+bw-12, byT+14, 3, bh-22);
+  // barnacle specks
+  ctx.fillStyle='rgba(220,210,195,0.7)';
+  for(let i=0;i<5;i++){ const px=bxl+6+((i*97)%(bw-12)); const py=byT+10+((i*53)%(bh-18)); ctx.beginPath(); ctx.arc(px,py,1.6,0,Math.PI*2); ctx.fill(); }
+  ctx.restore();
+
+  // ---- transponder + beacon (only until collected) ----
+  if(!l3Artifact || l3Artifact.got) return;
+  const ay = l3Artifact.y + Math.sin(l3Artifact.bobT)*4;
+  const acx = l3Artifact.x - cameraX + l3Artifact.w/2, acy = ay+16;
+  const pulse = 0.5+0.5*Math.sin(l3Artifact.bobT*2);
+  ctx.save();
+  // beacon glow column
+  ctx.globalCompositeOperation='lighter';
+  const beam=ctx.createRadialGradient(acx,acy,2,acx,acy,34+pulse*10);
+  beam.addColorStop(0,'rgba(160,216,255,'+(0.55+pulse*0.2)+')');
+  beam.addColorStop(0.5,'rgba(150,120,255,0.22)');
+  beam.addColorStop(1,'rgba(150,120,255,0)');
+  ctx.fillStyle=beam; ctx.beginPath(); ctx.arc(acx,acy,34+pulse*10,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  // sprite or glyph fallback
+  ctx.save();
+  if(transponderImg.complete && transponderImg.naturalWidth){
+    const ih=22, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+    ctx.shadowColor='rgba(150,200,255,0.8)'; ctx.shadowBlur=10;
+    ctx.drawImage(transponderImg, acx-iw/2, acy-ih/2+2, iw, ih);
+  } else {
+    ctx.fillStyle='#BBD9FF'; ctx.strokeStyle='#6E5BFF'; ctx.lineWidth=2;
+    rr(acx-9, acy-7, 18, 14, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#6E5BFF'; ctx.fillRect(acx-1, acy-14, 2, 7);
+    ctx.beginPath(); ctx.arc(acx, acy-15, 2.4, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+  // floating label
+  ctx.save();
+  ctx.globalAlpha=0.85+pulse*0.15;
+  ctx.font='bold 9px system-ui,sans-serif'; ctx.textAlign='center';
+  ctx.fillStyle='#CFE6FF'; ctx.shadowColor='rgba(60,40,120,0.9)'; ctx.shadowBlur=4;
+  ctx.fillText('TRANSPONDER', acx, acy-26);
+  ctx.restore();
+}
+
+// Boss-gate warning: appears when the player reaches the gate without the transponder.
+function drawL3BossWarning(){
+  if(l3BossWarnT<=0 || l3ArtifactCollected) return;
+  const a = Math.min(1, l3BossWarnT/100);
+  const cx = W/2, cy = 92;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.font='bold 18px system-ui,sans-serif'; ctx.textAlign='center';
+  ctx.fillStyle='#FF6BD6'; ctx.shadowColor='rgba(120,20,90,0.9)'; ctx.shadowBlur=8;
+  ctx.fillText('GRAB THE TRANSPONDER', cx, cy);
+  ctx.font='bold 12px system-ui,sans-serif'; ctx.fillStyle='#CFE6FF'; ctx.shadowBlur=5;
+  ctx.fillText('BACKTRACK — IT SITS ON A BARREL BELOW THE LAST LEDGE', cx, cy+20);
+  ctx.restore();
+}
+
+
 // Darkening sky + sea-spray haze that closes in on the boss arena (no wall).
 function drawL3SeaSwallow(){
   if(seaSwallow < 0.01) return;
@@ -7509,6 +7699,8 @@ function updateLevel3(){
 
   // Update wave hazard
   updateL3Waves(s);
+  // Transponder pickup (boss key)
+  updateL3Artifact(s);
 
   // Environmental swallow DISABLED — the slate veil was unwanted. Keep at 0 so the
   // arena reads clean; drawL3SeaSwallow early-returns. Restore the ramp to re-enable.
@@ -7531,7 +7723,7 @@ function updateLevel3(){
         e.cutenessTimer--;
         if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
         if(e.cutenessTimer<=0){
-          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;SFX.squash();
+          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'});
         }
       }
@@ -7568,7 +7760,7 @@ function updateLevel3(){
       if(s.vy>1.5&&s.y+s.h-s.vy<e.y+e.h/2){
         e.hitCount=(e.hitCount||0)+1;
         if(e.type==='wreckling'&&e.hitCount<2){e.shellTimer=60;} else {
-          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=(e.type==='wreckling'?150:100);
+          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=(e.type==='wreckling'?150:100);popPoints(e.x+e.w/2,e.y-6,(e.type==='wreckling'?150:100),'#FFB0B0');
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:Math.cos(i*Math.PI*2/8)*2,vy:Math.sin(i*Math.PI*2/8)*2,life:12,maxLife:12,type:'spark',color:'#D4A574'});
         }
         s.vy*=-0.6;sfx('squash');
@@ -7583,7 +7775,7 @@ function updateLevel3(){
     for(const e of l3Enemies){
       if(!e.alive)continue;
       if(pr.x>e.x&&pr.x<e.x+e.w&&pr.y>e.y&&pr.y<e.y+e.h){
-        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;
+        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');
         for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:Math.cos(i*Math.PI*2/8)*2.5,vy:Math.sin(i*Math.PI*2/8)*2.5,life:14,maxLife:14,type:'spark',color:'#E8C97A'});
         pr.life=0;sfx('bossHit');break;
       }
@@ -7592,7 +7784,7 @@ function updateLevel3(){
       if(pr.x>kingCrab.x&&pr.x<kingCrab.x+kingCrab.w&&pr.y>kingCrab.y&&pr.y<kingCrab.y+kingCrab.h){
         kingCrab.hp--;kingCrab.hitFlash=8;shakeIntensity=5;score+=40;
         SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
-        if(kingCrab.hp<=4&&kingCrab.phaseIndex===0){
+        if(kingCrab.hp<=9&&kingCrab.phaseIndex===0){
           kingCrab.phaseIndex=1;kingCrab.vx*=1.5;
           shakeIntensity=16;hurtFlashTimer=20;SFX.rattle();
           summonCrab(); summonCrab();
@@ -7616,7 +7808,7 @@ function updateLevel3(){
     if(r.got)continue;
     for(const p of [s,o]){
       if(p.x+p.w>r.x&&p.x<r.x+18&&p.y+p.h>r.y&&p.y<r.y+18){
-        r.got=true;score+=r.points;sfx('ball');
+        r.got=true;score+=r.points;popPoints(r.x+9, r.y-4, r.points, '#FFE08A');sfx('ball');
         const pc=r.type==='large'?12:r.type==='shiny'?10:8;
         for(let i=0;i<pc;i++) particles.push({x:r.x+9,y:r.y+9,vx:Math.cos(i*Math.PI*2/pc)*3,vy:Math.sin(i*Math.PI*2/pc)*3,life:16,maxLife:16,type:'spark',color:r.hue});
       }
@@ -7625,9 +7817,14 @@ function updateLevel3(){
 
   if(kingCrab&&kingCrab.alive){
     if(!kingCrab.active&&!cutsceneActive&&s.x>L3_BOSS_GATE){
-      cutsceneActive=true;cutsceneTimer=240;
-      s.invincible=260; s.vx=0; s.vy=0; // protect during cutscene
-      venom=[]; l3Waves=[]; // clear active hazards
+      if(l3ArtifactCollected){
+        cutsceneActive=true;cutsceneTimer=240;
+        s.invincible=260; s.vx=0; s.vy=0; // protect during cutscene
+        venom=[]; l3Waves=[]; // clear active hazards
+      } else {
+        // no transponder yet — hold the warning up; the player must backtrack for it
+        l3BossWarnT=100;
+      }
     }
     if(kingCrab.active){
       const kc=kingCrab, p2=kc.phaseIndex===1;
@@ -7822,6 +8019,23 @@ function resolveL3(p){
       // platform "give": elevated pier ledges dip on a hard landing, then spring back
       if(pl.y!==FLOOR && !p.onGround && p.vy>4){ pl.squashV=(pl.squashV||0)+Math.min(p.vy*0.5,6); }
       p.vy=0;p.onGround=true;
+    }
+  }
+  // ── Sea-worn barrel: a SOLID obstacle. Land on the cap; blocked from the sides
+  //    (the player must jump over it). Skipped once it has nothing left to gate? No —
+  //    the barrel always blocks; only the transponder on top is collectible. ──
+  if(l3Barrel && p.id==='sawyer'){
+    const b=l3Barrel;
+    const inX=p.x+p.w>b.x && p.x<b.x+b.w;
+    const wasAbove=(p.y+p.h-p.vy)<=b.y+2;
+    if(inX && wasAbove && p.y+p.h>=b.y && p.y+p.h<=b.y+b.h+10){
+      // landing on top of the barrel
+      p.y=b.y-p.h; p.vy=0; p.onGround=true;
+    } else if(p.y+p.h>b.y+4 && p.y<b.y+b.h){
+      // side collision — push the player out so they can't walk through it
+      const fromLeft = (p.x+p.w/2) < (b.x+b.w/2);
+      if(fromLeft && p.x+p.w>b.x && p.x<b.x){ p.x=b.x-p.w; if(p.vx>0)p.vx=0; }
+      else if(!fromLeft && p.x<b.x+b.w && p.x+p.w>b.x+b.w){ p.x=b.x+b.w; if(p.vx<0)p.vx=0; }
     }
   }
   // floating arena rafts (carry riders by their per-frame dx/dy)
@@ -9268,7 +9482,7 @@ const LV = {
           primary:'#00FF88', secondary:'#00FFFF', tertiary:'#FF00FF',
           r1:'#FFD700', r2:'#00FFFF', r3:'#FF00FF', pit:'#06101E' },
     boss:{ name:'Leviathan Lyra', tag:'🦑 LEVIATHAN LYRA', rage:'🦑 LEVIATHAN LYRA — ENRAGED',
-           hp:6, vx1:1.8, vx2:2.6, spit1:60, spit2:40, n1:2, n2:3,
+           hp:18, vx1:1.8, vx2:2.6, spit1:60, spit2:40, n1:2, n2:3,
            proj:'#00FF88', body:'#00FFFF', limb:'#FF00FF', eye:'#FFD700', aura:'rgba(0,255,255,0.30)' },
     audio:'/audio/L4lookinatmyfish.mp3'
   },
@@ -9279,7 +9493,7 @@ const LV = {
           primary:'#FF6B35', secondary:'#FFFFFF', tertiary:'#9D4EDD',
           r1:'#FFD700', r2:'#FF6B35', r3:'#9D4EDD', pit:'#0A0612' },
     boss:{ name:'Baron Von Scream', tag:'🎩 BARON VON SCREAM', rage:'🎩 BARON VON SCREAM — ENRAGED',
-           hp:6, vx1:1.5, vx2:2.3, spit1:55, spit2:38, n1:1, n2:3,
+           hp:18, vx1:1.5, vx2:2.3, spit1:55, spit2:38, n1:1, n2:3,
            proj:'#9D4EDD', body:'#E8E8E8', limb:'#1A1A1A', eye:'#FFD700', aura:'rgba(157,78,221,0.32)' },
     audio:'/audio/L5strangerthangs.mp3'
   },
@@ -9290,7 +9504,7 @@ const LV = {
           primary:'#00FF00', secondary:'#00CCFF', tertiary:'#FFFF00',
           r1:'#FFD700', r2:'#00CCFF', r3:'#FFFF00', pit:'#000008' },
     boss:{ name:'Nexus Nine', tag:'🛰 NEXUS NINE', rage:'🛰 NEXUS NINE — OVERCLOCKED',
-           hp:6, vx1:2.0, vx2:2.9, spit1:50, spit2:35, n1:3, n2:5,
+           hp:18, vx1:2.0, vx2:2.9, spit1:50, spit2:35, n1:3, n2:5,
            proj:'#FFFF00', body:'#00CCFF', limb:'#FFD700', eye:'#00FFFF', aura:'rgba(0,204,255,0.35)' },
     audio:'/audio/L6probed.mp3'
   }
@@ -9651,7 +9865,7 @@ function updateGen(){
         if(!e.cutenessTimer)e.cutenessTimer=70;
         e.cutenessTimer--;
         if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
-        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;SFX.squash();
+        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'}); }
       }
     }
@@ -9699,7 +9913,7 @@ function updateGen(){
         e.hitCount=(e.hitCount||0)+1;
         if(e.slot==='B'&&e.hitCount<2){ e.shellTimer=60; }
         else {
-          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=(e.slot==='B'?150:e.slot==='C'?125:100);
+          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=(e.slot==='B'?150:e.slot==='C'?125:100);popPoints(e.x+e.w/2,e.y-6,(e.slot==='B'?150:e.slot==='C'?125:100),'#FFB0B0');
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:Math.cos(i*Math.PI*2/8)*2,vy:Math.sin(i*Math.PI*2/8)*2,life:12,maxLife:12,type:'spark',color:lv.pal.primary});
         }
         s.vy*=-0.6;sfx('squash');
@@ -9753,7 +9967,7 @@ function updateGen(){
     for(const e of lv.enemies){
       if(!e.alive)continue;
       if(pr.x>e.x&&pr.x<e.x+e.w&&pr.y>e.y&&pr.y<e.y+e.h){
-        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;
+        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');
         for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:Math.cos(i*Math.PI*2/8)*2.5,vy:Math.sin(i*Math.PI*2/8)*2.5,life:14,maxLife:14,type:'spark',color:lv.pal.secondary});
         pr.life=0;sfx('bossHit');break;
       }
@@ -9786,7 +10000,7 @@ function updateGen(){
         if(rg.hit) continue;
         const dx=pr.x-rg.x, dy=pr.y-rg.y;
         if(dx*dx+dy*dy < rg.r*rg.r){
-          rg.hit=true; score+=rg.points; sfx('ball'); shakeIntensity=3;
+          rg.hit=true; score+=rg.points; popPoints(rg.x, rg.y-rg.r, rg.points, '#38F2E6'); sfx('ball'); shakeIntensity=3;
           for(let a=0;a<16;a++) particles.push({x:rg.x,y:rg.y,vx:Math.cos(a/16*6.283)*3.2,vy:Math.sin(a/16*6.283)*3.2,life:26,maxLife:26,type:'spark',color:a%2?'#38F2E6':'#FF2E9A'});
         }
       }
@@ -9796,13 +10010,13 @@ function updateGen(){
   // Fly-through rings (player passes through)
   if(lv.rings){ const pcx=s.x+s.w/2, pcy=s.y+s.h/2;
     for(const rg of lv.rings){ if(rg.hit)continue; const dx=pcx-rg.x, dy=pcy-rg.y;
-      if(dx*dx+dy*dy<rg.r*rg.r){ rg.hit=true; score+=rg.points; sfx('ball'); shakeIntensity=3;
+      if(dx*dx+dy*dy<rg.r*rg.r){ rg.hit=true; score+=rg.points; popPoints(rg.x, rg.y-rg.r, rg.points, '#38F2E6'); sfx('ball'); shakeIntensity=3;
         for(let a=0;a<16;a++) particles.push({x:rg.x,y:rg.y,vx:Math.cos(a/16*6.283)*3.2,vy:Math.sin(a/16*6.283)*3.2,life:26,maxLife:26,type:'spark',color:a%2?'#38F2E6':'#FF2E9A'}); } } }
   for(const r of lv.rocks){
     if(r.got)continue;
     for(const p of [s,o]){
       if(p.x+p.w>r.x&&p.x<r.x+18&&p.y+p.h>r.y&&p.y<r.y+18){
-        r.got=true;score+=r.points;sfx('ball');
+        r.got=true;score+=r.points;popPoints(r.x+9, r.y-4, r.points, lv.pal.r1||'#FFE08A');sfx('ball');
         const col=r.rarity===3?lv.pal.r3:r.rarity===2?lv.pal.r2:lv.pal.r1;
         const pc=r.rarity===3?12:r.rarity===2?10:8;
         for(let i=0;i<pc;i++) particles.push({x:r.x+9,y:r.y+9,vx:Math.cos(i*Math.PI*2/pc)*3,vy:Math.sin(i*Math.PI*2/pc)*3,life:16,maxLife:16,type:'spark',color:col});
@@ -10137,7 +10351,7 @@ function updateSwim(){
         if(!e.cutenessTimer)e.cutenessTimer=70;
         e.cutenessTimer--;
         if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
-        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;SFX.squash();
+        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'}); }
       }
     }
@@ -10188,7 +10402,7 @@ function updateSwim(){
       if(pr.x>e.x&&pr.x<e.x+e.w&&pr.y>e.y&&pr.y<e.y+e.h){
         e.hitCount=(e.hitCount||0)+1;
         if(e.slot==='puffer'&&e.hitCount<2){ e.shellTimer=40; pr.life=0; sfx('bossHit'); break; }
-        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=(e.slot==='puffer'?150:e.slot==='squid'?140:e.slot==='angler'?130:e.slot==='jelly'?125:100);
+        e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=(e.slot==='puffer'?150:e.slot==='squid'?140:e.slot==='angler'?130:e.slot==='jelly'?125:100);popPoints(e.x+e.w/2,e.y-6,(e.slot==='puffer'?150:e.slot==='squid'?140:e.slot==='angler'?130:e.slot==='jelly'?125:100),'#FFB0B0');
         for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:Math.cos(i*Math.PI*2/8)*2.5,vy:Math.sin(i*Math.PI*2/8)*2.5,life:14,maxLife:14,type:'spark',color:lv.pal.secondary});
         pr.life=0;sfx('squash');break;
       }
@@ -10210,7 +10424,7 @@ function updateSwim(){
     if(r.got)continue; r.phase=(r.phase||0)+0.05;
     for(const p of [s,o]){
       if(p.x+p.w>r.x&&p.x<r.x+18&&p.y+p.h>r.y&&p.y<r.y+18){
-        r.got=true;score+=r.points;sfx('ball');
+        r.got=true;score+=r.points;popPoints(r.x+9, r.y-4, r.points, lv.pal.r1||'#FFE08A');sfx('ball');
         const col=r.rarity===3?lv.pal.r3:r.rarity===2?lv.pal.r2:lv.pal.r1;
         const pc=r.rarity===3?12:r.rarity===2?10:8;
         for(let i=0;i<pc;i++) particles.push({x:r.x+9,y:r.y+9,vx:Math.cos(i*Math.PI*2/pc)*3,vy:Math.sin(i*Math.PI*2/pc)*3,life:16,maxLife:16,type:'spark',color:col});
@@ -10878,7 +11092,20 @@ function drawGenPitVoids(){
   const segs=lv.platforms.filter(p=>p.y===FLOOR).sort((a,b)=>a.x-b.x);
   for(let i=0;i<segs.length-1;i++){
     const gx=segs[i].x+segs[i].w, gw=segs[i+1].x-gx;
-    if(gw>0){ const sx=gx-cameraX; ctx.fillRect(sx,FLOOR,gw,H-FLOOR); }
+    if(gw>0){
+      const sx=gx-cameraX;
+      ctx.fillStyle=lv.pal.pit;
+      ctx.fillRect(sx,FLOOR,gw,H-FLOOR);
+      // ── Edge definition: shaded cliff walls + bright lip on both sides ──
+      const edge = lv.pal.edge || lv.pal.r2 || '#9AE0FF';
+      // left wall (right edge of left segment)
+      ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(sx-5,FLOOR,5,H-FLOOR);
+      // right wall (left edge of right segment)
+      ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.fillRect(sx+gw,FLOOR,5,H-FLOOR);
+      // bright lips
+      ctx.fillStyle=edge; ctx.fillRect(sx-6,FLOOR-3,6,3); ctx.fillRect(sx+gw,FLOOR-3,6,3);
+      ctx.fillStyle='rgba(255,255,255,0.65)'; ctx.fillRect(sx-6,FLOOR-3,6,1); ctx.fillRect(sx+gw,FLOOR-3,6,1);
+    }
   }
 }
 function drawGenPlatforms(){
@@ -10946,6 +11173,9 @@ function drawGenPlatforms(){
         ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(sx,p.y+p.h,p.w,4);
       } else if(space){
         drawAsteroid(sx,p.y,p.w,p.h+6);
+        // landing rim so the asteroid reads as a standable ledge, not a free-floating rock
+        ctx.fillStyle='rgba(120,200,255,0.55)'; ctx.fillRect(sx+3,p.y,p.w-6,2);
+        ctx.fillStyle='rgba(255,255,255,0.30)'; ctx.fillRect(sx+3,p.y,p.w-6,1);
       } else {
         ctx.fillStyle=pal.plat; ctx.beginPath();ctx.roundRect(sx,p.y,p.w,p.h+4,4);ctx.fill();
         ctx.fillStyle=pal.glow; ctx.fillRect(sx,p.y,p.w,3);
@@ -11434,7 +11664,7 @@ function drawGenFlag(){
 function buildLevel4to6Jump(n){ if(n===4)buildLevel4(); else if(n===5)buildLevel5(); else buildLevel6(); }
 function buildLevelContent(n){
   if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
-  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); }
+  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); buildL3Artifact(); }
   else if(n===4){ buildLevel4(); }
   else if(n===5){ buildLevel5(); }
   else if(n===6){ buildLevel6(); }
@@ -11443,6 +11673,7 @@ function buildLevelContent(n){
 }
 function goToLevel(n){
   currentLevel=n; cameraX=0; levelStartScore=score;
+  acquiredItems=[];
   projectiles=[]; venom=[]; particles=[]; killCombo=0;
   cutsceneActive=false; victoryActive=false; victoryTimer=0;
   finishCardActive=false; finishCardTimer=0; shockwaves=[]; icicles=[];
