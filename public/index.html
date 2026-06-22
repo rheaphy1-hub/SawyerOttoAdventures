@@ -359,6 +359,12 @@
 
   <div id="canvas-container">
     <canvas id="game" width="680" height="360"></canvas>
+    <video id="intro-cutscene" playsinline preload="auto" muted
+      style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:10px;display:none;z-index:60;background:#000;">
+      <source src="assets/intro_cutscene.mp4" type="video/mp4">
+    </video>
+    <div id="intro-black" style="position:absolute;inset:0;background:#000;border-radius:10px;opacity:0;display:none;z-index:61;pointer-events:none;transition:opacity .5s ease;"></div>
+    <div id="intro-skip" style="position:absolute;bottom:14px;right:16px;z-index:62;display:none;color:#FAEEDA;font:600 13px system-ui,sans-serif;background:rgba(0,0,0,0.45);border:1px solid rgba(250,238,218,0.35);border-radius:20px;padding:6px 14px;cursor:pointer;user-select:none;letter-spacing:.04em;">Skip &#9654;&#9654;</div>
     <button id="fs-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
     <div id="touch-controls" aria-hidden="true">
       <div id="dpad">
@@ -1457,6 +1463,7 @@ function buildPlayers(){
     vx:0, vy:0, onGround:false, attackTimer:0, attackCooldown:0, invincible:0, facing:1,
     cheer:0, cower:0
   };
+  startPortalDump();
 }
 
 function makePlatform(x,y,w){ return {x,y,w,h:14}; }
@@ -1610,6 +1617,47 @@ function buildBoss(){
   // arena platforms start hidden every time the level (re)builds
   for(const pl of platforms){ if(pl.bossPlatform){ pl.hidden=true; pl.y=pl.baseY; pl.dx=0; pl.dy=0; } }
   buildArtifactGate();
+}
+
+// =========================================================================
+//  ENTRY PORTAL DUMP — Sawyer & Otto are tossed out of a portal that closes
+//  behind them at the start of every level.
+// =========================================================================
+let portalDump = { active:false, t:0, open:0, phase:'idle', x:0, y:0 };
+// Called from buildPlayers() — arms the dump using the freshly-spawned players.
+function startPortalDump(){
+  if(!sawyer) return;
+  // portal hovers just above the spawn point
+  const px = sawyer.x + sawyer.w/2;
+  const py = sawyer.y - 46;
+  portalDump = { active:true, t:0, open:0, phase:'opening', x:px, y:py };
+  // tuck the riders up inside the portal mouth and toss them out & down
+  sawyer.y = py - 4; sawyer.vy = -2.2; sawyer.vx = 0.6; sawyer.onGround=false;
+  if(otto){ otto.x = px - 30; otto.y = py - 2; otto.vy = -1.6; otto.vx = 0.4; otto.onGround=false; }
+}
+// Advances the portal animation; returns true while it should still suppress input.
+function tickPortalDump(){
+  if(!portalDump.active) return false;
+  portalDump.t++;
+  if(portalDump.phase==='opening'){
+    portalDump.open = Math.min(1, portalDump.open + 0.10);
+    if(portalDump.open>=1) portalDump.phase='hold';
+  } else if(portalDump.phase==='hold'){
+    // give the riders a beat to clear the portal mouth before it shuts
+    if(portalDump.t>26) portalDump.phase='closing';
+  } else if(portalDump.phase==='closing'){
+    portalDump.open = Math.max(0, portalDump.open - 0.06);
+    if(portalDump.open<=0){ portalDump.active=false; portalDump.phase='idle'; }
+  }
+  // input is suppressed only briefly, until the riders are clearly out (~32 frames)
+  return portalDump.t < 32;
+}
+// Draws the entry portal in screen space for the current camera.
+function drawPortalDump(){
+  if(!portalDump.active && portalDump.open<=0) return;
+  const sx = portalDump.x - cameraX;
+  const sy = portalDump.y - (((typeof cameraY!=='undefined')?cameraY:0));
+  drawEscapePortal(sx, sy, 30, portalDump.open, performance.now()*0.004);
 }
 
 const FLAG = { x: ARENA_X1-24, y: FLOOR }; // escape flag at the far edge of the isolated arena
@@ -6031,12 +6079,23 @@ function loop(){
   let _steps = 0;
   // Drain whole steps; the sub-step remainder carries to next frame (no per-frame lurch)
   while(_stepAccum >= STEP_MS && _steps < MAX_STEPS){
+    // Entry portal dump: brief input lock while the riders are tossed out.
+    let _dumpLock=false;
+    if(portalDump.active && !levelPaused) _dumpLock = tickPortalDump();
+    let _kL,_kR,_kU,_kD,_kSp;
+    if(_dumpLock){
+      _kL=keys['ArrowLeft']; _kR=keys['ArrowRight']; _kU=keys['ArrowUp']; _kD=keys['ArrowDown']; _kSp=keys['Space'];
+      keys['ArrowLeft']=keys['ArrowRight']=keys['ArrowUp']=keys['ArrowDown']=keys['Space']=false;
+    }
     if(currentLevel===2) updateLevel2();
     else if(currentLevel===3) updateLevel3();
     else if(currentLevel===4) updateLevel4();
     else if(currentLevel===5) updateLevel5();
     else if(currentLevel===6) updateLevel6();
     else update();
+    if(_dumpLock){
+      keys['ArrowLeft']=_kL; keys['ArrowRight']=_kR; keys['ArrowUp']=_kU; keys['ArrowDown']=_kD; keys['Space']=_kSp;
+    }
     _stepAccum -= STEP_MS;
     _steps++;
   }
@@ -6181,6 +6240,7 @@ function loop(){
     // draw sawyer normally
     drawPlayer(sawyer);
   } else if(!bikeEscape.active && !victoryActive) {
+    if(portalDump.active) drawPortalDump();   // entry portal sits behind the riders
     if(ottoPower===2){ const v=otto.invincible===0||Math.floor(otto.invincible/5)%2===0; if(v) ottoAura(2); }
     drawPlayer(otto); drawPlayer(sawyer);
   }
@@ -11875,6 +11935,62 @@ function showLevelPopup(title, desc){
 }
 
 // =========================================================================
+//  22b. INTRO CUTSCENE — black → video → black, skippable, plays once on start
+// =========================================================================
+let introPlayed = false;
+function playIntroCutscene(onDone){
+  const vid   = document.getElementById('intro-cutscene');
+  const black = document.getElementById('intro-black');
+  const skip  = document.getElementById('intro-skip');
+  // If the video element/file is unavailable, just proceed.
+  if(!vid || !black){ onDone && onDone(); return; }
+
+  let finished = false;
+  const cleanup = ()=>{
+    try{ vid.pause(); }catch(e){}
+    vid.removeEventListener('ended', onEnded);
+    vid.removeEventListener('error', onErr);
+    skip.removeEventListener('click', doSkip);
+    window.removeEventListener('keydown', onKey, true);
+    vid.style.display='none'; black.style.display='none'; skip.style.display='none';
+    black.style.opacity='0';
+  };
+  const end = ()=>{ if(finished) return; finished=true;
+    // final black beat → fade out → done
+    black.style.transition='opacity .5s ease';
+    black.style.display='block'; black.style.opacity='1';
+    setTimeout(()=>{ cleanup(); onDone && onDone(); }, 520);
+  };
+  const onEnded = ()=> end();
+  const onErr   = ()=>{ cleanup(); onDone && onDone(); };
+  const doSkip  = ()=> end();
+  const onKey   = (e)=>{ if(e.key==='Escape'||e.key===' '||e.key==='Enter'){ e.preventDefault(); doSkip(); } };
+
+  // Beat 1: black in
+  black.style.transition='opacity .5s ease';
+  black.style.display='block';
+  // force reflow so the opacity transition runs
+  void black.offsetWidth;
+  black.style.opacity='1';
+
+  setTimeout(()=>{
+    // Beat 2: reveal & play video under the black, then fade black out
+    vid.style.display='block';
+    vid.muted = !( (typeof sfxOn!=='undefined' && sfxOn) || (typeof musicOn!=='undefined' && musicOn) );
+    vid.currentTime = 0;
+    skip.style.display='block';
+    vid.addEventListener('ended', onEnded);
+    vid.addEventListener('error', onErr);
+    skip.addEventListener('click', doSkip);
+    window.addEventListener('keydown', onKey, true);
+    const p = vid.play();
+    if(p && p.catch) p.catch(()=>{ /* autoplay blocked */ vid.muted=true; vid.play().catch(onErr); });
+    // fade the black beat away to expose the video (Beat 2 transition done)
+    requestAnimationFrame(()=>{ black.style.opacity='0'; });
+  }, 520);
+}
+
+// =========================================================================
 //  23. MENU & TITLE SCREEN
 // =========================================================================
 (function(){
@@ -12196,9 +12312,13 @@ function showLevelPopup(title, desc){
       mScreen.style.opacity='0';
       mScreen.style.pointerEvents='none';
       setTimeout(()=>{ mScreen.style.display='none'; }, 500);
-      restart(true);
-      setupHiDPI();
-      if(!gameRunning){ gameRunning=true; loop(); }
+      const launch=()=>{
+        restart(true);
+        setupHiDPI();
+        if(!gameRunning){ gameRunning=true; loop(); }
+      };
+      if(!introPlayed){ introPlayed=true; playIntroCutscene(launch); }
+      else { launch(); }
     }
   });
 
