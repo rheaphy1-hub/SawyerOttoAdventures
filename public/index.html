@@ -1028,7 +1028,7 @@ function drawArtifact(){
   ctx.restore();
   // ── Transponder sprite (fallback to a small glyph if not yet loaded) ──
   if(transponderImg.complete && transponderImg.naturalWidth){
-    const ih=40, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+    const ih=20, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
     ctx.save();
     ctx.shadowColor='rgba(140,200,255,'+(0.5+0.4*pulse)+')'; ctx.shadowBlur=14+pulse*8;
     ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
@@ -6024,7 +6024,7 @@ function drawL2Artifact(){
   // the transponder sprite (encased under ice until melted; fallback glyph pre-load)
   ctx.save(); ctx.translate(cx,cy);
   if(transponderImg.complete && transponderImg.naturalWidth){
-    const ih=38, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+    const ih=19, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
     if(l2Artifact.freed){ ctx.shadowColor='rgba(140,200,255,'+(0.5+0.4*pulse)+')'; ctx.shadowBlur=14+pulse*8; }
     ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
     ctx.drawImage(transponderImg, -iw/2, -ih/2+1, iw, ih);
