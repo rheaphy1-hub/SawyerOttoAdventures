@@ -3860,7 +3860,7 @@ function crabEase(kind,u){
 // frames with wider/taller trims (raised or wide claws) read as the claws extending
 // OUT, not as the whole crab resizing. Scale is uniform across every frame.
 const CRAB_REF_W=CRAB_CELLS[0][2], CRAB_REF_H=CRAB_CELLS[0][3];
-const CRAB_DISPLAY_H=150;                          // on-screen reference height
+const CRAB_DISPLAY_H=138;                          // on-screen reference height (idle); matches prior footprint
 const CRAB_SCALE=CRAB_DISPLAY_H/CRAB_REF_H;
 function crabInitAnim(b){ b.animName='idle'; b.animFrame=0; b.animAcc=0; b.prevFrame=0; b.xfade=0; b.xfadeCell=null; }
 function crabSetAnim(b,name){
@@ -6435,9 +6435,9 @@ let seaSwallow = 0;                 // 0 open beach → 1 fully closed-in storm 
 let l3Arena = [];
 function buildL3Arena(){
   l3Arena = [
-    { x:3300, baseX:3300, y:FLOOR-104, baseY:FLOOR-104, w:96, h:18, bob:18, bobSpeed:0.021, bobPhase:0.0, driftX:26, driftSpeed:0.012, driftPhase:0.4, dx:0, dy:0, hidden:true },
-    { x:3490, baseX:3490, y:FLOOR-150, baseY:FLOOR-150, w:78, h:18, bob:24, bobSpeed:0.026, bobPhase:1.9, driftX:20, driftSpeed:0.016, driftPhase:2.4, dx:0, dy:0, hidden:true },
-    { x:3650, baseX:3650, y:FLOOR-110, baseY:FLOOR-110, w:92, h:18, bob:20, bobSpeed:0.018, bobPhase:3.4, driftX:30, driftSpeed:0.010, driftPhase:4.1, dx:0, dy:0, hidden:true },
+    { x:3300, baseX:3300, y:FLOOR-176, baseY:FLOOR-176, w:96, h:18, bob:14, bobSpeed:0.021, bobPhase:0.0, driftX:26, driftSpeed:0.012, driftPhase:0.4, dx:0, dy:0, hidden:true },
+    { x:3490, baseX:3490, y:FLOOR-214, baseY:FLOOR-214, w:78, h:18, bob:16, bobSpeed:0.026, bobPhase:1.9, driftX:20, driftSpeed:0.016, driftPhase:2.4, dx:0, dy:0, hidden:true },
+    { x:3650, baseX:3650, y:FLOOR-180, baseY:FLOOR-180, w:92, h:18, bob:14, bobSpeed:0.018, bobPhase:3.4, driftX:30, driftSpeed:0.010, driftPhase:4.1, dx:0, dy:0, hidden:true },
   ];
   seaSwallow = 0;
   l3BossEnrage = 0;
@@ -7510,13 +7510,10 @@ function updateLevel3(){
   // Update wave hazard
   updateL3Waves(s);
 
-  // Environmental swallow: across the empty approach run the sky darkens and sea
-  // spray closes in, isolating the arena (themed equivalent of L1 sandwall / L2 whiteout).
+  // Environmental swallow DISABLED — the slate veil was unwanted. Keep at 0 so the
+  // arena reads clean; drawL3SeaSwallow early-returns. Restore the ramp to re-enable.
   {
-    const target = (kingCrab && kingCrab.alive)
-      ? Math.max(0, Math.min(1, (s.x - L3_GAP_START) / (L3_ARENA_X0 - L3_GAP_START)))
-      : 0;
-    seaSwallow += (target - seaSwallow) * 0.06;
+    seaSwallow = 0;
   }
 
   // Update baby bottles
