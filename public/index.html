@@ -200,6 +200,46 @@
   .theme-haus   { --neon:#7CFF8A; --neon-soft:rgba(124,255,138,0.14); }
   .theme-space  { --neon:#FF6BD6; --neon-soft:rgba(255,107,214,0.15); }
 
+  /* ===== Leaderboard name-entry — reuses neon-sign vibe (space hue) ===== */
+  #name-entry{
+    position:fixed; inset:0; z-index:9999; display:none;
+    align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, rgba(4,3,8,0.42) 0%, rgba(4,3,8,0.78) 100%);
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+  }
+  #name-entry .ne-total{
+    font-size:15px; font-weight:800; letter-spacing:1px; margin:2px 0 10px;
+    color:var(--neon); text-shadow:0 0 9px var(--neon);
+  }
+  #name-entry .ne-prompt{
+    font-size:11px; line-height:1.5; color:rgba(232,230,236,0.74); margin-bottom:10px;
+  }
+  #ne-input{
+    width:100%; box-sizing:border-box; margin-bottom:6px;
+    padding:10px 12px; text-align:center;
+    font-size:15px; font-weight:700; letter-spacing:1px;
+    color:#fff; background:rgba(8,7,12,0.6);
+    border:1.5px solid var(--neon); border-radius:7px; outline:none;
+    text-shadow:0 0 6px var(--neon);
+    box-shadow:0 0 10px -3px var(--neon), inset 0 0 12px -6px var(--neon);
+    transition:box-shadow .2s ease;
+  }
+  #ne-input::placeholder{ color:rgba(232,230,236,0.4); text-shadow:none; font-weight:600; letter-spacing:0.5px; }
+  #ne-input:focus{ box-shadow:0 0 16px -2px var(--neon), inset 0 0 14px -5px var(--neon); }
+  #name-entry .ne-hint{ font-size:10px; color:rgba(232,230,236,0.5); margin-bottom:14px; }
+  #name-entry .ne-row{ display:flex; gap:10px; justify-content:center; }
+  #name-entry .ne-btn{
+    flex:1; padding:9px 0; cursor:pointer; border-radius:6px;
+    font-size:13px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+    color:var(--neon); background:transparent;
+    border:1.5px solid var(--neon); text-shadow:0 0 6px var(--neon);
+    box-shadow:0 0 10px -2px var(--neon), inset 0 0 10px -4px var(--neon);
+    transition:all .2s ease;
+  }
+  #name-entry .ne-btn:hover{ background:var(--neon-soft); box-shadow:0 0 16px var(--neon), inset 0 0 14px -4px var(--neon); transform:translateY(-1px); }
+  #name-entry .ne-btn:active{ transform:translateY(0); }
+  #name-entry .ne-btn.ne-skip{ opacity:0.72; }
+
   /* ===== MENU SCREEN ===== */
   .menu-screen{
     position:fixed; inset:0; z-index:500;
@@ -318,20 +358,19 @@
     <button id="restart-overlay-btn" onclick="restartCurrentLevel()">&#8635; Play Again</button>
   </div>
 
-  <div id="name-entry" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(6,4,18,0.82);align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;">
-    <div style="background:linear-gradient(160deg,#1a1030,#2a1440);border:2px solid #9B6BFF;border-radius:16px;padding:26px 28px;max-width:340px;width:86%;text-align:center;box-shadow:0 18px 60px rgba(0,0,0,0.6);">
-      <div style="font-size:26px;font-weight:900;color:#FFD86B;text-shadow:0 2px 8px rgba(255,160,40,0.5);">YOU WON!</div>
-      <div id="ne-total" style="margin-top:6px;font-size:16px;font-weight:700;color:#7CFFC4;">Total Score: 0</div>
-      <div style="margin-top:14px;font-size:13px;color:rgba(255,255,255,0.82);">Add your name to the global leaderboard:</div>
-      <input id="ne-input" type="text" maxlength="16" placeholder="Enter name (or leave blank)" autocomplete="off"
-        style="margin-top:10px;width:100%;box-sizing:border-box;padding:10px 12px;border-radius:9px;border:1.5px solid #9B6BFF;background:#120c26;color:#fff;font-size:15px;text-align:center;outline:none;"
+  <div id="name-entry">
+    <div class="popup-content theme-space" style="width:min(86vw,320px);">
+      <div class="popup-badge">🌌</div>
+      <div class="popup-kicker">All Six Worlds Cleared</div>
+      <h2 style="font-size:clamp(20px,5.5vw,28px);">YOU WON!</h2>
+      <div id="ne-total" class="ne-total">TOTAL SCORE: 0</div>
+      <div class="ne-prompt">Add your name to the global leaderboard</div>
+      <input id="ne-input" type="text" maxlength="16" placeholder="ENTER NAME" autocomplete="off"
         onkeydown="if(event.key==='Enter'){finishNameEntry(true);}" />
-      <div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.5);">Blank = a fun random name</div>
-      <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;">
-        <button onclick="finishNameEntry(true)"
-          style="flex:1;padding:11px 0;border:none;border-radius:9px;cursor:pointer;font-weight:800;font-size:14px;color:#1a0f04;background:linear-gradient(180deg,#FFE08A,#FF9A2E);">SUBMIT</button>
-        <button onclick="finishNameEntry(false)"
-          style="flex:1;padding:11px 0;border:1.5px solid rgba(155,107,255,0.6);border-radius:9px;cursor:pointer;font-weight:700;font-size:14px;color:#cdbcff;background:transparent;">SKIP</button>
+      <div class="ne-hint">Leave blank for a fun random name</div>
+      <div class="ne-row">
+        <button class="ne-btn" onclick="finishNameEntry(true)">Submit</button>
+        <button class="ne-btn ne-skip" onclick="finishNameEntry(false)">Skip</button>
       </div>
     </div>
   </div>
@@ -883,7 +922,7 @@ function startNameEntry(){
   const ov=document.getElementById('name-entry'); if(!ov) return;
   const fsEl=document.fullscreenElement||document.webkitFullscreenElement;
   const host=fsEl||document.body; if(ov.parentElement!==host) host.appendChild(ov);
-  document.getElementById('ne-total').textContent='Total Score: '+score;
+  document.getElementById('ne-total').textContent='TOTAL SCORE: '+score;
   const inp=document.getElementById('ne-input'); inp.value='';
   ov.style.display='flex'; setTimeout(()=>inp.focus(),50);
 }
@@ -1025,11 +1064,13 @@ const keys = {};
 //  04. INPUT  (keyboard + on-screen touch controls)
 // =========================================================================
 document.addEventListener('keydown', e => {
+  // While the leaderboard name box is open, let the input handle typing.
+  if (nameEntryActive || (e.target && e.target.id === 'ne-input')) return;
   keys[e.code] = true;
   if (['Space','ArrowUp','ArrowLeft','ArrowRight','ArrowDown'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR' && (gameOver || won)) restartCurrentLevel();
 });
-document.addEventListener('keyup', e => { keys[e.code] = false; });
+document.addEventListener('keyup', e => { if (e.target && e.target.id === 'ne-input') return; keys[e.code] = false; });
 // ---- Touch controls: drive the same keys{} state ----
 (function(){
   const tc = document.getElementById('touch-controls');
