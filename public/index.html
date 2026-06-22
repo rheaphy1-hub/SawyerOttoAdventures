@@ -3831,7 +3831,7 @@ function drawYetiSprite(b,bx,by,flash){
 const CRAB_ATLAS = new Image(); let crabReady=false;
 CRAB_ATLAS.onload=()=>{crabReady=true;};
 CRAB_ATLAS.src='assets/crab/crab_atlas.webp';
-const CRAB_FRAMES={"idle": [[27,56,367,236],[425,57,416,235],[853,44,404,248],[1289,56,375,236],[1692,56,413,236],[2137,56,367,236]], "walk": [[27,351,367,236],[425,351,416,236],[859,333,391,254],[1302,332,349,255],[1698,327,401,260],[2137,351,367,236]], "raise": [[6,606,410,276],[457,602,351,280],[884,593,342,289],[1300,623,354,259]], "lunge": [[1720,627,358,255],[2114,623,414,259],[35,915,352,262],[450,931,365,246]], "wide": [[884,893,342,284],[1307,892,340,285],[1727,892,343,285]], "spit": [[2133,941,376,236],[23,1237,375,235],[446,1237,374,235]], "death": [[868,1240,374,232],[1308,1206,338,266],[1718,1239,362,233]]};
+const CRAB_FRAMES={"idle": [[27,52,367,236],[425,53,416,235],[853,40,404,248],[1289,52,375,236],[1692,52,413,236],[2137,52,367,236]], "walk": [[23,343,376,236],[445,343,375,236],[867,343,376,236],[1289,344,375,235],[1712,344,374,235],[2133,344,375,235]], "charge": [[22,633,377,237],[445,631,376,239],[866,632,377,238],[1288,633,378,237]], "raise": [[1721,603,355,267],[2116,594,410,276],[35,881,351,280],[456,902,354,259]], "wide": [[884,877,342,284],[1307,876,340,285],[1727,876,343,285]], "spit": [[2133,924,375,237],[23,1215,375,237]], "death": [[450,1206,365,246],[848,1193,414,259],[1298,1197,358,255],[1712,1220,374,232]]};
 // States map onto frame subsets of the packed rows. Krawley is front-facing;
 // direction handled by horizontal flip (like the Yeti).
 //  idle  — front breathing crouch, slow loop
@@ -3847,9 +3847,9 @@ const CRAB_ANIM={
   raise: {row:'raise', frames:[0,1,2],         fps:12, loop:false, next:'idle', ease:'inout'},
   wide:  {row:'wide',  frames:[0,1,2,2,1],     fps:11, loop:false, next:'idle', ease:'inout'},
   slam:  {row:'raise', frames:[1,2,3,3,1],     fps:15, loop:false, next:'idle', ease:'snap' },
-  charge:{row:'lunge', frames:[0,1,2,3],       fps:14, loop:true,  ease:'snap'  },
-  spit:  {row:'spit',  frames:[0,1,2,2],       fps:13, loop:false, next:'idle', ease:'snap' },
-  death: {row:'death', frames:[0,1,2],         fps:8,  loop:false, hold:true,   ease:'inout'}
+  charge:{row:'charge',frames:[0,1,2,3],       fps:14, loop:true,  ease:'snap'  },
+  spit:  {row:'spit',  frames:[0,1,1,0],       fps:13, loop:false, next:'idle', ease:'snap' },
+  death: {row:'death', frames:[0,1,2,3],       fps:8,  loop:false, hold:true,   ease:'inout'}
 };
 const CRAB_XFADE=0.6;
 function crabEase(kind,u){
@@ -3900,16 +3900,6 @@ function drawCrabSprite(b,bx,by,flash){
   const enr=(typeof globalThis.l3BossEnrage!=='undefined')?globalThis.l3BossEnrage:0;
   const dwApprox=fr[2]*CRAB_SCALE, dhApprox=fr[3]*CRAB_SCALE;
   const dyA=baseGroundY-dhApprox;
-  // grounding shade so the dark shell reads against the bright beach/sea grade
-  { const sX=cx, sY=dyA+dhApprox*0.62;
-    const shade=0.22+0.10*enr;
-    const sg=ctx.createRadialGradient(sX,sY,dwApprox*0.16,sX,sY,dwApprox*0.72);
-    sg.addColorStop(0,'rgba(8,20,16,'+shade+')');
-    sg.addColorStop(0.6,'rgba(10,24,20,'+(shade*0.55)+')');
-    sg.addColorStop(1,'rgba(10,24,20,0)');
-    ctx.save(); ctx.fillStyle=sg; ctx.beginPath();
-    ctx.ellipse(sX,sY,dwApprox*0.72,dhApprox*0.5,0,0,7); ctx.fill(); ctx.restore();
-  }
   // sickly brine aura (brightens in phase 2 as the world bruises)
   if(b.animName!=='death'){
     const aX=cx, aY=dyA+dhApprox*0.5, pulse=0.85+0.15*Math.sin(t*2.2);
@@ -7184,13 +7174,16 @@ function l3WaveProgress(px){
 }
 
 function updateL3Waves(s){
-  // No surf once the crab is down, or inside the boss arena (kept dry for the fight)
-  if((kingCrab && !kingCrab.alive) || (kingCrab && kingCrab.active) || cutsceneActive){
+  // No surf once the crab is down, inside the boss arena, during the cutscene, or
+  // once the player has crossed the boss gate (clears any wave still traveling in).
+  if((kingCrab && !kingCrab.alive) || (kingCrab && kingCrab.active) || cutsceneActive || s.x > L3_BOSS_GATE){
     l3Waves = [];
     return;
   }
   l3WaveTimer--;
-  if(l3WaveTimer <= 0){
+  // Surf belongs to the beach run only — never spawn once the player reaches the
+  // empty boss-approach (past X1). Stops waves traveling into the cutscene/fight.
+  if(l3WaveTimer <= 0 && s.x <= L3_WAVE_X1){
     const prog = l3WaveProgress(s.x);
     const eased = prog*prog*(3-2*prog);                 // smoothstep growth
     const h = L3_WAVE_H_MIN + (L3_WAVE_H_MAX - L3_WAVE_H_MIN) * eased;
