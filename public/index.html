@@ -5484,6 +5484,8 @@ function restart(resetLevel){
   const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'SANDY SHORES',4:'UNDER THE SEA',5:'SPOOKY HAUS',6:'OUTER SPACE'};
   showLevelPopup(popupTitles[currentLevel],'');
 }
+const STEP_MS=1000/60, MAX_STEPS=4, MAX_FRAME_MS=STEP_MS*MAX_STEPS;
+let _lastFrameT=0;
 function loop(){
   if(gamePaused){
     // Draw a simple pause overlay so the screen isn't frozen with no feedback
@@ -5499,14 +5501,29 @@ function loop(){
     ctx.fillText('Click "Resume" to continue',W/2,H/2+24);
     ctx.restore();
     requestAnimationFrame(loop);
+    _lastFrameT=0; // resuming next real frame shouldn't dump catch-up steps
     return;
   }
-  if(currentLevel===2) updateLevel2();
-  else if(currentLevel===3) updateLevel3();
-  else if(currentLevel===4) updateLevel4();
-  else if(currentLevel===5) updateLevel5();
-  else if(currentLevel===6) updateLevel6();
-  else update();
+  // --- Fixed-timestep accumulator (frame-rate independent) ---
+  // Physics is authored for 60Hz (one step = 1/60s). On displays/browsers that
+  // deliver rAF below 60 (high-refresh throttling, battery saver, heavy frames),
+  // a single step per callback runs everything in slow motion. Run catch-up
+  // steps so wall-clock speed stays correct; draw still happens once per frame.
+  const _now = performance.now();
+  if(_lastFrameT===0) _lastFrameT = _now - STEP_MS;
+  let _accum = (_now - _lastFrameT);
+  _lastFrameT = _now;
+  if(_accum > MAX_FRAME_MS) _accum = MAX_FRAME_MS; // clamp after stalls/tab-switch
+  let _steps = Math.max(1, Math.round(_accum / STEP_MS));
+  if(_steps > MAX_STEPS) _steps = MAX_STEPS;
+  for(let _s=0; _s<_steps; _s++){
+    if(currentLevel===2) updateLevel2();
+    else if(currentLevel===3) updateLevel3();
+    else if(currentLevel===4) updateLevel4();
+    else if(currentLevel===5) updateLevel5();
+    else if(currentLevel===6) updateLevel6();
+    else update();
+  }
   
   // Update audio crossfading
   audioManager.update();
@@ -11423,8 +11440,7 @@ function showLevelPopup(title, desc){
       setTimeout(()=>{ mScreen.style.display='none'; }, 500);
       restart(true);
       setupHiDPI();
-      gameRunning=true;
-      loop();
+      if(!gameRunning){ gameRunning=true; loop(); }
     }
   });
 
