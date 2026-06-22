@@ -3389,6 +3389,125 @@ function drawDrifter(b,bx,by,flash){
   }
 }
 
+// ── YETI SPRITE ATLAS (Level 2 boss) ─────────────────────────────────────────
+// Hand-drawn 24-frame atlas; same playback layer as the Drifter (tween + xfade +
+// per-state ease + procedural motion). Art untouched — smoothness added in code.
+const YETI_ATLAS = new Image(); let yetiReady=false;
+YETI_ATLAS.onload=()=>{yetiReady=true;};
+YETI_ATLAS.src='assets/yeti/yeti_atlas.webp';
+// [sx,sy,sw,sh] per packed frame (bottom-center anchored within each cell)
+const YETI_FRAMES={"walk": [[46,41,381,337],[516,42,390,336],[1007,43,355,335],[1466,42,386,336],[1943,41,379,337],[2422,42,369,336]], "idle": [[66,394,341,370],[542,394,338,370],[1026,410,317,354],[1513,445,292,319],[1945,453,375,311],[2424,449,365,315]], "attack": [[14,826,445,324],[482,823,458,327],[979,826,411,324],[1443,825,432,325],[1916,824,434,326],[2415,834,384,316]], "death": [[77,1186,320,350],[548,1186,326,350],[1015,1217,340,319],[1488,1229,341,307],[1912,1280,441,256],[2380,1320,454,216]]};
+// Animation states map onto frame subsets of the four packed rows:
+//  idle  — hunched menace (death row 0..3, the standing crouch poses), slow breathing loop
+//  roar  — arms-raised bellow (idle row 0..2) → the lunge telegraph
+//  charge— fast lateral stride (walk row, all 6) → the actual lunge
+//  attack— ice-swing wind-up→arc→recover (attack row, all 6) → the boulder spit
+//  death — collapse (death row 2..5)
+const YETI_ANIM={
+  idle:  {row:'death',  frames:[0,1,0,1,2,3], fps:6,  loop:true,  ease:'sine'  },
+  roar:  {row:'idle',   frames:[0,1,2,2,1],   fps:11, loop:false, next:'idle', ease:'inout'},
+  charge:{row:'walk',   frames:[0,1,2,3,4,5], fps:15, loop:true,  ease:'snap'  },
+  attack:{row:'attack', frames:[0,1,2,3,4,5], fps:16, loop:false, next:'idle', ease:'snap' },
+  death: {row:'death',  frames:[2,3,4,5],     fps:9,  loop:false, hold:true,   ease:'inout'}
+};
+const YETI_XFADE=0.6;
+function yetiEase(kind,u){
+  if(kind==='sine')  return 0.5-0.5*Math.cos(u*Math.PI);
+  if(kind==='inout') return u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+  if(kind==='snap')  return 1-Math.pow(1-u,3);
+  return u;
+}
+const YETI_DISPLAY_H=150;                          // on-screen height of idle pose
+const YETI_SCALE=YETI_DISPLAY_H/YETI_FRAMES.idle[0][3];
+function yetiInitAnim(b){ b.animName='idle'; b.animFrame=0; b.animAcc=0; b.prevFrame=0; b.xfade=0; b.xfadeRow=null; b.xfadeFrame=0; }
+function yetiSetAnim(b,name){
+  if(b.animName===name)return;
+  const cur=YETI_ANIM[b.animName];
+  b.xfadeRow=cur?cur.row:null;
+  b.xfadeFrame=cur?(cur.frames[Math.min(b.animFrame,cur.frames.length-1)]):0;
+  b.xfade=YETI_XFADE;
+  b.animName=name; b.animFrame=0; b.animAcc=0; b.prevFrame=0;
+}
+function yetiAdvance(b){
+  const a=YETI_ANIM[b.animName]; if(!a)return;
+  const n=a.frames.length;
+  if(b.xfade>0){ b.xfade-=a.fps/60; if(b.xfade<0)b.xfade=0; }
+  b.animAcc+=a.fps/60;
+  while(b.animAcc>=1){
+    b.animAcc-=1; b.prevFrame=b.animFrame; b.animFrame++;
+    if(b.animFrame>=n){
+      if(a.loop){ b.animFrame=0; }
+      else if(a.hold){ b.animFrame=n-1; b.animAcc=0; b.prevFrame=n-1; break; }
+      else { yetiSetAnim(b,a.next||'idle'); break; }
+    }
+  }
+}
+// Resolve a state's logical frame index to the packed atlas frame rect.
+function yetiRect(animName,logicalIdx){
+  const a=YETI_ANIM[animName]||YETI_ANIM.idle;
+  const arr=YETI_FRAMES[a.row];
+  const fi=a.frames[Math.min(logicalIdx,a.frames.length-1)];
+  return arr[Math.min(fi,arr.length-1)];
+}
+function drawYetiSprite(b,bx,by,flash){
+  const a=YETI_ANIM[b.animName]||YETI_ANIM.idle;
+  const fr=yetiRect(b.animName,b.animFrame);
+  if(!yetiReady||!fr) return false;                // signal caller to use vector fallback
+  const cx=bx+b.w/2;                               // bottom-center pivot
+  const baseGroundY=by+b.h;
+  const t=performance.now()*0.001;
+  const enr=(typeof l2BossEnrage!=='undefined')?l2BossEnrage:0;
+  const dwApprox=fr[2]*YETI_SCALE, dhApprox=fr[3]*YETI_SCALE;
+  const dyA=baseGroundY-dhApprox;
+  // --- FROST AURA behind the figure (brightens in phase 2 as the world bruises) ---
+  if(b.animName!=='death'){
+    const aX=cx, aY=dyA+dhApprox*0.5, pulse=0.85+0.15*Math.sin(t*2.2);
+    const roaring=b.animName==='roar';
+    const boost=1+enr*1.3+(roaring?0.4:0);
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    const halo=ctx.createRadialGradient(aX,aY,dwApprox*0.15,aX,aY,dwApprox*(0.92+enr*0.25)*pulse);
+    halo.addColorStop(0,'rgba(150,210,255,'+((0.14+enr*0.05)*boost)+')');
+    halo.addColorStop(0.55,'rgba(120,170,255,'+(0.05*boost)+')');
+    halo.addColorStop(1,'rgba(120,170,255,0)');
+    ctx.fillStyle=halo; ctx.beginPath(); ctx.ellipse(aX,aY,dwApprox*0.92*pulse,dhApprox*0.6*pulse,0,0,7); ctx.fill();
+    ctx.restore();
+  }
+  // (1) eased inter-frame fraction
+  const fracRaw=Math.max(0,Math.min(1,b.animAcc||0));
+  const frac=yetiEase(a.ease,fracRaw);
+  const curIdx=b.animFrame, prevIdx=(b.prevFrame!=null?b.prevFrame:curIdx);
+  // (2) procedural motion the discrete frames can't supply
+  let bobY=0, bobX=0, lean=0, scaleY=1;
+  if(b.animName==='idle'){ bobY=Math.sin(t*1.5)*2.4; lean=Math.sin(t*0.8)*0.012; scaleY=1+Math.sin(t*1.5)*0.014; }
+  else if(b.animName==='roar'){ const u=b.animFrame/Math.max(1,a.frames.length-1); bobY=-Math.sin(u*Math.PI)*4; scaleY=1+Math.sin(u*Math.PI)*0.03; }
+  else if(b.animName==='charge'){ bobY=Math.abs(Math.sin(t*9))*-3; }
+  else if(b.animName==='attack'){ const e=Math.sin(((curIdx+fracRaw)/a.frames.length)*Math.PI); bobX=(b.facing>0?-1:1)*e*9; }
+  if(flash) ctx.filter='brightness(2.4) saturate(0.4)';
+  const blit=(rect,alpha)=>{
+    if(alpha<=0.001||!rect)return;
+    const w=rect[2]*YETI_SCALE, h=rect[3]*YETI_SCALE;
+    const ddx=cx-w/2+bobX, ddy=baseGroundY-h+bobY;
+    ctx.save(); ctx.globalAlpha*=alpha;
+    if(lean){ ctx.translate(cx,baseGroundY); ctx.rotate(lean); ctx.translate(-cx,-baseGroundY); }
+    if(scaleY!==1){ ctx.translate(cx,baseGroundY); ctx.scale(1,scaleY); ctx.translate(-cx,-baseGroundY); }
+    ctx.drawImage(YETI_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx,ddy,w,h);
+    ctx.restore();
+  };
+  // (3) cross-dissolve on row switch
+  if(b.xfade>0 && b.xfadeRow && YETI_FRAMES[b.xfadeRow]){
+    const xa=Math.max(0,Math.min(1,b.xfade/YETI_XFADE));
+    const oldArr=YETI_FRAMES[b.xfadeRow];
+    const of=oldArr[Math.min(b.xfadeFrame,oldArr.length-1)];
+    blit(of, xa);
+    blit(yetiRect(b.animName,curIdx), 1-xa);
+  } else {
+    blit(yetiRect(b.animName,prevIdx), 1-frac);
+    blit(yetiRect(b.animName,curIdx),  frac);
+  }
+  ctx.filter='none';
+  return true;
+}
+
 function drawBoss(){
   if (!boss) return;
   if (currentLevel===1 && !artifactCollected) return;   // The Drifter does not appear until the artifact is taken
@@ -5505,8 +5624,11 @@ function buildYeti(){
     cryTimer:0, // post-death cry animation
     roarTell:0, // wind-up telegraph before lunge/special
     stalTimer:90, // anti-camp stalactite cadence
-    spreadShot:false
+    spreadShot:false,
+    animName:'idle', animFrame:0, animAcc:0,
+    prevFrame:0, xfade:0, xfadeRow:null, xfadeFrame:0
   };
+  yetiInitAnim(yeti);
 }
 
 // Snowflake particles for blizzard bg
@@ -6108,7 +6230,7 @@ function updateLevel2(){
           for(let i=0;i<10;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*4,vy:-1-Math.random()*2.5,life:22,maxLife:22,type:'snow',color:'#EAF4FF'});
           for(let i=0;i<6;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*3,vy:-1-Math.random()*2,life:18,maxLife:18,type:'spark',color:i%2?'#FF8A2A':'#FFD27A'});
           if(yeti.hp===9&&yeti.currentPhase===1){yeti.currentPhase=2;shakeIntensity=12;SFX.rattle();}
-          if(yeti.hp<=0){yeti.alive=false;yeti.dieTimer=120;yeti.cryTimer=120;score+=750;shakeIntensity=16;SFX.bossDie();
+          if(yeti.hp<=0){yeti.alive=false;yeti.dieTimer=120;yeti.cryTimer=120;score+=750;shakeIntensity=16;SFX.bossDie();yetiSetAnim(yeti,'death');
             if(l2Portal.state==='closed'){ l2Portal.state='opening'; SFX.win(); }
             // arena shatters: glacier ledges burst and vanish as the Yeti falls
             l2Arena.active=false; l2Arena.deathBurst=24;
@@ -6145,6 +6267,7 @@ function updateLevel2(){
     }
     if(yeti.active){
       yeti.phase+=0.06;
+      yetiAdvance(yeti);
       yeti.facing=s.x<yeti.x?-1:1;
       const spd=yeti.currentPhase===2?1.7:1.1;
       yeti.x+=yeti.vx;
@@ -6153,8 +6276,10 @@ function updateLevel2(){
       // Lunge — telegraphed with a roar wind-up (roarTell) before the charge fires
       if(yeti.roarTell>0){
         yeti.roarTell--;
+        if(yeti.animName!=='roar') yetiSetAnim(yeti,'roar');   // bellow telegraph
         if(yeti.roarTell===0){
           yeti.vx=spd*2.8*yeti.facing;
+          yetiSetAnim(yeti,'charge');                          // explode into the lunge stride
           SFX.rattle();
           if(yeti.currentPhase===2){
             shockwaves.push({x:yeti.x+yeti.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:yeti.facing});
@@ -6166,13 +6291,18 @@ function updateLevel2(){
           yeti.roarTell = yeti.currentPhase===2 ? 22 : 30;   // wind-up beat the player can read
           yeti.lungeTimer = 140+Math.random()*80;
           SFX.bossSpit();
-        } else if(Math.abs(yeti.vx)>spd) yeti.vx*=0.95;
+        } else {
+          if(Math.abs(yeti.vx)>spd) yeti.vx*=0.95;
+          // charge stride decays back to a menacing idle once momentum bleeds off
+          if(yeti.animName==='charge' && Math.abs(yeti.vx)<=spd*1.05) yetiSetAnim(yeti,'idle');
+        }
       }
 
       // Ice boulder spit — phase 2 fires spread of 3
       yeti.spitTimer--;
       if(yeti.spitTimer<=0){
         yeti.spitTimer=yeti.currentPhase===2?45:65;
+        if(yeti.animName==='idle') yetiSetAnim(yeti,'attack');   // ice-swing hurl
         const sx=yeti.x+yeti.w/2, sy=yeti.y+20;
         const dx=(s.x+s.w/2)-sx, dy=(s.y+s.h/2)-sy;
         const d=Math.hypot(dx,dy)||1;
@@ -7617,100 +7747,28 @@ function drawYeti(){
   if(yeti.alive && !yeti.active && !cutsceneActive) return;   // dormant until the artifact unlocks the reveal
   const bx=yeti.x-cameraX,by=yeti.y;
   if(bx+yeti.w<-20||bx>W+20)return;
-  // enrage aura — brightens the silhouette as the world darkens (phase 2)
-  { const enr = (typeof l2BossEnrage!=='undefined') ? l2BossEnrage : 0;
-    if(enr>0.02 && yeti.alive){ ctx.save(); ctx.globalCompositeOperation='lighter';
-      const ax=bx+yeti.w/2, ay=by+yeti.h*0.5, pr2=0.6+0.4*Math.sin(yeti.phase*1.4);
-      const ag=ctx.createRadialGradient(ax,ay,8,ax,ay,yeti.w*0.85);
-      ag.addColorStop(0,'rgba(150,210,255,'+(0.30*enr*pr2)+')'); ag.addColorStop(0.6,'rgba(120,150,255,'+(0.14*enr)+')'); ag.addColorStop(1,'rgba(120,150,255,0)');
-      ctx.fillStyle=ag; ctx.beginPath(); ctx.arc(ax,ay,yeti.w*0.85,0,7); ctx.fill(); ctx.restore(); } }
   ctx.save();
   const dying=!yeti.alive;
-  if(dying){ctx.globalAlpha=Math.max(0,yeti.dieTimer/120);ctx.translate(0,(120-yeti.dieTimer)*0.3);}
+  // gentle alpha fade only at the very end of the death hold (the death anim collapses him)
+  if(dying){ ctx.globalAlpha=Math.max(0,Math.min(1,yeti.dieTimer/30)); }
   const flash=yeti.hitFlash>0&&Math.floor(yeti.hitFlash/2)%2===0;
   const phase2=yeti.currentPhase===2;
-  const bodyCol=flash?'#FFE0FF':(phase2?'#AEB7C8':'#C2CAD8');
-  const darkCol='#5B6478';
-  if(yeti.facing>0){ctx.translate(bx+yeti.w/2,0);ctx.scale(-1,1);ctx.translate(-(bx+yeti.w/2),0);}
-  const sway=Math.sin(yeti.phase)*5;
-  const cx=bx+58;
-
-  // gnarled black-frostbite feet/claws
-  ctx.fillStyle='#1C232E';
-  ctx.beginPath();ctx.ellipse(bx+30,by+yeti.h,20,11,0,0,7);ctx.fill();
-  ctx.beginPath();ctx.ellipse(bx+75,by+yeti.h,20,11,0,0,7);ctx.fill();
-  ctx.strokeStyle='#0F141B';ctx.lineWidth=2;ctx.lineCap='round';
-  for(let k=0;k<3;k++){ctx.beginPath();ctx.moveTo(bx+22+k*7,by+yeti.h+6);ctx.lineTo(bx+20+k*7,by+yeti.h+12);ctx.stroke();}
-  for(let k=0;k<3;k++){ctx.beginPath();ctx.moveTo(bx+67+k*7,by+yeti.h+6);ctx.lineTo(bx+65+k*7,by+yeti.h+12);ctx.stroke();}
-
-  // gaunt body
-  ctx.fillStyle=bodyCol;ctx.beginPath();ctx.ellipse(cx,by+85,38,50,0,0,7);ctx.fill();
-  if(!flash){
-    ctx.save();ctx.beginPath();ctx.ellipse(cx,by+85,38,50,0,0,7);ctx.clip();
-    texHatch(bx+18,by+38,80,94, 100,'rgba(70,82,105,0.5)', yeti.x*0.5, 7, 1.5);
-    texHatch(bx+18,by+38,80,94, 50,'rgba(235,242,255,0.45)', yeti.x*0.5+30, 6, 1.6);
-    // visible ribs
-    ctx.strokeStyle='rgba(35,45,60,0.6)';ctx.lineWidth=2;
-    for(let i=0;i<4;i++){ctx.beginPath();ctx.arc(cx,by+70+i*9,24,Math.PI*0.2,Math.PI*0.8);ctx.stroke();}
-    ctx.restore();
+  // Atlas faces RIGHT; flip when the Yeti faces left (its default toward the player).
+  if(yeti.facing<0){ ctx.translate(bx+yeti.w/2,0); ctx.scale(-1,1); ctx.translate(-(bx+yeti.w/2),0); }
+  const drewSprite = drawYetiSprite(yeti,bx,by,flash);
+  if(!drewSprite){
+    // ---- VECTOR FALLBACK (atlas not yet loaded): simple frost wraith silhouette ----
+    const bodyCol=flash?'#FFE0FF':(phase2?'#AEB7C8':'#C2CAD8');
+    const cx=bx+yeti.w/2;
+    ctx.fillStyle='#1C232E';
+    ctx.beginPath();ctx.ellipse(bx+30,by+yeti.h,20,11,0,0,7);ctx.fill();
+    ctx.beginPath();ctx.ellipse(bx+75,by+yeti.h,20,11,0,0,7);ctx.fill();
+    ctx.fillStyle=bodyCol;ctx.beginPath();ctx.ellipse(cx,by+85,38,50,0,0,7);ctx.fill();
+    ctx.beginPath();ctx.ellipse(cx,by+34,32,30,0,0,7);ctx.fill();
+    ctx.fillStyle='rgba(120,205,255,0.85)';
+    ctx.beginPath();ctx.arc(bx+44,by+35,4,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc(bx+72,by+35,4,0,7);ctx.fill();
   }
-  // sunken belly hollow
-  ctx.fillStyle='rgba(30,40,55,0.35)';ctx.beginPath();ctx.ellipse(cx,by+92,16,22,0,0,7);ctx.fill();
-
-  // long gaunt arms with black claws
-  ctx.fillStyle=bodyCol;
-  ctx.beginPath();ctx.ellipse(bx+13,by+68+sway,13,11,0.7,0,7);ctx.fill();
-  ctx.beginPath();ctx.ellipse(bx+103,by+68-sway,13,11,-0.7,0,7);ctx.fill();
-  ctx.fillStyle='#161C26';
-  for(let k=0;k<3;k++){ctx.beginPath();ctx.moveTo(bx+4+k*4,by+76+sway);ctx.lineTo(bx+2+k*4,by+84+sway);ctx.lineTo(bx+6+k*4,by+82+sway);ctx.closePath();ctx.fill();}
-  for(let k=0;k<3;k++){ctx.beginPath();ctx.moveTo(bx+104+k*4,by+76-sway);ctx.lineTo(bx+102+k*4,by+84-sway);ctx.lineTo(bx+106+k*4,by+82-sway);ctx.closePath();ctx.fill();}
-
-  // head
-  ctx.fillStyle=bodyCol;ctx.beginPath();ctx.ellipse(cx,by+34,32,30,0,0,7);ctx.fill();
-  if(!flash){
-    ctx.save();ctx.beginPath();ctx.ellipse(cx,by+34,32,30,0,0,7);ctx.clip();
-    texHatch(bx+28,by+6,60,40, 44,'rgba(70,82,105,0.45)', yeti.x*0.7+9, 6, 1.5);
-    ctx.restore();
-  }
-  // antler-horns
-  ctx.strokeStyle='#3A4150';ctx.lineWidth=3.5;ctx.lineCap='round';
-  ctx.beginPath();ctx.moveTo(bx+34,by+14);ctx.lineTo(bx+24,by-6);ctx.lineTo(bx+30,by-2);ctx.moveTo(bx+27,by-2);ctx.lineTo(bx+18,by-12);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(bx+82,by+14);ctx.lineTo(bx+92,by-6);ctx.lineTo(bx+86,by-2);ctx.moveTo(bx+89,by-2);ctx.lineTo(bx+98,by-12);ctx.stroke();
-
-  // deep eye sockets
-  ctx.fillStyle='#0A1018';
-  ctx.beginPath();ctx.ellipse(bx+44,by+34,8,9,0,0,7);ctx.fill();
-  ctx.beginPath();ctx.ellipse(bx+72,by+34,8,9,0,0,7);ctx.fill();
-  // frost-blue glowing eyes (brighter/red-shift on roar telegraph)
-  const roar = yeti.roarTell>0;
-  const eg=0.55+0.45*Math.sin(yeti.phase*1.4);
-  const eyeCol = roar ? 'rgba(255,120,150,'+(0.7+0.3*eg)+')' : 'rgba(120,205,255,'+(0.5+0.45*eg)+')';
-  ctx.fillStyle=eyeCol;
-  ctx.beginPath();ctx.arc(bx+44,by+35,3.4+eg,0,7);ctx.fill();
-  ctx.beginPath();ctx.arc(bx+72,by+35,3.4+eg,0,7);ctx.fill();
-  ctx.fillStyle='#fff';
-  ctx.beginPath();ctx.arc(bx+44,by+35,1.3,0,7);ctx.fill();ctx.beginPath();ctx.arc(bx+72,by+35,1.3,0,7);ctx.fill();
-
-  // gaunt nose hollow
-  ctx.fillStyle='#2A3340';ctx.beginPath();ctx.moveTo(cx-4,by+44);ctx.lineTo(cx,by+50);ctx.lineTo(cx+4,by+44);ctx.closePath();ctx.fill();
-
-  // maw — gaping/roaring when telegraphing, snarl in phase2, grim line otherwise
-  if(roar){
-    ctx.fillStyle='#0A1018';ctx.beginPath();ctx.ellipse(cx,by+58,11,9,0,0,7);ctx.fill();
-    ctx.fillStyle=bodyCol;
-    for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(cx+i*4,by+50);ctx.lineTo(cx+i*4+1.5,by+56);ctx.lineTo(cx+i*4+3,by+50);ctx.closePath();ctx.fill();}
-    for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(cx+i*4,by+66);ctx.lineTo(cx+i*4+1.5,by+60);ctx.lineTo(cx+i*4+3,by+66);ctx.closePath();ctx.fill();}
-  } else if(phase2){
-    ctx.strokeStyle='#2A3340';ctx.lineWidth=2.5;
-    ctx.beginPath();ctx.moveTo(cx-12,by+54);ctx.lineTo(cx-8,by+58);ctx.lineTo(cx-4,by+54);ctx.lineTo(cx,by+58);ctx.lineTo(cx+4,by+54);ctx.lineTo(cx+8,by+58);ctx.lineTo(cx+12,by+54);ctx.stroke();
-  } else {
-    ctx.strokeStyle='#2A3340';ctx.lineWidth=2.5;
-    ctx.beginPath();ctx.moveTo(cx-9,by+56);ctx.lineTo(cx+9,by+54);ctx.stroke();
-  }
-  // frozen drool from maw
-  ctx.strokeStyle='rgba(180,215,245,0.6)';ctx.lineWidth=1.4;
-  ctx.beginPath();ctx.moveTo(cx-3,by+60);ctx.lineTo(cx-3,by+60+4+Math.sin(yeti.phase*0.6)*2);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(cx+4,by+60);ctx.lineTo(cx+4,by+60+3+Math.cos(yeti.phase*0.6)*1.5);ctx.stroke();
 
   ctx.restore();
 
