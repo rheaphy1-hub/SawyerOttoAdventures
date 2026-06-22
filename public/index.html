@@ -465,6 +465,7 @@ document.addEventListener('fullscreenchange', setupHiDPI);
 document.addEventListener('webkitfullscreenchange', setupHiDPI);
 window.addEventListener('orientationchange', ()=>setTimeout(setupHiDPI,200));
 const ottoConfidentImg = new Image(); ottoConfidentImg.src = 'assets/otto_confident.webp';
+const transponderImg = new Image(); transponderImg.src = 'assets/transponder.webp';
 const GRAVITY = 0.55, FLOOR = H - 56;
 // ---- Boss-stage geometry: a long empty no-enemy run leads into an isolated arena ----
 const ARENA_X0   = 3260;          // left edge of the isolated boss arena floor
@@ -984,7 +985,7 @@ function updateArtifact(s){
       artifact.got=true; artifactCollected=true;
       if(barrier) barrier.sealed=false;
       SFX.win(); shakeIntensity=10;
-      for(let i=0;i<28;i++) particles.push({x:artifact.x+artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#FFE08A':'#FFF6D8'});
+      for(let i=0;i<28;i++) particles.push({x:artifact.x+artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
       break;
     }
   }
@@ -1004,28 +1005,43 @@ function drawArtifact(){
   const t=performance.now()*0.001, pulse=0.5+0.5*Math.sin(artifact.bobT*2);
   ctx.save();
   ctx.save(); ctx.globalCompositeOperation='lighter';
-  // tall light beacon so the artifact is spotted from across the level
+  // ── Cyan-violet portal beacon so the transponder is spotted across the level ──
   const bg=ctx.createLinearGradient(cx,cy-220,cx,cy+10);
-  bg.addColorStop(0,'rgba(255,224,140,0)'); bg.addColorStop(1,'rgba(255,224,140,'+(0.20+0.14*pulse)+')');
+  bg.addColorStop(0,'rgba(150,120,255,0)'); bg.addColorStop(1,'rgba(120,200,255,'+(0.20+0.14*pulse)+')');
   ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(cx-7,cy); ctx.lineTo(cx+7,cy); ctx.lineTo(cx+3,cy-220); ctx.lineTo(cx-3,cy-220); ctx.closePath(); ctx.fill();
-  const g=ctx.createRadialGradient(cx,cy,2,cx,cy,40+pulse*12);
-  g.addColorStop(0,'rgba(255,224,140,'+(0.6+0.3*pulse)+')'); g.addColorStop(0.55,'rgba(255,200,90,0.22)'); g.addColorStop(1,'rgba(255,200,90,0)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,40+pulse*12,0,7); ctx.fill();
-  ctx.strokeStyle='rgba(255,240,190,'+(0.25+0.25*pulse)+')'; ctx.lineWidth=2;
-  for(let i=0;i<6;i++){ const a=t*0.6+i*Math.PI/3; ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*8,cy+Math.sin(a)*8); ctx.lineTo(cx+Math.cos(a)*(22+pulse*6),cy+Math.sin(a)*(22+pulse*6)); ctx.stroke(); }
+  // swirling aura
+  const g=ctx.createRadialGradient(cx,cy,2,cx,cy,42+pulse*12);
+  g.addColorStop(0,'rgba(150,220,255,'+(0.6+0.3*pulse)+')'); g.addColorStop(0.5,'rgba(150,110,255,0.24)'); g.addColorStop(1,'rgba(120,110,255,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,42+pulse*12,0,7); ctx.fill();
+  // two counter-rotating portal rings
+  for(let r=0;r<2;r++){
+    const dir=r?-1:1, rad=20+r*9+pulse*4;
+    ctx.strokeStyle = r? 'rgba(180,150,255,'+(0.35+0.3*pulse)+')' : 'rgba(120,220,255,'+(0.4+0.3*pulse)+')';
+    ctx.lineWidth=2;
+    ctx.beginPath(); ctx.ellipse(cx,cy,rad,rad*0.42,t*dir*0.8,0,7); ctx.stroke();
+  }
+  // orbiting rune-sparks
+  for(let i=0;i<6;i++){ const a=t*1.1+i*Math.PI/3; const rr=24+pulse*6;
+    const px=cx+Math.cos(a)*rr, py=cy+Math.sin(a)*rr*0.5;
+    ctx.fillStyle='rgba(200,230,255,'+(0.5+0.4*pulse)+')';
+    ctx.beginPath(); ctx.arc(px,py,1.6,0,7); ctx.fill(); }
   ctx.restore();
-  ctx.translate(cx,cy);
-  ctx.fillStyle='#7A5210'; ctx.beginPath(); ctx.ellipse(0,15,10,3,0,0,7); ctx.fill();
-  ctx.fillStyle='#C8901E'; ctx.beginPath(); ctx.roundRect(-8,10,16,5,2); ctx.fill();
-  const grd=ctx.createLinearGradient(0,-14,0,12); grd.addColorStop(0,'#FFF3C4'); grd.addColorStop(0.5,'#F6C84B'); grd.addColorStop(1,'#C9881A');
-  ctx.fillStyle=grd; ctx.strokeStyle='#8A5E12'; ctx.lineWidth=1.2;
-  ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(9,-2); ctx.lineTo(0,12); ctx.lineTo(-9,-2); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle='rgba(120,80,20,0.5)'; ctx.lineWidth=0.8;
-  ctx.beginPath(); ctx.moveTo(-9,-2); ctx.lineTo(9,-2); ctx.moveTo(0,-15); ctx.lineTo(0,12); ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.moveTo(0,-15); ctx.lineTo(4,-7); ctx.lineTo(0,-4); ctx.lineTo(-3,-8); ctx.closePath(); ctx.fill();
+  // ── Transponder sprite (fallback to a small glyph if not yet loaded) ──
+  if(transponderImg.complete && transponderImg.naturalWidth){
+    const ih=40, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+    ctx.save();
+    ctx.shadowColor='rgba(140,200,255,'+(0.5+0.4*pulse)+')'; ctx.shadowBlur=14+pulse*8;
+    ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+    ctx.drawImage(transponderImg, cx-iw/2, cy-ih/2+2, iw, ih);
+    ctx.restore();
+  } else {
+    ctx.save(); ctx.translate(cx,cy); ctx.fillStyle='#9FD8FF';
+    ctx.beginPath(); ctx.roundRect(-8,-5,16,10,3); ctx.fill(); ctx.restore();
+  }
   ctx.restore();
-  ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#5A3A10'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
-  ctx.fillText('ARTIFACT', cx, cy-30); ctx.restore();
+  ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#BFE4FF'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
+  ctx.shadowColor='rgba(120,180,255,0.8)'; ctx.shadowBlur=6;
+  ctx.fillText('TRANSPONDER', cx, cy-30); ctx.restore();
 }
 function drawBarrier(){
   if(!barrier) return;
@@ -4374,12 +4390,14 @@ function drawBossWarning(){
   ctx.shadowColor='rgba(255,40,30,'+(0.9*fade)+')';
   ctx.shadowBlur=18+pulse*14;
   ctx.fillStyle='rgba(120,6,6,'+fade+')';
-  ctx.fillText('FIND THE ARTIFACT', cx, cy-18);
-  ctx.fillText('TO ESCAPE', cx, cy+18);
+  ctx.fillText('FIND THE PORTAL', cx, cy-18);
+  ctx.save(); ctx.font='900 22px Georgia,"Times New Roman",serif';
+  ctx.fillText('TRANSPONDER TO ESCAPE', cx, cy+20); ctx.restore();
   ctx.shadowBlur=0;
   ctx.fillStyle='rgba(255,196,150,'+(fade*(0.65+0.35*pulse))+')';
-  ctx.fillText('FIND THE ARTIFACT', cx, cy-18);
-  ctx.fillText('TO ESCAPE', cx, cy+18);
+  ctx.fillText('FIND THE PORTAL', cx, cy-18);
+  ctx.save(); ctx.font='900 22px Georgia,"Times New Roman",serif';
+  ctx.fillText('TRANSPONDER TO ESCAPE', cx, cy+20); ctx.restore();
   ctx.restore();
 }
 // Towering wind-wall of sand that rises from the horizon to isolate the boss arena.
@@ -5930,10 +5948,10 @@ function drawL2BossWarning(){
   l2BossWarnT--;
   const fade = Math.min(1, l2BossWarnT/24) * Math.min(1, (100-l2BossWarnT)/12);
   const t = performance.now()*0.001, pulse = 0.5 + 0.5*Math.sin(t*4);
-  // contextual hint: get the Ember Stone first, then free the frozen artifact
+  // contextual hint: get the Ember Stone first, then free the frozen transponder
   let l1,l2t;
   if(!emberCollected){ l1='FIND THE EMBER STONE'; l2t='TO LIGHT YOUR SHOTS'; }
-  else { l1='FREE THE FROZEN ARTIFACT'; l2t='ATOP THE PEAK TO ENTER'; }
+  else { l1='FREE THE FROZEN TRANSPONDER'; l2t='ATOP THE PEAK TO ENTER'; }
   ctx.save();
   ctx.fillStyle='rgba(20,2,2,'+(0.42*fade)+')'; ctx.fillRect(0,0,W,H);
   const jx=(Math.random()-0.5)*2.2, jy=(Math.random()-0.5)*2.2;
@@ -5959,7 +5977,7 @@ function updateL2Artifact(){
   for(const p of [sawyer,otto]){
     if(p && p.x+p.w>l2Artifact.x-6 && p.x<l2Artifact.x+l2Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+l2Artifact.h+8){
       l2Artifact.got=true; l2ArtifactCollected=true; score+=400; sfx('win'); shakeIntensity=Math.max(shakeIntensity,9);
-      for(let i=0;i<32;i++) particles.push({x:l2Artifact.x+14, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#7DD9FF':'#FFF1C0'});
+      for(let i=0;i<32;i++) particles.push({x:l2Artifact.x+14, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
     }
   }
 }
@@ -5992,14 +6010,27 @@ function drawL2Artifact(){
   g.addColorStop(0,'rgba(150,235,255,'+(0.55+0.3*pulse)+')'); g.addColorStop(0.5,'rgba(120,200,255,0.2)'); g.addColorStop(1,'rgba(120,200,255,0)');
   ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,42+pulse*12,0,7); ctx.fill();
   ctx.restore();
-  // the artifact gem (golden relic)
+  // portal rings + orbiting rune-sparks (skip while still iced so they don't bleed through)
+  if(l2Artifact.freed){
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    for(let r=0;r<2;r++){ const dir=r?-1:1, rad=18+r*9+pulse*4;
+      ctx.strokeStyle = r? 'rgba(180,150,255,'+(0.35+0.3*pulse)+')' : 'rgba(120,220,255,'+(0.4+0.3*pulse)+')';
+      ctx.lineWidth=2; ctx.beginPath(); ctx.ellipse(cx,cy,rad,rad*0.42,t*dir*0.8,0,7); ctx.stroke(); }
+    for(let i=0;i<6;i++){ const a=t*1.1+i*Math.PI/3, rr=22+pulse*6;
+      ctx.fillStyle='rgba(200,230,255,'+(0.5+0.4*pulse)+')';
+      ctx.beginPath(); ctx.arc(cx+Math.cos(a)*rr, cy+Math.sin(a)*rr*0.5, 1.5, 0,7); ctx.fill(); }
+    ctx.restore();
+  }
+  // the transponder sprite (encased under ice until melted; fallback glyph pre-load)
   ctx.save(); ctx.translate(cx,cy);
-  const grd=ctx.createLinearGradient(0,-16,0,16); grd.addColorStop(0,'#FFF3C4'); grd.addColorStop(0.5,'#F6C84B'); grd.addColorStop(1,'#C9881A');
-  ctx.fillStyle=grd; ctx.strokeStyle='#8A5E12'; ctx.lineWidth=1.2;
-  ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(10,-2); ctx.lineTo(0,15); ctx.lineTo(-10,-2); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.strokeStyle='rgba(120,80,20,0.5)'; ctx.lineWidth=0.8;
-  ctx.beginPath(); ctx.moveTo(-10,-2); ctx.lineTo(10,-2); ctx.moveTo(0,-16); ctx.lineTo(0,15); ctx.stroke();
-  ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.moveTo(0,-16); ctx.lineTo(4,-8); ctx.lineTo(0,-5); ctx.lineTo(-3,-9); ctx.closePath(); ctx.fill();
+  if(transponderImg.complete && transponderImg.naturalWidth){
+    const ih=38, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+    if(l2Artifact.freed){ ctx.shadowColor='rgba(140,200,255,'+(0.5+0.4*pulse)+')'; ctx.shadowBlur=14+pulse*8; }
+    ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
+    ctx.drawImage(transponderImg, -iw/2, -ih/2+1, iw, ih);
+  } else {
+    ctx.fillStyle='#9FD8FF'; ctx.beginPath(); ctx.roundRect(-8,-5,16,10,3); ctx.fill();
+  }
   ctx.restore();
   // encasing ice block (shown until melted) — cracks reveal melt progress
   if(!l2Artifact.freed){
@@ -6019,8 +6050,9 @@ function drawL2Artifact(){
     ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#BFE4FF'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
     ctx.fillText('MELT WITH FIRE', cx, cy-l2Artifact.h/2-12); ctx.restore();
   } else {
-    ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#FFE9A8'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
-    ctx.fillText('ARTIFACT', cx, cy-l2Artifact.h/2-10); ctx.restore();
+    ctx.save(); ctx.globalAlpha=0.7+0.3*pulse; ctx.fillStyle='#BFE4FF'; ctx.font='bold 9px system-ui'; ctx.textAlign='center';
+    ctx.shadowColor='rgba(120,180,255,0.8)'; ctx.shadowBlur=6;
+    ctx.fillText('TRANSPONDER', cx, cy-l2Artifact.h/2-10); ctx.restore();
   }
   ctx.restore();
 }
