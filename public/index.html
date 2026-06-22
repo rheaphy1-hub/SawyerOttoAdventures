@@ -1636,15 +1636,16 @@ function startPortalDump(){
   if(otto){ otto.x = px - 30; otto.y = py - 2; otto.vy = 0; otto.vx = 0; otto.onGround=false; }
 }
 // Advances the portal animation; returns true while it should still suppress input.
-// `running` is false while the level popup is up — portal opens & waits, riders held.
+// `running` is false while the level popup is up — portal stays shut until Play.
 function tickPortalDump(running){
   if(!portalDump.active) return false;
   if(portalDump.phase==='opening'){
-    // portal yawns open (runs even under the popup so it's ready when Play is hit)
+    // stay closed (invisible) until the level is live, then yawn open
+    if(!running) return false;
     portalDump.open = Math.min(1, portalDump.open + 0.07);
-    if(portalDump.open>=1 && running) portalDump.phase='hold';
+    if(portalDump.open>=1) portalDump.phase='hold';
   } else if(portalDump.phase==='hold'){
-    // release the riders the instant the level is live, toss them out & down
+    // release the riders once the portal is fully open, toss them out & down
     if(!portalDump.released){
       portalDump.released = true; portalDump.t = 0;
       sawyer.vy=-2.4; sawyer.vx=0.6; sawyer.onGround=false;
