@@ -3408,6 +3408,8 @@ const YETI_ANIM={
   roar:  {row:'idle',   frames:[0,1,2,2,1],   fps:11, loop:false, next:'idle', ease:'inout'},
   charge:{row:'walk',   frames:[0,1,2,3,4,5], fps:15, loop:true,  ease:'snap'  },
   attack:{row:'attack', frames:[0,1,2,3,4,5], fps:16, loop:false, next:'idle', ease:'snap' },
+  // ground pound: raise arms (idle 0,1) → slam to impact (idle 4, the ice-burst frame) → settle (idle 3,5)
+  pound: {row:'idle',   frames:[1,0,0,4,4,3,5], fps:14, loop:false, next:'idle', ease:'inout'},
   death: {row:'death',  frames:[2,3,4,5],     fps:9,  loop:false, hold:true,   ease:'inout'}
 };
 const YETI_XFADE=0.6;
@@ -3459,6 +3461,18 @@ function drawYetiSprite(b,bx,by,flash){
   const enr=(typeof l2BossEnrage!=='undefined')?l2BossEnrage:0;
   const dwApprox=fr[2]*YETI_SCALE, dhApprox=fr[3]*YETI_SCALE;
   const dyA=baseGroundY-dhApprox;
+  // --- CONTRAST BACKDROP: a soft dark mass behind him so his pale fur reads against the
+  //     blizzard whiteout instead of washing out. Intensifies with the swallowing snow wall. ---
+  { const sw=(typeof snowWall!=='undefined')?snowWall:0;
+    const shade=0.30+0.22*sw+0.10*enr;                 // darker as the whiteout/enrage grows
+    const sX=cx, sY=dyA+dhApprox*0.46;
+    const sg=ctx.createRadialGradient(sX,sY,dwApprox*0.18,sX,sY,dwApprox*0.78);
+    sg.addColorStop(0,'rgba(18,26,40,'+shade+')');
+    sg.addColorStop(0.6,'rgba(20,30,46,'+(shade*0.6)+')');
+    sg.addColorStop(1,'rgba(20,30,46,0)');
+    ctx.save(); ctx.fillStyle=sg; ctx.beginPath();
+    ctx.ellipse(sX,sY,dwApprox*0.78,dhApprox*0.60,0,0,7); ctx.fill(); ctx.restore();
+  }
   // --- FROST AURA behind the figure (brightens in phase 2 as the world bruises) ---
   if(b.animName!=='death'){
     const aX=cx, aY=dyA+dhApprox*0.5, pulse=0.85+0.15*Math.sin(t*2.2);
@@ -3481,6 +3495,7 @@ function drawYetiSprite(b,bx,by,flash){
   if(b.animName==='idle'){ bobY=Math.sin(t*1.5)*2.4; lean=Math.sin(t*0.8)*0.012; scaleY=1+Math.sin(t*1.5)*0.014; }
   else if(b.animName==='roar'){ const u=b.animFrame/Math.max(1,a.frames.length-1); bobY=-Math.sin(u*Math.PI)*4; scaleY=1+Math.sin(u*Math.PI)*0.03; }
   else if(b.animName==='charge'){ bobY=Math.abs(Math.sin(t*9))*-3; }
+  else if(b.animName==='pound'){ const u=b.animFrame/Math.max(1,a.frames.length-1); bobY = u<0.43 ? -Math.sin(u/0.43*Math.PI*0.5)*10 : 0; }   // rear up, then slam down hard
   else if(b.animName==='attack'){ const e=Math.sin(((curIdx+fracRaw)/a.frames.length)*Math.PI); bobX=(b.facing>0?-1:1)*e*9; }
   if(flash) ctx.filter='brightness(2.4) saturate(0.4)';
   const blit=(rect,alpha)=>{
@@ -3490,6 +3505,14 @@ function drawYetiSprite(b,bx,by,flash){
     ctx.save(); ctx.globalAlpha*=alpha;
     if(lean){ ctx.translate(cx,baseGroundY); ctx.rotate(lean); ctx.translate(-cx,-baseGroundY); }
     if(scaleY!==1){ ctx.translate(cx,baseGroundY); ctx.scale(1,scaleY); ctx.translate(-cx,-baseGroundY); }
+    // dark rim: a slightly enlarged black silhouette behind, so his edge separates from the whiteout
+    if(!flash){
+      const rim=2.0;                                   // px of dark halo around the silhouette
+      ctx.save(); ctx.globalAlpha*=0.55; ctx.filter='brightness(0) saturate(0)';
+      for(const[ox,oy] of [[-rim,0],[rim,0],[0,-rim],[0,rim]])
+        ctx.drawImage(YETI_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx+ox,ddy+oy,w,h);
+      ctx.restore();
+    }
     ctx.drawImage(YETI_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx,ddy,w,h);
     ctx.restore();
   };
@@ -5555,9 +5578,9 @@ const l2Platforms = [
   // ---- FROZEN BOSS ARENA: glacier ledges, HIDDEN until the fight; bob on staggered sines; shatter on Yeti death ----
   // Floating ice floes on the frozen arena sea — asymmetric sizes/heights, each drifts
   // horizontally AND bobs vertically on its own phase (buoy-like), so dodging means real traversal.
-  {...makePlatform(2944, FLOOR-104, 116), bossPlatform:true, floe:true, baseX:2944, baseY:FLOOR-104, bob:16, bobSpeed:0.020, bobPhase:0.0, driftX:20, driftSpeed:0.011, driftPhase:0.5, hidden:true},
-  {...makePlatform(3150, FLOOR-180, 68),  bossPlatform:true, floe:true, baseX:3150, baseY:FLOOR-180, bob:30, bobSpeed:0.026, bobPhase:1.7, driftX:30, driftSpeed:0.015, driftPhase:2.2, hidden:true},
-  {...makePlatform(3306, FLOOR-134, 92),  bossPlatform:true, floe:true, baseX:3306, baseY:FLOOR-134, bob:22, bobSpeed:0.017, bobPhase:3.3, driftX:14, driftSpeed:0.013, driftPhase:4.0, hidden:true},
+  {...makePlatform(2972, FLOOR-100, 116), bossPlatform:true, floe:true, baseX:2972, baseY:FLOOR-100, bob:14, bobSpeed:0.020, bobPhase:0.0, driftX:18, driftSpeed:0.011, driftPhase:0.5, hidden:true},
+  {...makePlatform(3128, FLOOR-156, 72),  bossPlatform:true, floe:true, baseX:3128, baseY:FLOOR-156, bob:22, bobSpeed:0.026, bobPhase:1.7, driftX:24, driftSpeed:0.015, driftPhase:2.2, hidden:true},
+  {...makePlatform(3268, FLOOR-118, 92),  bossPlatform:true, floe:true, baseX:3268, baseY:FLOOR-118, bob:18, bobSpeed:0.017, bobPhase:3.3, driftX:14, driftSpeed:0.013, driftPhase:4.0, hidden:true},
 ];
 
 let l2Enemies = [];
@@ -5624,6 +5647,7 @@ function buildYeti(){
     cryTimer:0, // post-death cry animation
     roarTell:0, // wind-up telegraph before lunge/special
     stalTimer:90, // anti-camp stalactite cadence
+    poundTimer:200, poundTell:0, poundFired:false, // ground-pound cadence + telegraph
     spreadShot:false,
     animName:'idle', animFrame:0, animAcc:0,
     prevFrame:0, xfade:0, xfadeRow:null, xfadeFrame:0
@@ -6298,9 +6322,41 @@ function updateLevel2(){
         }
       }
 
+      // --- GROUND POUND: telegraphed two-handed slam → radial ground shockwave both directions.
+      //     Fires only from a settled stance (not mid-lunge/roar) so beats never collide. ---
+      if(yeti.poundTell>0){
+        yeti.poundTell--;
+        if(yeti.poundTell===0){
+          yetiSetAnim(yeti,'pound');
+          yeti.poundFired=false;
+          yeti.vx=0;                                            // plant for the slam
+        }
+      } else if(yeti.animName==='pound'){
+        // emit the quake at the impact frame (idle-row frame 4 = the ice-burst pose)
+        const a=YETI_ANIM.pound;
+        const onImpact = a.frames[Math.min(yeti.animFrame,a.frames.length-1)]===4;
+        if(onImpact && !yeti.poundFired){
+          yeti.poundFired=true;
+          shakeIntensity=Math.max(shakeIntensity,14);
+          SFX.rattle();
+          const px=yeti.x+yeti.w/2;
+          shockwaves.push({x:px,y:FLOOR,w:0,life:46,maxLife:46,dir:1,quake:true});
+          shockwaves.push({x:px,y:FLOOR,w:0,life:46,maxLife:46,dir:-1,quake:true});
+          for(let i=0;i<16;i++) particles.push({x:px+(Math.random()-.5)*40,y:FLOOR,vx:(Math.random()-.5)*5,vy:-2-Math.random()*3,life:24,maxLife:24,type:'snow',color:'#EAF4FF'});
+        }
+      } else if(yeti.roarTell<=0 && yeti.animName!=='roar' && yeti.animName!=='charge'){
+        yeti.poundTimer--;
+        if(yeti.poundTimer<=0){
+          yeti.poundTimer = (yeti.currentPhase===2 ? 150 : 230) + Math.random()*70;
+          yeti.poundTell  = yeti.currentPhase===2 ? 26 : 34;   // readable wind-up before the slam
+          if(yeti.animName==='idle') yetiSetAnim(yeti,'roar');  // rear-up tell reuses the bellow pose
+          SFX.bossSpit();
+        }
+      }
+
       // Ice boulder spit — phase 2 fires spread of 3
       yeti.spitTimer--;
-      if(yeti.spitTimer<=0){
+      if(yeti.spitTimer<=0 && yeti.poundTell<=0 && yeti.animName!=='pound'){
         yeti.spitTimer=yeti.currentPhase===2?45:65;
         if(yeti.animName==='idle') yetiSetAnim(yeti,'attack');   // ice-swing hurl
         const sx=yeti.x+yeti.w/2, sy=yeti.y+20;
