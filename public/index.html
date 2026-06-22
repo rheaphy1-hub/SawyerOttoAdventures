@@ -3464,7 +3464,7 @@ function drawYetiSprite(b,bx,by,flash){
   // --- CONTRAST BACKDROP: a soft dark mass behind him so his pale fur reads against the
   //     blizzard whiteout instead of washing out. Intensifies with the swallowing snow wall. ---
   { const sw=(typeof snowWall!=='undefined')?snowWall:0;
-    const shade=0.30+0.22*sw+0.10*enr;                 // darker as the whiteout/enrage grows
+    const shade=0.20+0.14*sw+0.08*enr;                 // grounding shade; lighter now he's in front of the wall
     const sX=cx, sY=dyA+dhApprox*0.46;
     const sg=ctx.createRadialGradient(sX,sY,dwApprox*0.18,sX,sY,dwApprox*0.78);
     sg.addColorStop(0,'rgba(18,26,40,'+shade+')');
@@ -3507,8 +3507,8 @@ function drawYetiSprite(b,bx,by,flash){
     if(scaleY!==1){ ctx.translate(cx,baseGroundY); ctx.scale(1,scaleY); ctx.translate(-cx,-baseGroundY); }
     // dark rim: a slightly enlarged black silhouette behind, so his edge separates from the whiteout
     if(!flash){
-      const rim=2.0;                                   // px of dark halo around the silhouette
-      ctx.save(); ctx.globalAlpha*=0.55; ctx.filter='brightness(0) saturate(0)';
+      const rim=1.6;                                   // px of dark halo around the silhouette
+      ctx.save(); ctx.globalAlpha*=0.42; ctx.filter='brightness(0) saturate(0)';
       for(const[ox,oy] of [[-rim,0],[rim,0],[0,-rim],[0,rim]])
         ctx.drawImage(YETI_ATLAS, rect[0],rect[1],rect[2],rect[3], ddx+ox,ddy+oy,w,h);
       ctx.restore();
@@ -5337,8 +5337,10 @@ function loop(){
   
   if(currentLevel===2){
     drawL2Bg(); cosmicGlow(); drawL2Platforms(); drawL2Flag(); drawL2Rocks(); drawEmberStone(); drawL2Artifact();
-    drawL2Enemies(); drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawL2Stals(); drawIcicles(); drawProjectiles(); drawCheckpoint();
+    drawL2Enemies(); drawIcicles(); drawCheckpoint();
     if(snowWall>0.01) drawSnowWall();
+    // Yeti + his combat FX render AFTER the whiteout so the blizzard never washes the boss out.
+    drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawL2Stals(); drawProjectiles();
     drawL2BossWarning();
   } else if(currentLevel===3){
     drawL3Bg(); cosmicGlow(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
