@@ -9953,7 +9953,7 @@ const LV = {
     audio:'/audio/L4lookinatmyfish.mp3'
   },
   5: {
-    worldW:4100, bossGate:3300, next:6,
+    worldW:4600, bossGate:3760, next:6,
     pal:{ skyT:'#1A0A2E', skyM:'#16213E', skyL:'#2A2A3E', ground:'#3A3A2A',
           edge:'#5A5A4A', plat:'#5A4A3A', glow:'#8B7355',
           primary:'#FF6B35', secondary:'#FFFFFF', tertiary:'#9D4EDD',
@@ -10035,8 +10035,10 @@ function buildGenRocks(n){
 }
 function buildGenBoss(n){
   const lv=LV[n], bc=lv.boss;
+  let spawnX=lv.bossGate+260;
+  if(n===5 && lv.platforms){ const f=lv.platforms.find(p=>p.haunt==='feast'); if(f) spawnX=f.x+f.w/2-32; }
   lv.bossObj = {
-    x:lv.bossGate+260, y:FLOOR-64, w:64, h:64,
+    x:spawnX, y:FLOOR-64, w:64, h:64,
     alive:true, active:false, phase:0, hp:bc.hp, maxHp:bc.hp,
     vx:bc.vx1, facing:-1, hitFlash:0, spitTimer:bc.spit1, lungeTimer:140,
     dieTimer:0, phaseIndex:0, slamTimer:100, orbit:0,
@@ -10052,7 +10054,7 @@ function hausPlatforms(){
     makePlatform(460, FLOOR, 480),
     makePlatform(1000, FLOOR, 480),
     makePlatform(1540, FLOOR, 460),
-    makePlatform(2060, FLOOR, 4100-2060),
+    makePlatform(2060, FLOOR, 4600-2060),
     // crypt sarcophagi
     makePlatform(160, FLOOR-58, 90),
     makePlatform(310, FLOOR-104, 80),
@@ -10069,16 +10071,20 @@ function hausPlatforms(){
     makePlatform(1560, FLOOR-110, 90),
     makePlatform(1720, FLOOR-160, 90),
     makePlatform(1880, FLOOR-110, 90),
-    // TOWER climb toward the boss hall (last traversal content ends at x=2400)
+    // TOWER climb toward the boss hall
     makePlatform(2120, FLOOR-90, 90),
     makePlatform(2300, FLOOR-150, 100),
-    // ---- EMPTY CROSSING 2400 → 2760 (~360px, mirrors L1's GAP_START→ARENA_X0) ----
-    // ---- ISOLATED BOSS ARENA begins ~2760; the possessed banquet floats CENTERED on the stage ----
+    makePlatform(2520, FLOOR-110, 90),
+    makePlatform(2740, FLOOR-150, 90),
+    // last traversal content ends at x=2980
+    // ---- LONG EMPTY CROSSING 2980 → 3760 (~780px — the manor corridor stretches and the
+    //      dark swallows the level behind; mirrors the dramatic walled-in approach of L1/L2) ----
+    // ---- ISOLATED BOSS ARENA begins ~3760; the possessed banquet floats CENTERED on the stage ----
     // (chair → long table → chair, suspended as a haunted centerpiece — heights tuned so the
     //  jump arc (~120px peak) clears each step: floor → chair (96) → feast table (150).)
-    {...makePlatform(2820, FLOOR-96, 70),  haunt:'chairL'},
-    {...makePlatform(3060, FLOOR-150, 220), haunt:'feast'},
-    {...makePlatform(3340, FLOOR-96, 70),  haunt:'chairR'},
+    {...makePlatform(3900, FLOOR-96, 70),  haunt:'chairL'},
+    {...makePlatform(4140, FLOOR-150, 220), haunt:'feast'},
+    {...makePlatform(4420, FLOOR-96, 70),  haunt:'chairR'},
   ];
 }
 function buildHausLevel(){
@@ -10088,7 +10094,7 @@ function buildHausLevel(){
   lv.enemies=[]; lv.rocks=[]; lv.pitMobs=[]; lv.pitTimer=90; lv.bossObj=null;
   const mk=(slot,x,y,plat,extra)=>{ lv.enemies.push(Object.assign({slot,x,y,w:30,h:24,vx:(slot==='B'?0.7:0.95),facing:1,alive:true,plat,phase:Math.random()*6,hoverTimer:(Math.random()*100|0),shootTimer:60+(Math.random()*40|0),hitCount:0},extra||{})); };
   const pat=['C','A','D','B','C','A','D','B','C','A','D','B','C','A'];
-  for(let i=0;i<14;i++){ const plat=lv.platforms[i+5]; if(!plat)break; mk(pat[i], plat.x+Math.max(8,plat.w/2-15), plat.y-24, plat); }
+  for(let i=0;i<14;i++){ const plat=lv.platforms[i+5]; if(!plat)break; if(plat.haunt)continue; mk(pat[i], plat.x+Math.max(8,plat.w/2-15), plat.y-24, plat); }
   const gx=[280,680,1180,1700,2360], gs=['A','B','A','B','A'];
   gx.forEach((x,i)=>{ let gp=lv.platforms[0]; for(const pl of lv.platforms){ if(pl.y===FLOOR&&x>=pl.x&&x<=pl.x+pl.w){gp=pl;break;} } mk(gs[i],x,FLOOR-24,gp); });
   // flying pretzels
@@ -10222,6 +10228,7 @@ function updateGen(){
 
   if(cutsceneActive){
     cutsceneTimer--;
+    if(currentLevel===5 && boss && boss.manifestT!==undefined && boss.manifestT<boss.manifestMax) boss.manifestT++;
     if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; otto.cower=120; SFX.rattle(); }
     s.vx=0; s.vy=Math.min(s.vy+GRAVITY,12); resolveGen(s);
     if(s.y+s.h>FLOOR){s.y=FLOOR-s.h;s.vy=0;}
@@ -10462,7 +10469,7 @@ function updateGen(){
           venom=[]; projectiles=[];   // clear all in-flight bolts so nothing lingers over the death dissolve
           if(currentLevel===5){ // play the sprite-sheet death dissolve, then scatter a swarm of spectral eyes
             boss.animName='death'; boss.animFrame=0; boss.animAcc=0; boss.casting=false;
-            boss.deathFlash=1; boss.fxDeathT=120; boss.deathEyes=[]; boss.fxDarken=0; boss.fxViolet=0;
+            boss.deathFlash=1; boss.fxDeathT=120; boss.deathEyes=[]; boss.fxDarken=0; boss.fxViolet=0; boss.fxRed=0; boss.fxEnrage=0;
             const ecx=boss.x+boss.w/2, ecy=boss.y+boss.h-82;
             for(let i=0;i<16;i++){ const a=i*(6.283/16)+Math.random()*0.4, sp=1.4+Math.random()*2.6;
               boss.deathEyes.push({x:ecx,y:ecy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.2,life:60+Math.random()*40,max:100,r:5+Math.random()*4}); }
@@ -10517,14 +10524,20 @@ function updateGen(){
       if(trigger){
         cutsceneActive=true;cutsceneTimer=240;
         s.invincible=260; s.vx=0; s.vy=0; venom=[]; projectiles=[];
+        if(currentLevel===5){ boss.manifestT=0; boss.manifestMax=150; SFX.bossSpit&&SFX.bossSpit(); }
       }
     }
     if(boss.active){
+      const haus5=currentLevel===5;
+      const _feast=haus5 ? lv.platforms.find(p=>p.haunt==='feast') : null;
       boss.phase+=0.07; boss.orbit+=0.05;
-      boss.facing=s.x<boss.x?-1:1;
-      const lo=lv.bossGate+80, hi=Math.min(lv.worldW-boss.w-20, lv.bossGate+460);
+      boss.facing=(s.x+s.w/2)<(boss.x+boss.w/2)?-1:1;   // always orient toward Sawyer
+      // L5: patrol the banquet-table stage rather than drifting toward the back wall.
+      let lo,hi;
+      if(haus5 && _feast){ const c=_feast.x+_feast.w/2; lo=c-150-boss.w/2; hi=c+150-boss.w/2; }
+      else { lo=lv.bossGate+80; hi=Math.min(lv.worldW-boss.w-20, lv.bossGate+460); }
       boss.x+=boss.vx;
-      if(boss.x<lo||boss.x>hi)boss.vx*=-1;
+      if(boss.x<lo){boss.x=lo;boss.vx=Math.abs(boss.vx);} else if(boss.x>hi){boss.x=hi;boss.vx=-Math.abs(boss.vx);}
       boss.y=FLOOR-boss.h-6+Math.sin(boss.orbit)*14; // gentle undulation
       if(boss.hitFlash>0)boss.hitFlash--;
       const haus=currentLevel===5;
@@ -11475,7 +11488,9 @@ function drawHausDarkness(){
 // Keyed to world scroll so the banquet hall only materialises at the fight (gate=2900).
 function hausArenaT(){
   const lv=curLV(); if(!lv) return 0;
-  const onset=(lv.bossGate||2900)-260, span=300;          // begin opening up ~40px before gate-ish, finish in the hall
+  // ramp begins as the last traversal platform ends (~2980) and completes at the gate — a long,
+  // gradual swallow across the whole corridor crossing (mirrors L1 sandstorm / L2 blizzard).
+  const onset=(lv.bossGate||3760)-760, span=720;
   return Math.max(0, Math.min(1, (cameraX - (onset - W*0.5)) / span));
 }
 function drawBaronGhoul(){
@@ -11620,6 +11635,42 @@ function drawGenBg(){
     ctx.fillStyle='rgba(220,210,190,0.18)';
     for(let i=0;i<16;i++){ const x=((i*97-cameraX*0.6)%(W+40)+W+40)%(W+40)-20, y=(i*53+t*20*(1+i%2))%(FLOOR-30)+10; ctx.beginPath(); ctx.arc(x,y,1.2,0,7); ctx.fill(); }
     ctx.restore();   // end corridor-dressing fade
+    // ===== DRAMATIC APPROACH SWALLOW (L1/L2-style) =====
+    // As Sawyer crosses the long corridor, layered fog banks roll in at different parallax depths
+    // and a vignette closes down — the manor behind is swallowed by dark before the hall opens.
+    {
+      const aT=hausArenaT();
+      if(aT>0.001){
+        // three parallax fog banks drifting at different rates and depths
+        const banks=[{spd:0.12,base:FLOOR-10,amp:26,col:'rgba(28,18,40,',a:0.5},
+                     {spd:0.26,base:FLOOR+10,amp:34,col:'rgba(18,12,28,',a:0.62},
+                     {spd:0.45,base:FLOOR+30,amp:40,col:'rgba(8,5,16,',a:0.74}];
+        for(const bk of banks){
+          ctx.fillStyle=bk.col+(bk.a*aT)+')';
+          ctx.beginPath(); ctx.moveTo(0,H);
+          for(let x=0;x<=W;x+=20){
+            const wob=Math.sin(x*0.012 + t*bk.spd*4 - cameraX*bk.spd*0.02)*bk.amp*aT;
+            ctx.lineTo(x, bk.base - bk.amp*aT + wob);
+          }
+          ctx.lineTo(W,H); ctx.closePath(); ctx.fill();
+        }
+        // drifting violet mist motes pulled toward the hall (parallax foreground)
+        ctx.save(); ctx.globalCompositeOperation='lighter';
+        for(let i=0;i<10;i++){
+          const px=((i*131 - cameraX*0.7 + t*22)%(W+120)+W+120)%(W+120)-60;
+          const py=FLOOR-30-((i*37+t*16)%160);
+          const pr=(6+i%4*3)*aT;
+          const mg=ctx.createRadialGradient(px,py,0,px,py,pr);
+          mg.addColorStop(0,'rgba(150,90,210,'+(0.16*aT)+')'); mg.addColorStop(1,'rgba(150,90,210,0)');
+          ctx.fillStyle=mg; ctx.beginPath(); ctx.arc(px,py,pr,0,7); ctx.fill();
+        }
+        ctx.restore();
+        // closing vignette — deepens as the arena nears
+        const vg=ctx.createRadialGradient(W/2,H*0.5,W*0.2,W/2,H*0.5,W*0.62);
+        vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(2,1,6,'+(0.7*aT)+')');
+        ctx.fillStyle=vg; ctx.fillRect(0,-40,W,H+80);
+      }
+    }
     // ===== GHOULISH BANQUET ARENA (revealed only at the boss hall) =====
     const aT=hausArenaT();
     if(aT>0.001){
@@ -12185,8 +12236,10 @@ function drawGenBoss(){
     const flash=boss.hitFlash>0&&Math.floor(boss.hitFlash/2)%2===0;
     ctx.save();
     if(dying){ if(currentLevel===5){ ctx.globalAlpha=Math.min(1,boss.dieTimer/20); } else { ctx.globalAlpha=Math.max(0,boss.dieTimer/120); ctx.translate(0,(120-boss.dieTimer)*0.5); } }
-    // aura
-    ctx.fillStyle=bc.aura;ctx.beginPath();ctx.arc(bx+boss.w/2,by+boss.h/2,boss.w*0.7,0,7);ctx.fill();
+    // aura (suppressed during the L5 death dissolve — the spectral-eye swarm carries it instead)
+    if(!(currentLevel===5 && dying)){
+      ctx.fillStyle=bc.aura;ctx.beginPath();ctx.arc(bx+boss.w/2,by+boss.h/2,boss.w*0.7,0,7);ctx.fill();
+    }
     ctx.save();ctx.translate(bx,by);
     if(currentLevel===4) drawBossSea(boss,bc,flash);
     else if(currentLevel===5) drawBossHaus(boss,bc,flash);
@@ -12401,7 +12454,9 @@ function baronRect(name,frame){
 }
 function drawBossHaus(boss,bc,flash){
   // Pure renderer: animation state (animName/animFrame) owned by updateGen. Blits from the packed atlas.
-  const enraged=boss.phaseIndex===1;
+  // Enrage tinting is suppressed once he's dying — the dissolve frames should fade to the spectral
+  // swarm, not glow red (the red aura/filter over the smoke read as a stray red circle).
+  const enraged=boss.phaseIndex===1 && boss.alive;
   const name=boss.animName||'walk', frame=boss.animFrame||0;
   if(!baronAllReady()){ baronArt(boss.w,boss.h,flash,enraged,boss.phase); return; }
   const r=baronRect(name,frame); if(!r){ baronArt(boss.w,boss.h,flash,enraged,boss.phase); return; }
@@ -12411,6 +12466,41 @@ function drawBossHaus(boss,bc,flash){
   ctx.save();
   // source art faces RIGHT; flip to face left when the player is on his left
   if(boss.facing<0){ ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0); }
+  // ---- MANIFESTATION: he coalesces out of a violet soul-vortex during the reveal ----
+  const mt=(boss.manifestT!==undefined && boss.manifestT<boss.manifestMax) ? boss.manifestT/boss.manifestMax : 1;
+  if(mt<1){
+    const tt=Date.now()*0.001;
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    // rising vortex column at his feet, widening as he forms
+    const col=feetY, swirlR=dw*(0.55+0.5*(1-mt));
+    for(let i=0;i<14;i++){
+      const a=tt*3 + i*(6.283/14), rad=swirlR*(0.3+0.7*((i%5)/5));
+      const ex=cx+Math.cos(a)*rad, ey=col-dh*0.5*mt - Math.abs(Math.sin(a))*dh*0.4 - (1-mt)*20;
+      const er=4+ (1-mt)*9 + Math.sin(tt*4+i)*2;
+      const g=ctx.createRadialGradient(ex,ey,0,ex,ey,er);
+      g.addColorStop(0,'rgba(190,120,255,'+(0.5*(1-mt))+')'); g.addColorStop(1,'rgba(120,40,170,0)');
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(ex,ey,er,0,7); ctx.fill();
+    }
+    // bright core glow that intensifies then releases as he solidifies
+    const cg=ctx.createRadialGradient(cx,feetY-dh*0.5,2,cx,feetY-dh*0.5,dw*0.7);
+    const corePulse=Math.sin(mt*Math.PI); // peaks mid-manifest
+    cg.addColorStop(0,'rgba(230,200,255,'+(0.55*corePulse)+')');
+    cg.addColorStop(0.5,'rgba(157,78,221,'+(0.4*corePulse)+')');
+    cg.addColorStop(1,'rgba(157,78,221,0)');
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,feetY-dh*0.5,dw*0.7,0,7); ctx.fill();
+    ctx.restore();
+    // the sprite fades in from the top down (coalescing), with a slight upward settle
+    ctx.save();
+    ctx.globalAlpha=Math.max(0,Math.min(1,(mt-0.25)/0.6));
+    const settle=(1-mt)*10;
+    // clip to a downward-growing band so he forms head-first out of the smoke
+    const reveal=0.15+0.95*mt;
+    ctx.beginPath(); ctx.rect(dx-10, dy-10, dw+20, dh*reveal+10); ctx.clip();
+    ctx.drawImage(BARON_SRC, r[0],r[1],r[2],r[3], dx,dy-settle,dw,dh);
+    ctx.restore();
+    ctx.restore();
+    return;
+  }
   if(enraged){ ctx.save(); ctx.globalCompositeOperation='lighter';
     const ar=dw*0.8, acy=feetY-dh*0.45;
     const g=ctx.createRadialGradient(cx,acy,2,cx,acy,ar);
