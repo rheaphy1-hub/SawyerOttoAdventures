@@ -10459,6 +10459,7 @@ function updateGen(){
           if(currentLevel===5){ boss.fxEnrage=42; boss.fxDarken=0.85; boss.fxViolet=0.9; boss.fxRed=1; SFX.bossSpit&&SFX.bossSpit(); }  // every eye snaps open
         }
         if(boss.hp<=0){ boss.alive=false;boss.dieTimer=(currentLevel===5?150:120);score+=1000;shakeIntensity=16;SFX.bossDie();
+          venom=[]; projectiles=[];   // clear all in-flight bolts so nothing lingers over the death dissolve
           if(currentLevel===5){ // play the sprite-sheet death dissolve, then scatter a swarm of spectral eyes
             boss.animName='death'; boss.animFrame=0; boss.animAcc=0; boss.casting=false;
             boss.deathFlash=1; boss.fxDeathT=120; boss.deathEyes=[]; boss.fxDarken=0; boss.fxViolet=0;
@@ -10535,8 +10536,9 @@ function updateGen(){
       if(boss.spitTimer<=0){
         boss.spitTimer=(boss.phaseIndex?bc.spit2:bc.spit1);
         if(haus){
-          // begin a cast — the bolt fires on the magic "release" frame (see anim machine below)
-          if(!boss.casting){ boss.casting=true; boss.castFired=false; boss.animName='magic'; boss.animFrame=0; boss.animAcc=0; }
+          // begin a cast — but never interrupt an in-progress sword swing (let the melee play out)
+          if(!boss.casting && boss.animName!=='sword'){ boss.casting=true; boss.castFired=false; boss.animName='magic'; boss.animFrame=0; boss.animAcc=0; }
+          else if(boss.animName==='sword'){ boss.spitTimer=20; }  // retry shortly after the swing resolves
         } else {
           const cnt=(boss.phaseIndex?bc.n2:bc.n1);
           const sx=boss.x+boss.w/2, sy=boss.y+boss.h*0.4;
@@ -10599,7 +10601,13 @@ function updateGen(){
       }
       // contact hitbox: Baron's tall sprite needs a body-shaped box, not the 64px tile
       let hbX0,hbX1,hbY0,hbY1;
-      if(currentLevel===5){ const cx=boss.x+boss.w/2; hbX0=cx-24; hbX1=cx+24; hbY0=boss.y+boss.h-130; hbY1=boss.y+boss.h; }
+      if(currentLevel===5){ const cx=boss.x+boss.w/2;
+        // during a sword swing the blade extends his reach in the facing direction
+        const swinging = boss.animName==='sword' && boss.animFrame>=1 && boss.animFrame<=4;
+        const reach = swinging ? 64 : 0;
+        hbX0=cx-24+(boss.facing<0?-reach:0); hbX1=cx+24+(boss.facing>0?reach:0);
+        hbY0=boss.y+boss.h-130; hbY1=boss.y+boss.h;
+      }
       else { hbX0=boss.x+10; hbX1=boss.x+boss.w-10; hbY0=boss.y+10; hbY1=boss.y+boss.h; }
       if(s.invincible===0 && s.x+s.w>hbX0 && s.x<hbX1 && s.y+s.h>hbY0 && s.y<hbY1) hurt(s);
     }
@@ -11488,7 +11496,7 @@ function drawBaronGhoul(){
     ctx.restore();
     return;
   }
-  if(!b.active||!b.alive)return;
+  if((!b.active&&!cutsceneActive)||!b.alive)return;
 
   // ---- arena-wide ground fog + tracking portrait eyes (only once the hall opens) ----
   const aT=hausArenaT();
@@ -12168,6 +12176,9 @@ function drawGenBoss(){
   drawGenShockwaves();
   if(!boss)return;
   if(!boss.alive&&boss.dieTimer<=0)return;
+  // L5: the Baron must not stand on stage during the approach — he only manifests once the
+  // table-mount cutscene begins (cutsceneActive) or the fight is live (active) or he's dying.
+  if(currentLevel===5 && boss.alive && !boss.active && !cutsceneActive) return;
   const bx=boss.x-cameraX, by=boss.y;
   if(bx+boss.w<-60||bx>W+60){ /* still draw bar below */ } else {
     const dying=!boss.alive;
@@ -12401,9 +12412,10 @@ function drawBossHaus(boss,bc,flash){
   // source art faces RIGHT; flip to face left when the player is on his left
   if(boss.facing<0){ ctx.translate(cx,0); ctx.scale(-1,1); ctx.translate(-cx,0); }
   if(enraged){ ctx.save(); ctx.globalCompositeOperation='lighter';
-    const g=ctx.createRadialGradient(cx,feetY-dh*0.45,2,cx,feetY-dh*0.45,dw*0.8);
+    const ar=dw*0.8, acy=feetY-dh*0.45;
+    const g=ctx.createRadialGradient(cx,acy,2,cx,acy,ar);
     g.addColorStop(0,'rgba(255,42,42,'+(0.28+Math.sin(boss.phase*4)*0.08)+')'); g.addColorStop(1,'rgba(255,42,42,0)');
-    ctx.fillStyle=g; ctx.fillRect(cx-dw,feetY-dh,dw*2,dh); ctx.restore(); }
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,acy,ar,0,7); ctx.fill(); ctx.restore(); }
   ctx.drawImage(BARON_SRC, r[0],r[1],r[2],r[3], dx,dy,dw,dh);
   if(enraged){ ctx.save(); ctx.globalAlpha=0.20;
     ctx.filter='brightness(0.55) sepia(1) saturate(9) hue-rotate(-25deg)';
