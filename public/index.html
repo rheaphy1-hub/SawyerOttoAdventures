@@ -2407,7 +2407,7 @@ function update(){
   // win at flag (L1) — only once the portal is open enough to step through
   if (!victoryActive && portal.open>0.55 && s.x+s.w > FLAG.x+10 && s.x < FLAG.x+90 && s.y+s.h >= FLOOR-10){
     if (!boss || !boss.alive){
-      victoryActive = true; victoryTimer = 220;
+      victoryActive = true; victoryTimer = 360;
       s.vx = 0; s.vy = 0; s.facing = 1;
       otto.vx = 0; otto.vy = 0; otto.facing = 1;
       SFX.win();
@@ -2424,18 +2424,20 @@ function update(){
     victoryTimer--;
     if (victoryTimer <= 0){
       victoryActive = false; won = false;
-      currentLevel = 2;
-      cameraX = 0; projectiles = []; venom = []; particles = []; killCombo = 0;
-      cutsceneActive = false;
-      buildPlayers();
-      buildLevel2Enemies();
-      buildLevel2Rocks();
-      buildYeti();
-      buildIcicles();
-      buildEmberStone();
-      snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0};
-      for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}}
-      audioManager.play(2);
+      fadeThenBuild(()=>{
+        currentLevel = 2;
+        cameraX = 0; projectiles = []; venom = []; particles = []; killCombo = 0;
+        cutsceneActive = false;
+        buildPlayers();
+        buildLevel2Enemies();
+        buildLevel2Rocks();
+        buildYeti();
+        buildIcicles();
+        buildEmberStone();
+        snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0};
+        for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}}
+        audioManager.play(2);
+      });
     }
     // Lock Sawyer in place during victory
     s.vx = 0;
@@ -4759,9 +4761,14 @@ const cosmicGlow = (function(){
     g.addColorStop(0,'rgba(4,2,8,0.82)'); g.addColorStop(0.55,'rgba(7,3,12,0.70)'); g.addColorStop(1,'rgba(2,0,4,0.82)');
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
     const pulse=0.5+0.5*Math.sin(t*0.7);
+    // During the boss fight these background spectres are distracting — fade them out as the
+    // arena opens so the stage reads clean for the Baron. (1 = traversal, 0 = full fight)
+    const _bo=curLV()&&curLV().bossObj;
+    const _fightOn=(_bo&&_bo.active)?1:hausArenaT();   // arena-open ramp, or hard 1 once active
+    const _ghostVis=Math.max(0, 1 - _fightOn);
     // looming hooded figure — rises from the dark, faintly backlit so the silhouette reads
-    const presence=0.32+0.68*Math.max(0,Math.sin(Date.now()*0.0005));
-    {
+    const presence=(0.32+0.68*Math.max(0,Math.sin(Date.now()*0.0005)))*_ghostVis;
+    if(presence>0.01){
       const bx=W*0.5+Math.sin(Date.now()*0.0003)*W*0.18;
       const by=FLOOR+8, hgt=180*presence+70;
       // cold backlight halo so the dark shape stands out
@@ -4790,9 +4797,9 @@ const cosmicGlow = (function(){
     rg.addColorStop(0,'rgba(0,0,0,0)'); rg.addColorStop(1,hexA('#3A0010',0.22+0.10*pulse));
     ctx.fillStyle=rg; ctx.fillRect(0,0,W,H);
     ctx.globalCompositeOperation='source-over';
-    // pale apparitions surfacing from the dark and dissolving — hollow, faceless
-    for(let i=0;i<4;i++){
-      const cyc=(Date.now()*0.00016 + i*0.41)%1, vis=Math.sin(cyc*Math.PI);
+    // pale apparitions surfacing from the dark and dissolving — hollow, faceless (fade out in the fight)
+    for(let i=0;i<4 && _ghostVis>0.01;i++){
+      const cyc=(Date.now()*0.00016 + i*0.41)%1, vis=Math.sin(cyc*Math.PI)*_ghostVis;
       if(vis<0.05) continue;
       const ax=((i*430+140 - cameraX*0.12)%(W+360)+W+360)%(W+360)-180;
       const ay=FLOOR-60 - cyc*70 + Math.sin(t*0.5+i)*5;
@@ -5579,7 +5586,7 @@ function drawBossSimple(bx,by){
 }
 
 function drawVictoryAnimation(){
-  const maxT = currentLevel===2 ? 220 : 220;
+  const maxT = currentLevel===2 ? 360 : 360;
   const prog = 1 - (victoryTimer / maxT);
   const isL2 = currentLevel===2;
   const isL3 = currentLevel===3;
@@ -7138,7 +7145,7 @@ function updateLevel2(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L2_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=220;
+      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=360;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -7521,7 +7528,7 @@ function updateLevel2(){
   if(!victoryActive && l2Portal.open>0.55 && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
     if(!yeti || !yeti.alive){
       saveBestScore(currentLevel,score);
-      victoryActive = true; victoryTimer = 220;
+      victoryActive = true; victoryTimer = 360;
       s.vx=0; s.vy=0; s.facing=1;
       otto.vx=0; otto.vy=0; otto.facing=1;
       sfx('win');
@@ -8026,7 +8033,7 @@ function updateLevel3(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L3_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=220;
+      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=360;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -8038,7 +8045,7 @@ function updateLevel3(){
     victoryTimer--;
     if(victoryTimer<=0){
       victoryActive=false; won=false;
-      goToLevel(4);
+      fadeToLevel(4);
     }
     s.vx=0;
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -8362,7 +8369,7 @@ function updateLevel3(){
   if(!victoryActive&&s.x+s.w>L3_FLAG.x+10&&s.x<L3_FLAG.x+90&&s.y+s.h>=FLOOR-10){
     if(!kingCrab||!kingCrab.alive){
       saveBestScore(currentLevel,score);
-      victoryActive=true; victoryTimer=220;
+      victoryActive=true; victoryTimer=360;
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
       SFX.win();
@@ -10067,10 +10074,11 @@ function hausPlatforms(){
     makePlatform(2300, FLOOR-150, 100),
     // ---- EMPTY CROSSING 2400 → 2760 (~360px, mirrors L1's GAP_START→ARENA_X0) ----
     // ---- ISOLATED BOSS ARENA begins ~2760; the possessed banquet floats CENTERED on the stage ----
-    // (chair → long table → chair, suspended mid-stage as a haunted centerpiece in front of the Baron)
-    {...makePlatform(2940, FLOOR-150, 70),  haunt:'chairL'},
-    {...makePlatform(3060, FLOOR-186, 220), haunt:'feast'},
-    {...makePlatform(3340, FLOOR-150, 70),  haunt:'chairR'},
+    // (chair → long table → chair, suspended as a haunted centerpiece — heights tuned so the
+    //  jump arc (~120px peak) clears each step: floor → chair (96) → feast table (150).)
+    {...makePlatform(2820, FLOOR-96, 70),  haunt:'chairL'},
+    {...makePlatform(3060, FLOOR-150, 220), haunt:'feast'},
+    {...makePlatform(3340, FLOOR-96, 70),  haunt:'chairR'},
   ];
 }
 function buildHausLevel(){
@@ -10244,7 +10252,7 @@ function updateGen(){
       }
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=220;
+      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=360;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -10254,7 +10262,7 @@ function updateGen(){
     victoryTimer--;
     if(victoryTimer<=0){
       victoryActive=false; won=false;
-      if(lv.next){ goToLevel(lv.next); }
+      if(lv.next){ fadeToLevel(lv.next); }
       else { finishCardActive=true; finishCardTimer=240; }
     }
     s.vx=0;
@@ -10492,9 +10500,18 @@ function updateGen(){
 
   // Boss (L1-style spit boss + phase2 slam, clone-tuned)
   if(boss&&boss.alive){
-    if(!boss.active&&!cutsceneActive&&s.x>lv.bossGate){
-      cutsceneActive=true;cutsceneTimer=240;
-      s.invincible=260; s.vx=0; s.vy=0; venom=[]; projectiles=[];
+    // L5: the Baron only manifests once Sawyer has jumped up onto the floating feast table.
+    // (other levels keep the gate-crossing trigger)
+    if(!boss.active&&!cutsceneActive){
+      let trigger=false;
+      if(currentLevel===5){
+        const feast=lv.platforms.find(p=>p.haunt==='feast');
+        if(feast && s.onGround && s.x+s.w>feast.x && s.x<feast.x+feast.w && Math.abs((s.y+s.h)-feast.y)<4) trigger=true;
+      } else if(s.x>lv.bossGate){ trigger=true; }
+      if(trigger){
+        cutsceneActive=true;cutsceneTimer=240;
+        s.invincible=260; s.vx=0; s.vy=0; venom=[]; projectiles=[];
+      }
     }
     if(boss.active){
       boss.phase+=0.07; boss.orbit+=0.05;
@@ -10632,7 +10649,7 @@ function updateGen(){
   if(!victoryActive&&s.x+s.w>flagX+10&&s.x<flagX+90&&s.y+s.h>=FLOOR-10){
     if(!boss||!boss.alive){
       saveBestScore(currentLevel,score);
-      victoryActive=true; victoryTimer=220;
+      victoryActive=true; victoryTimer=360;
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
       SFX.win();
@@ -10781,7 +10798,7 @@ function updateSwim(){
   }
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){ victoryActive=false; won=false; if(lv.next){ goToLevel(lv.next); } else { finishCardActive=true; finishCardTimer=240; } }
+    if(victoryTimer<=0){ victoryActive=false; won=false; if(lv.next){ fadeToLevel(lv.next); } else { finishCardActive=true; finishCardTimer=240; } }
     s.vx*=0.9; s.vy*=0.9; s.x+=s.vx; s.y+=s.vy;
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
     return;
@@ -10977,7 +10994,7 @@ function updateSwim(){
   // ---- Exit beacon / win ----
   const exitX=lv.worldW-120;
   if(!victoryActive && s.x+s.w>exitX-30 && (!boss||!boss.alive)){
-    saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=180; SFX.win();
+    saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=360; SFX.win();
     for(let i=0;i<24;i++) particles.push({x:exitX,y:SY+40+Math.random()*120,vx:(Math.random()-.5)*2,vy:-1-Math.random()*2,life:40,maxLife:40,type:'spark',color:lv.pal.secondary});
   }
   document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -12316,14 +12333,28 @@ function _baronDespill(){
         }
       }}
     }
-    // ---- pass 2: broad red-dominant safety sweep (whole atlas) ----
-    for(let i=0;i<d.length;i+=4){
-      const r=d[i], g=d[i+1], b=d[i+2], a=d[i+3]; if(a<8) continue;
-      if(r>90 && (r-g)>34 && (r-b)>34){
-        const edge=Math.min(r-g,r-b);
-        if(edge>60){ d[i+3]=0; }
-        else { d[i+3]=Math.max(0,a-Math.round((edge/60)*a)); if(d[i+3]>0) d[i]=Math.min(r,g+16); }
-      }
+    // ---- pass 2: tight red-BOX detector (corners only, no interior sweep) ----
+    // The clean atlas has no matte; only a STALE export would carry a red bounding box.
+    // We sample each frame's outer corner: if it's strongly red we flood-clear that red from
+    // the border inward. The Baron's own red brooch/buttons sit in the interior and are never
+    // sampled, so legitimate art is preserved. (The old whole-atlas red sweep ate those reds.)
+    const FR2=(typeof BARON_FRAMES!=='undefined')?BARON_FRAMES:null;
+    if(FR2){
+      const isRed=(i)=> d[i+3]>16 && d[i]>110 && (d[i]-d[i+1])>45 && (d[i]-d[i+2])>45;
+      for(const row in FR2){ for(const fr of FR2[row]){
+        const [sx,sy,sw,sh]=fr;
+        // only act if an actual corner is red (a true bounding box)
+        const corner=at(sx,sy);
+        if(!isRed(corner)) continue;
+        const stack=[];
+        const pushR=(x,y)=>{ if(x<sx||y<sy||x>=sx+sw||y>=sy+sh)return; const i=at(x,y); if(d[i+3]===0)return; if(isRed(i)) stack.push(x,y); };
+        for(let x=sx;x<sx+sw;x++){ pushR(x,sy); pushR(x,sy+sh-1); }
+        for(let y=sy;y<sy+sh;y++){ pushR(sx,y); pushR(sx+sw-1,y); }
+        while(stack.length){ const y=stack.pop(), x=stack.pop(); const i=at(x,y);
+          if(d[i+3]===0) continue; if(!isRed(i)) continue; d[i+3]=0;
+          pushR(x+1,y); pushR(x-1,y); pushR(x,y+1); pushR(x,y-1);
+        }
+      }}
     }
     c.putImageData(id,0,0); BARON_SRC=cv;
   }catch(e){ BARON_SRC=BARON_ATLAS; }
@@ -12421,6 +12452,29 @@ function buildLevelContent(n){
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
 }
+// Patient black fade between levels: fade to black → load level → fade back in.
+// Holds full black for a beat so the cut never feels rushed.
+let levelFadeActive = false;
+// Run an arbitrary level-build callback at full black, framed by slow fades.
+function fadeThenBuild(build){
+  const black = document.getElementById('intro-black');
+  if(!black){ build(); return; }
+  if(levelFadeActive) return;
+  levelFadeActive = true;
+  black.style.transition='opacity 1.4s ease';
+  black.style.display='block';
+  void black.offsetWidth;
+  black.style.opacity='1';
+  setTimeout(()=>{
+    build();
+    setTimeout(()=>{
+      black.style.transition='opacity 1.4s ease';
+      black.style.opacity='0';
+      setTimeout(()=>{ black.style.display='none'; levelFadeActive=false; }, 1500);
+    }, 700);
+  }, 1500);
+}
+function fadeToLevel(n){ fadeThenBuild(()=>goToLevel(n)); }
 function goToLevel(n){
   currentLevel=n; cameraX=0; levelStartScore=score;
   acquiredItems=[];
@@ -12476,9 +12530,9 @@ function playIntroCutscene(onDone){
   };
   const end = ()=>{ if(finished) return; finished=true;
     // final black beat → fade out → done
-    black.style.transition='opacity .5s ease';
+    black.style.transition='opacity 1.2s ease';
     black.style.display='block'; black.style.opacity='1';
-    setTimeout(()=>{ cleanup(); onDone && onDone(); }, 520);
+    setTimeout(()=>{ cleanup(); onDone && onDone(); }, 1300);
   };
   const onEnded = ()=> end();
   const onErr   = ()=>{ cleanup(); onDone && onDone(); };
@@ -12486,7 +12540,7 @@ function playIntroCutscene(onDone){
   const onKey   = (e)=>{ if(e.key==='Escape'||e.key===' '||e.key==='Enter'){ e.preventDefault(); doSkip(); } };
 
   // Beat 1: black in
-  black.style.transition='opacity .5s ease';
+  black.style.transition='opacity 1.2s ease';
   black.style.display='block';
   // force reflow so the opacity transition runs
   void black.offsetWidth;
@@ -12506,7 +12560,7 @@ function playIntroCutscene(onDone){
     if(p && p.catch) p.catch(()=>{ /* autoplay blocked */ vid.muted=true; vid.play().catch(onErr); });
     // fade the black beat away to expose the video (Beat 2 transition done)
     requestAnimationFrame(()=>{ black.style.opacity='0'; });
-  }, 520);
+  }, 1300);
 }
 
 // =========================================================================
@@ -12828,9 +12882,10 @@ function playIntroCutscene(onDone){
     if(inR(btn)){
       menuRunning=false;
       audioManager.stopTitle();
+      mScreen.style.transition='opacity 1.2s ease';
       mScreen.style.opacity='0';
       mScreen.style.pointerEvents='none';
-      setTimeout(()=>{ mScreen.style.display='none'; }, 500);
+      setTimeout(()=>{ mScreen.style.display='none'; }, 1250);
       const launch=()=>{
         restart(true);
         setupHiDPI();
