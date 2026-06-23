@@ -2787,21 +2787,13 @@ function drawCharSprite(p,drawY){
   const px=p.x-cameraX, cx=px+p.w/2;
   const ground=SPRITE_ANCHOR[anim]!==0;
   const ay=(SPRITE_ANIM_YOFF[p.id]&&SPRITE_ANIM_YOFF[p.id][anim])||0;
-  // idle breathing: procedural squash/stretch + bob + sway so standing sprites feel alive
-  let idleBob=0, idleSway=0;
+  // idle breathing: subtle squash/stretch + bob so standing sprites feel alive
+  let idleBob=0;
   if(anim==='idle'){
-    const t=Date.now();
-    const isOtto=p.id==='otto';
-    const rate=isOtto?520:680;            // baby breathes faster
-    const ph=isOtto?0:1.7;                // out of phase from each other
-    const amp=isOtto?1.6:1.0;             // baby moves a touch more
-    const br=Math.sin(t/rate+ph);
-    const br2=Math.sin(t/(rate*2.3)+ph);  // slow secondary drift
-    dH*=(1+br*0.013*amp); dW*=(1-br*0.007*amp);
-    idleBob=(Math.sin(t/rate+ph+0.6)*0.6 + br2*0.4)*amp;
-    idleSway=Math.sin(t/(rate*1.7)+ph)*0.5*amp;   // gentle weight shift
+    const br=Math.sin(Date.now()/650);
+    dH*=(1+br*0.012); dW*=(1-br*0.006); idleBob=Math.sin(Date.now()/650+0.6)*0.6;
   }
-  const dx=cx-dW/2+idleSway;
+  const dx=cx-dW/2;
   let dy;
   if(anim==='jump'){
     // Normalize airborne frames to the standing height so heads/bodies never grow or shrink mid-jump
