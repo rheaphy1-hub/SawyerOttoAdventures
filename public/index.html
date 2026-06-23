@@ -4841,7 +4841,7 @@ const cosmicGlow = (function(){
     ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
     // THE BLACK HOLE — a looming void with a swirling accretion ring
     const bx=((W*0.72 - cameraX*0.05)%(W*2.0)+W*2.0)%(W*2.0)-W*0.4;
-    const by=H*0.30, R=Math.min(W,H)*0.20, spin=Date.now()*0.0012;
+    const by=H*0.30, R=Math.min(W,H)*0.20, spin=Date.now()*0.0005;
     if(bx>-R*3&&bx<W+R*3){
       // accretion disc (additive swirl)
       ctx.globalCompositeOperation='lighter';
@@ -6266,8 +6266,8 @@ function loop(){
     drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls();
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel>=5&&currentLevel<=6){
-    drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6)drawGenRings();
-    drawGenEnemies(); drawGenBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
+    drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
+    drawGenEnemies(); drawGenBoss(); if(currentLevel===6)drawSpaceSpires(); drawVenom(); drawProjectiles(); drawCheckpoint();
   } else {
     drawBg(); cosmicGlow(); drawPlatforms(); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawCheckpoint(); drawBossWind(); drawBossWarning();
@@ -9964,7 +9964,7 @@ const LV = {
     audio:'/audio/L5strangerthangs.mp3'
   },
   6: {
-    worldW:3400, bossGate:2600, next:null,
+    worldW:4200, bossGate:3300, next:null,
     pal:{ skyT:'#000000', skyM:'#0A0A2E', skyL:'#16213E', ground:'#2A2A3A',
           edge:'#3A4A6A', plat:'#4A5A7A', glow:'#7ABAFF',
           primary:'#00FF00', secondary:'#00CCFF', tertiary:'#FFFF00',
@@ -10010,12 +10010,7 @@ function buildLevelGen(n){
                       plat:gPlat, phase:Math.random()*6, hitCount:0 });
   });
   buildGenRocks(n);
-  // L6 — particle rings: fly through OR shoot through for bonus points
-  lv.rings = [];
-  if(n===6){
-    const ringXs=[420,720,1040,1360,1700,2040,2380,2760];
-    ringXs.forEach((rx,i)=>{ lv.rings.push({ x:rx, y:FLOOR-90-((i*53)%190), r:30, hit:false, phase:Math.random()*6, points:150 }); });
-  }
+  lv.rings = [];   // (L6 rings/transponder/spires are built in buildSpaceLevel)
 }
 const GEN_RARITY = [ // 60% common / 30% uncommon / 10% rare
   {r:1,p:75},{r:1,p:75},{r:1,p:75},{r:1,p:75},{r:1,p:75},{r:1,p:75},
@@ -10120,7 +10115,7 @@ function spacePlatforms(){
     makePlatform(2300, FLOOR-120, 96),    // 11 BOOST
     makePlatform(2320, FLOOR-235, 110),   // 12 high reward
     makePlatform(2560, FLOOR-100, 90),    // 13
-    makePlatform(2700, FLOOR, 3400-2700), // 14 boss deck
+    makePlatform(2700, FLOOR, 4200-2700), // 14 boss deck — solid ground: quiet corridor + isolated arena
   ];
 }
 function buildSpaceLevel(){
@@ -10136,12 +10131,26 @@ function buildSpaceLevel(){
   const rIdx=[4,8,12], rar=[3,3,3], pts=[250,250,250];
   rIdx.forEach((i,k)=>{ lv.rocks.push({x:P[i].x+P[i].w/2-8, y:P[i].y-26, got:false, rarity:rar[k], points:pts[k]}); });
   lv.boostPads=[3,7,11].map(i=>({x:P[i].x+P[i].w/2-18, y:P[i].y-7, w:36, h:7}));
-  // particle rings sit in the leap gaps — fly OR shoot through for +150
+  // ── RING GAUNTLET: fly-through ONLY. Heights trace the natural jump arcs between the
+  //    leap platforms, so clearing all ten is a continuous skill run that drops the
+  //    transponder's containment field. (Shooting rings was removed.) ──
   lv.rings=[
-    {x:270,y:FLOOR-60},{x:480,y:FLOOR-105},{x:720,y:FLOOR-105},{x:970,y:FLOOR-100},
-    {x:1210,y:FLOOR-135},{x:1450,y:FLOOR-125},{x:1710,y:FLOOR-115},{x:1960,y:FLOOR-115},
-    {x:2190,y:FLOOR-110},{x:2440,y:FLOOR-115}
-  ].map(r=>({x:r.x,y:r.y,r:34,hit:false,phase:Math.random()*6,points:150}));
+    {x:250,y:FLOOR-95},{x:460,y:FLOOR-150},{x:700,y:FLOOR-165},{x:990,y:FLOOR-150},
+    {x:1230,y:FLOOR-185},{x:1460,y:FLOOR-185},{x:1730,y:FLOOR-175},{x:1980,y:FLOOR-160},
+    {x:2200,y:FLOOR-160},{x:2460,y:FLOOR-170}
+  ].map(r=>({x:r.x,y:r.y,r:30,hit:false,phase:Math.random()*6,points:150}));
+  // ── TRANSPONDER: caged on the boss-deck approach; clearing every ring drops the field.
+  //    Nexus Nine won't manifest until it's taken. ──
+  lv.transponder = { x:2820, y:FLOOR-30, w:22, h:26, got:false, field:1, locked:true, phase:0 };
+  lv.transponderTaken = false;
+  // ── ARENA SPIRES: ancient metal monoliths jutting from the crust at angles — permanent
+  //    cover. The Boss's bolts shatter on them. They phase up when the fight begins. ──
+  lv.spires = [
+    {x:3470, baseY:FLOOR, h:96,  w:26, tilt:-0.22, seed:11},
+    {x:3640, baseY:FLOOR, h:120, w:30, tilt: 0.14, seed:23},
+    {x:3820, baseY:FLOOR, h:104, w:24, tilt:-0.10, seed:37}
+  ];
+  lv.spireRise = 0;
 }
 function buildLevel6(){ buildSpaceLevel(); buildGenBoss(6); }
 
@@ -10474,7 +10483,8 @@ function updateGen(){
             for(let i=0;i<16;i++){ const a=i*(6.283/16)+Math.random()*0.4, sp=1.4+Math.random()*2.6;
               boss.deathEyes.push({x:ecx,y:ecy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.2,life:60+Math.random()*40,max:100,r:5+Math.random()*4}); }
           }
-          for(let i=0;i<18;i++) particles.push({x:boss.x+boss.w/2,y:boss.y+boss.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:40,maxLife:40,type:'spark',color:bc.body}); }
+          for(let i=0;i<18;i++) particles.push({x:boss.x+boss.w/2,y:boss.y+boss.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:40,maxLife:40,type:'spark',color:bc.body});
+          if(currentLevel===6 && lv.spires){ for(const sp of lv.spires){ for(let i=0;i<10;i++){ const a=Math.random()*7, vv=1+Math.random()*4; particles.push({x:sp.x,y:sp.baseY-sp.h*0.5*lv.spireRise,vx:Math.cos(a)*vv,vy:Math.sin(a)*vv-1,life:32,maxLife:32,type:'spark',color:i%2?'#7ABAFF':'#C9D4E8'}); } } } }
       }
     }
     if(pr.life>0 && lv.rings){
@@ -11801,7 +11811,7 @@ function drawGenPitVoids(){
 function drawGenPlatforms(){
   const lv=curLV(), pal=lv.pal, haus=currentLevel===5, space=currentLevel===6;
   function drawAsteroid(ax,ay,aw,ah){
-    const cx=ax+aw/2, cyA=ay+ah/2, pts=11, seed=ax*0.07;
+    const cx=ax+aw/2, cyA=ay+ah/2, pts=11, seed=(ax+cameraX)*0.07; // world-stable (was screen-seeded -> texture crawled)
     const outline=()=>{ ctx.beginPath();
       for(let i=0;i<=pts;i++){ const a=i/pts*6.283;
         const rx=(aw/2)*(0.78+0.22*Math.sin(i*2.3+seed)), ry=(ah/2)*(0.78+0.22*Math.cos(i*1.7+seed*1.3));
@@ -11821,6 +11831,12 @@ function drawGenPlatforms(){
       ctx.fillStyle='rgba(200,210,230,0.22)'; ctx.beginPath(); ctx.arc(cxp-cr*0.3,cyp-cr*0.3,cr*0.6,0,7); ctx.fill();
       ctx.fillStyle='#15151E'; ctx.beginPath(); ctx.arc(cxp,cyp,cr*0.55,0,7); ctx.fill();
     }
+    // slow controlled sheen sweep (~0.3 rad/s) keeps the spin read without per-frame churn
+    const _rot=Date.now()*0.0003+seed;
+    ctx.save(); ctx.translate(cx,cyA); ctx.rotate(_rot); ctx.globalCompositeOperation='lighter';
+    const _sg=ctx.createLinearGradient(-aw*0.5,0,aw*0.5,0);
+    _sg.addColorStop(0,'rgba(150,180,230,0)'); _sg.addColorStop(0.5,'rgba(150,180,230,0.10)'); _sg.addColorStop(1,'rgba(150,180,230,0)');
+    ctx.fillStyle=_sg; ctx.fillRect(-aw*0.6,-ah*0.6,aw*1.2,ah*1.2); ctx.restore();
     ctx.restore();
     ctx.lineWidth=1.5; ctx.strokeStyle='rgba(150,170,210,0.35)'; outline(); ctx.stroke();
   }
@@ -11936,9 +11952,10 @@ function drawGenPlatforms(){
         ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(sx,p.y+p.h,p.w,4);
       } else if(space){
         drawAsteroid(sx,p.y,p.w,p.h+6);
-        // landing rim so the asteroid reads as a standable ledge, not a free-floating rock
-        ctx.fillStyle='rgba(120,200,255,0.55)'; ctx.fillRect(sx+3,p.y,p.w-6,2);
-        ctx.fillStyle='rgba(255,255,255,0.30)'; ctx.fillRect(sx+3,p.y,p.w-6,1);
+        // soft top-shade only (hard bright rim line removed per design)
+        const _tg=ctx.createLinearGradient(0,p.y,0,p.y+5);
+        _tg.addColorStop(0,'rgba(160,185,220,0.16)'); _tg.addColorStop(1,'rgba(160,185,220,0)');
+        ctx.fillStyle=_tg; ctx.fillRect(sx+4,p.y,p.w-8,5);
       } else {
         ctx.fillStyle=pal.plat; ctx.beginPath();ctx.roundRect(sx,p.y,p.w,p.h+4,4);ctx.fill();
         ctx.fillStyle=pal.glow; ctx.fillRect(sx,p.y,p.w,3);
@@ -11993,6 +12010,70 @@ function drawGenRings(){
     ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
   }
   ctx.restore();
+}
+function drawSpaceSpires(){
+  const lv=curLV(); if(currentLevel!==6 || !lv.spires || lv.spireRise<=0.01) return;
+  const rise=lv.spireRise, t=Date.now()*0.001;
+  for(const sp of lv.spires){
+    const x=sp.x-cameraX; if(x<-60||x>W+60)continue;
+    const h=sp.h*rise;
+    ctx.save();
+    ctx.translate(x, sp.baseY); ctx.rotate(sp.tilt);            // half-buried lean
+    const w0=sp.w, w1=sp.w*0.55;
+    ctx.beginPath();
+    ctx.moveTo(-w0/2,6); ctx.lineTo(w0/2,6); ctx.lineTo(w1/2,-h); ctx.lineTo(-w1/2,-h); ctx.closePath();
+    const g=ctx.createLinearGradient(-w0/2,0,w0/2,0);
+    g.addColorStop(0,'#1A1E2A'); g.addColorStop(0.5,'#2E3850'); g.addColorStop(1,'#12161F');
+    ctx.fillStyle=g; ctx.fill();
+    ctx.strokeStyle='rgba(150,180,230,0.45)'; ctx.lineWidth=1.4; ctx.stroke();
+    // glowing circuit seams + node lights
+    ctx.globalCompositeOperation='lighter';
+    const pulse=0.5+0.5*Math.sin(t*2+sp.seed);
+    ctx.strokeStyle='rgba(122,186,255,'+(0.30+0.35*pulse)+')'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(0,-h+4); ctx.lineTo(0,-6);
+    for(let k=0;k<3;k++){ const yy=-h*(0.28+k*0.24); ctx.moveTo(-w1*0.3,yy); ctx.lineTo(w1*0.3,yy+5); }
+    ctx.stroke();
+    for(let k=0;k<3;k++){ const yy=-h*(0.30+k*0.26);
+      ctx.fillStyle='rgba(185,228,255,'+(0.45+0.5*pulse)+')'; ctx.beginPath(); ctx.arc(0,yy,2,0,7); ctx.fill(); }
+    ctx.globalCompositeOperation='source-over';
+    ctx.restore();
+    // rubble where it pierces the crust
+    ctx.fillStyle='rgba(10,12,18,0.7)'; ctx.beginPath(); ctx.ellipse(x,sp.baseY+2,sp.w*0.7,5,0,0,7); ctx.fill();
+  }
+}
+function drawSpaceTransponder(){
+  const lv=curLV(); if(currentLevel!==6 || !lv.transponder || lv.transponder.got) return;
+  const tp=lv.transponder, x=tp.x-cameraX; if(x<-60||x>W+60)return;
+  const cx=x+tp.w/2, cy=tp.y+tp.h/2, t=Date.now()*0.004;
+  // pedestal
+  ctx.fillStyle='#2A3346'; ctx.fillRect(x-4,tp.y+tp.h-2,tp.w+8,8);
+  ctx.fillStyle='#3E4A66'; ctx.fillRect(x-4,tp.y+tp.h-2,tp.w+8,2);
+  // beacon bloom
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const bg=ctx.createRadialGradient(cx,cy,2,cx,cy,32);
+  bg.addColorStop(0,'rgba(159,216,255,0.5)'); bg.addColorStop(1,'rgba(159,216,255,0)');
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(cx,cy,32,0,7); ctx.fill();
+  ctx.restore();
+  // device
+  const bob=Math.sin(t*0.7)*2;
+  if(transponderImg.complete && transponderImg.naturalWidth){
+    const ih=tp.h, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+    ctx.drawImage(transponderImg, cx-iw/2, cy-ih/2+bob, iw, ih);
+  } else {
+    ctx.fillStyle='#9FD8FF'; ctx.beginPath(); ctx.moveTo(cx,cy-10+bob); ctx.lineTo(cx+8,cy+bob); ctx.lineTo(cx,cy+10+bob); ctx.lineTo(cx-8,cy+bob); ctx.closePath(); ctx.fill();
+  }
+  // containment field while locked
+  if(tp.field>0.02){
+    ctx.save(); ctx.globalAlpha=tp.field; ctx.globalCompositeOperation='lighter';
+    const R=26+Math.sin(tp.phase)*2;
+    for(let r=0;r<2;r++){ ctx.strokeStyle=r?'rgba(255,90,120,0.7)':'rgba(120,200,255,0.7)'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.ellipse(cx,cy,R-r*5,(R-r*5)*1.15,tp.phase*(r?-1:1),0,7); ctx.stroke(); }
+    ctx.strokeStyle='rgba(180,220,255,0.4)'; ctx.lineWidth=1; ctx.beginPath();
+    for(let k=0;k<6;k++){ const a=k/6*6.283+tp.phase*0.5, px=cx+Math.cos(a)*R, py=cy+Math.sin(a)*R*1.15; k?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+    ctx.closePath(); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.globalAlpha=0.85*tp.field; ctx.fillStyle='#9FD8FF'; ctx.font='bold 8px monospace'; ctx.textAlign='center';
+    ctx.fillText('CLEAR THE RINGS', cx, tp.y-14); ctx.restore();
+  }
 }
 function drawGenEnemies(){
   const lv=curLV(), pal=lv.pal;
