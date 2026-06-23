@@ -1059,9 +1059,6 @@ function updateArtifact(s){
     if(p && p.x+p.w>artifact.x-6 && p.x<artifact.x+artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+40){
       artifact.got=true; artifactCollected=true;
       if(barrier) barrier.sealed=false;
-      // Checkpoint: once the transponder is in hand, deaths (and a level restart after game
-      // over) resume on the artifact plateau instead of re-running the climb to re-fetch it.
-      if(currentLevel===1){ checkpoint={x:artifact.x, y:artifact.y+32}; } // y = plateau top (artifact sits 32px above it)
       acquireItem('transponder'); popPoints(artifact.x+artifact.w/2, ay-6, 500, '#9FD8FF'); score+=500;
       SFX.win(); shakeIntensity=10;
       for(let i=0;i<28;i++) particles.push({x:artifact.x+artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
@@ -2489,13 +2486,14 @@ function hurt(p){
   // Knockback burst particles
   for(let i=0;i<10;i++) particles.push({x:p.x+p.w/2,y:p.y+p.h/2,vx:(Math.random()-0.5)*6,vy:-2-Math.random()*3,life:18,maxLife:18,type:'spark',color:'#FF4444'});
   if (lives<=0){
-    // If a transponder was acquired this run (L1/L2/L3), remember the checkpoint so a level
-    // restart resumes on the perch/plateau instead of forcing the player to re-fetch it.
-    const tHeld = (currentLevel===1 && artifactCollected)
-               || (currentLevel===2 && l2ArtifactCollected)
-               || (currentLevel===3 && l3ArtifactCollected);
-    transponderRespawn = (tHeld && checkpoint)
-      ? { level:currentLevel, x:checkpoint.x, y:checkpoint.y } : null;
+    // If a transponder was acquired this run (L1/L2/L3), remember its location so a level
+    // restart resumes on the perch/plateau. This is GAME-OVER-only — per-hit deaths above
+    // still respawn normally (near-camera ground); we do NOT touch `checkpoint` here.
+    let tSpot=null;
+    if(currentLevel===1 && artifactCollected && artifact){ tSpot={x:artifact.x, y:artifact.y+32}; }
+    else if(currentLevel===2 && l2ArtifactCollected){ const pe=l2Platforms.find(pl=>pl.artifactPerch); if(pe) tSpot={x:pe.x+pe.w/2, y:pe.y}; }
+    else if(currentLevel===3 && l3ArtifactCollected){ tSpot={x:(l3Barrel?l3Barrel.x+l3Barrel.w+16:(l3Artifact?l3Artifact.x:0)), y:FLOOR}; }
+    transponderRespawn = tSpot ? { level:currentLevel, x:tSpot.x, y:tSpot.y } : null;
     gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return;
   }
   const sp = respawnSpot(p);
@@ -6742,8 +6740,6 @@ function updateL2Artifact(){
   for(const p of [sawyer,otto]){
     if(p && p.x+p.w>l2Artifact.x-6 && p.x<l2Artifact.x+l2Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+l2Artifact.h+8){
       l2Artifact.got=true; l2ArtifactCollected=true; score+=400; acquireItem('transponder'); popPoints(l2Artifact.x+14, ay-4, 400, '#9FD8FF'); sfx('win'); shakeIntensity=Math.max(shakeIntensity,9);
-      // Checkpoint: respawn on the artifact perch once the transponder is in hand.
-      { const perch=l2Platforms.find(pl=>pl.artifactPerch); if(perch) checkpoint={x:perch.x+perch.w/2, y:perch.y}; }
       for(let i=0;i<32;i++) particles.push({x:l2Artifact.x+14, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
     }
   }
@@ -6997,8 +6993,6 @@ function updateL3Artifact(s){
   for(const p of [s, otto]){
     if(p && p.x+p.w>l3Artifact.x-6 && p.x<l3Artifact.x+l3Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+40){
       l3Artifact.got=true; l3ArtifactCollected=true;
-      // Checkpoint: respawn on the ground beside the barrel once the transponder is in hand.
-      checkpoint={x:(l3Barrel?l3Barrel.x+l3Barrel.w+16:l3Artifact.x), y:FLOOR};
       sfx('ball'); shakeIntensity=Math.max(shakeIntensity,6);
       score+=250; acquireItem('relic'); popPoints(l3Artifact.x+l3Artifact.w/2, ay-6, 250, '#C9B6FF');
       for(let i=0;i<28;i++) particles.push({x:l3Artifact.x+l3Artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
