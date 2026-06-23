@@ -721,6 +721,9 @@ let cutsceneActive = false, cutsceneTimer = 0;
 
 // Otto power-up  0=none 1=giant 2=spray 3=cuteness
 let ottoPower = 0, ottoPowerTimer = 0;
+// Power ribbon announce timer: frames since the ribbon last appeared. Drives a brief
+// fade-in, a ~2s full-opacity "announce" window, then a settle to a quiet resting alpha.
+let ottoRibbonT = 0;
 const POWER_DURATION = 900; // 15 sec at 60fps
 // Giant Otto charge power state
 let giantOttoPhase = 'idle'; // 'idle' | 'growing' | 'charging'
@@ -748,7 +751,7 @@ function buildBottles(){
 }
 function resetGiantOtto(){
   giantOttoPhase='idle'; giantOttoTimer=0;
-  ottoPower=0; ottoPowerTimer=0;
+  ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0;
 }
 
 function updateGiantOttoCharge(curEnemies){
@@ -799,6 +802,7 @@ function updateBottles(s){
         b.got=true;
         const newPwr = 1 + Math.floor(Math.random()*3);
         ottoPower = newPwr;
+        ottoRibbonT = 0; // restart the announce/fade cycle for the ribbon
         // Power 1 (giant rush) is self-terminating — no timer needed
         ottoPowerTimer = newPwr === 1 ? 0 : POWER_DURATION;
         if(newPwr===1){
@@ -812,6 +816,7 @@ function updateBottles(s){
     }
   }
   // tick power timer
+  if(ottoPower>0) ottoRibbonT++;
   if(ottoPowerTimer>0){ ottoPowerTimer--; if(ottoPowerTimer===0){ ottoPower=0; giantOttoPhase='idle'; giantOttoTimer=0; } }
 }
 function drawBottles(){
@@ -1035,6 +1040,9 @@ function drawTumbleweeds(){
 }
 // ===== ARTIFACT: must be collected at the triangle apex to unlock the boss; a sealed gate blocks the way until then =====
 let artifact = null, artifactCollected = false, barrier = null;
+// When the player reaches game over AFTER taking the transponder, remember it so a level
+// restart drops them back past the acquisition point (no need to re-fetch the artifact).
+let transponderRespawn = null; // {level, x} or null
 function buildArtifactGate(){
   if(currentLevel===1){
     artifact = { x:2484, y:FLOOR-270-32, w:22, got:false, bobT:0 };   // centered on the plateau top (2410..2580)
@@ -2477,7 +2485,13 @@ function hurt(p){
   hurtFlashTimer = 12; // red screen flash
   // Knockback burst particles
   for(let i=0;i<10;i++) particles.push({x:p.x+p.w/2,y:p.y+p.h/2,vx:(Math.random()-0.5)*6,vy:-2-Math.random()*3,life:18,maxLife:18,type:'spark',color:'#FF4444'});
-  if (lives<=0){ gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return; }
+  if (lives<=0){
+    // If the transponder was already acquired this run, remember it so the level restart
+    // resumes past the acquisition point instead of forcing a re-fetch.
+    transponderRespawn = (currentLevel===1 && artifactCollected && artifact)
+      ? { level:currentLevel, x:artifact.x } : null;
+    gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return;
+  }
   const sp = respawnSpot(p);
   p.x=sp.x; p.y=sp.y; p.vx=0; p.vy=-4; p.invincible=90;
 }
@@ -4616,14 +4630,17 @@ const cosmicGlow = (function(){
   // L2 — frozen night: deepen contrast, bloom the aurora + moon
   function gradeFrozen(){
     ctx.save();
+    ctx.translate(0,cameraY); // screen-anchor the grade so its color band stays pinned during the sky-route climb (no seam)
     // HP-linked enrage ramp: arctic blue (phase 1) → deep glacial violet / black-ice bruise (phase 2)
     const enr = (typeof l2BossEnrage!=='undefined') ? l2BossEnrage : 0;
     const mix=(a,b)=>Math.round(a+(b-a)*enr);
-    const g=ctx.createLinearGradient(0,0,0,H);
+    // Span the gradient across the FULL revealed vertical range so there's no flat-clamp seam mid-screen on the climb.
+    const FT=-380;
+    const g=ctx.createLinearGradient(0,FT,0,H);
     g.addColorStop(0,'rgba('+mix(6,18)+','+mix(12,4)+','+mix(40,30)+','+(0.50+0.30*enr)+')');
     g.addColorStop(0.5,'rgba('+mix(10,28)+','+mix(28,8)+','+mix(60,40)+','+(0.28+0.30*enr)+')');
     g.addColorStop(1,'rgba('+mix(20,30)+','+mix(50,16)+','+mix(80,52)+','+(0.10+0.24*enr)+')');
-    ctx.fillStyle=g; ctx.fillRect(0,-380,W,H+380);
+    ctx.fillStyle=g; ctx.fillRect(0,FT,W,H-FT);
     ctx.globalCompositeOperation='lighter';
     const auT=Date.now()/2600;
     for(let b=0;b<2;b++){ const col=b?gGreen:gMoon;
@@ -6034,7 +6051,7 @@ function restartCurrentLevel(){
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
-  ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
+  ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0;
   shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
   currentLevel=lvl;
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
@@ -6044,6 +6061,16 @@ function restartCurrentLevel(){
   else if(currentLevel>=4&&currentLevel<=6){ buildLevelContent(currentLevel); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
+  // Resume past the transponder if it was held at game over (skip the re-fetch traversal).
+  if(transponderRespawn && transponderRespawn.level===currentLevel && artifact){
+    artifact.got=true; artifactCollected=true; if(barrier) barrier.sealed=false;
+    acquireItem('transponder');
+    const px=transponderRespawn.x, py=artifact.y; // plateau top where the artifact sat
+    sawyer.x=px; sawyer.y=py-sawyer.h-2; sawyer.vx=0; sawyer.vy=0; sawyer.invincible=90;
+    otto.x=px-26; otto.y=py-otto.h-2; otto.vx=0; otto.vy=0;
+    cameraX=Math.max(0, Math.min(px - W/3, WORLD_W - W));
+  }
+  transponderRespawn=null;
   audioManager.stop();
   audioManager.play(currentLevel);
   const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
@@ -6056,7 +6083,7 @@ function jumpToLevel(n){
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
-  ottoPower=0; ottoPowerTimer=0; shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
+  ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
   currentLevel=n;
   bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0};
   // Hide any open popups and menu
@@ -6088,8 +6115,8 @@ function restart(resetLevel){
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
-  ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
-  checkpoint=null;
+  ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0;
+  checkpoint=null; transponderRespawn=null;
   currentLevel=lvl;
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   
@@ -6322,49 +6349,50 @@ function loop(){
   // (bike escape removed — portal warp handles level finish)
   if(currentLevel===5 && !bikeEscape.active && !victoryActive) drawHausDarkness();
   if(currentLevel===5 && !bikeEscape.active && !victoryActive) drawBaronGhoul();
-  // Power indicator HUD — neon banner, top-center (clear of corner HUD)
+  // Power indicator — slim ribbon flush to the very top edge. Stays clear of the
+  // bottom touch controls (mobile-primary), the top-right hearts/score, and the
+  // top-left character labels. Announces brightly for ~2s, then settles to a quiet
+  // resting alpha so it never blocks the action.
   if(ottoPower>0){
     const pwrNames=['','BIG BABY','MILK BLAST','SNUGGLE STUN'];
     const pwrColors=['','#7FD4FF','#FFF4B0','#FF8AD8'];
-    // BIG BABY is a self-terminating rush (no timer) — show a full bar; others count down.
-    const timed = ottoPower!==1;
+    const timed = ottoPower!==1;                 // BIG BABY self-terminates (no countdown)
     const pct = timed ? (ottoPowerTimer/POWER_DURATION) : 1;
     const col = pwrColors[ottoPower];
     const label = pwrNames[ottoPower];
+    // ── announce/fade envelope (frame-based; ottoRibbonT resets to 0 on pickup) ──
+    const FADE_IN=10, ANNOUNCE=120, SETTLE=20;   // ~0.17s in, 2s bright, ~0.33s settle
+    const REST=0.55;                             // quiet resting opacity
+    let env;
+    if(ottoRibbonT<FADE_IN)            env = ottoRibbonT/FADE_IN;                 // fade in 0→1
+    else if(ottoRibbonT<FADE_IN+ANNOUNCE) env = 1;                               // full announce
+    else { const k=Math.min(1,(ottoRibbonT-FADE_IN-ANNOUNCE)/SETTLE); env = 1-(1-REST)*k; } // settle to REST
+    // gentle exit fade in the power's final ~0.4s (timed powers only)
+    if(timed && ottoPowerTimer<24) env *= ottoPowerTimer/24;
     const c = ctx; c.save();
     c.textAlign='center';
-    c.font='900 18px system-ui,-apple-system,sans-serif';
-    const secTxt = timed ? ('  '+Math.ceil(ottoPowerTimer/60)+'s') : '';
-    const txt = 'OTTO: '+label+secTxt;
+    c.font='700 13px system-ui,-apple-system,sans-serif';
+    const secTxt = timed ? ('  ·'+Math.ceil(ottoPowerTimer/60)+'s') : '';
+    const txt = 'OTTO  '+label+secTxt;
+    const rh = 18, ry = 0, cx = W/2, ty = ry+rh/2+4.5;   // flush to the top edge
+    // ── faint tinted housing, centered & width-capped so it never reaches the corner HUD ──
     const tw = c.measureText(txt).width;
-    const bw = Math.max(150, tw+44), bx = W/2-bw/2, by = 8, bh = 30, cx = W/2;
-    // pulsing glow strength
-    const pulse = 0.6 + 0.4*Math.sin(performance.now()*0.006);
-    // ── housing: dark glass capsule with neon rim ──
-    c.beginPath(); c.roundRect(bx,by,bw,bh,15);
-    c.fillStyle='rgba(10,8,24,0.78)'; c.fill();
-    // remaining-time fill (subtle, behind text) for timed powers
-    if(timed){
-      c.save(); c.beginPath(); c.roundRect(bx,by,bw,bh,15); c.clip();
-      c.globalAlpha=0.20; c.fillStyle=col;
-      c.fillRect(bx,by,bw*pct,bh);
-      c.restore();
-    }
-    // neon rim — outer bloom + crisp inner stroke
-    c.lineJoin='round';
-    c.shadowColor=col; c.shadowBlur=14*pulse;
-    c.lineWidth=2.5; c.strokeStyle=col; c.globalAlpha=0.9;
-    c.beginPath(); c.roundRect(bx+1,by+1,bw-2,bh-2,14); c.stroke();
-    c.shadowBlur=0; c.globalAlpha=1;
-    c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.35)';
-    c.beginPath(); c.roundRect(bx+1,by+1,bw-2,bh-2,14); c.stroke();
-    // ── neon text: dark outline → glowing fill → bright core ──
-    const ty = by+bh/2+6.5;
-    c.lineWidth=4; c.lineJoin='round'; c.strokeStyle='rgba(4,2,14,0.95)';
+    const fullW = Math.min(300, Math.max(150, tw+40));   // clears hearts/score & left labels
+    c.globalAlpha = 0.16*env;
+    const bg = c.createLinearGradient(0,ry,0,ry+rh);
+    bg.addColorStop(0,'rgba(8,6,20,0.92)'); bg.addColorStop(1,'rgba(8,6,20,0.30)');
+    c.fillStyle=bg; c.fillRect(cx-fullW/2, ry, fullW, rh);
+    // thin tinted underline = countdown (shrinks left-to-right); full for untimed powers
+    const barW = fullW * (timed ? pct : 1);
+    c.globalAlpha = 0.55*env;
+    c.fillStyle=col; c.fillRect(cx-fullW/2, ry+rh-2, barW, 2);
+    // ── ribbon text: soft dark outline → tinted core (single glow, no triple-pass) ──
+    c.globalAlpha = env;
+    c.lineWidth=3; c.lineJoin='round'; c.strokeStyle='rgba(4,2,14,0.85)';
     c.strokeText(txt, cx, ty);
-    c.shadowColor=col; c.shadowBlur=10*pulse; c.fillStyle=col;
+    c.shadowColor=col; c.shadowBlur=4; c.fillStyle=col;
     c.fillText(txt, cx, ty);
-    c.shadowBlur=0; c.globalAlpha=0.92; c.fillStyle='rgba(255,255,255,0.92)';
+    c.shadowBlur=0; c.globalAlpha=0.85*env; c.fillStyle='rgba(255,255,255,0.9)';
     c.fillText(txt, cx, ty);
     c.restore();
   }
