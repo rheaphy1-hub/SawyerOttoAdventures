@@ -10158,7 +10158,7 @@ function buildHausLevel(){
   // Evil Giant Bratwurst mini-boss — roams the attic decks
   lv.miniBoss = { x:3700, y:FLOOR-548, w:60, h:34, baseY:FLOOR-548, vx:1.5, facing:1,
                   hp:6, maxHp:6, alive:true, defeated:false, bobT:Math.random()*6,
-                  shootTimer:80, hitFlash:0, lo:3220, hi:3960 };
+                  shootTimer:80, hitFlash:0, lo:3180, hi:3940 };
   // Transponder, encased in a ghostly casing until the Bratwurst falls
   lv.transponder = { x:3780, y:FLOOR-560, w:22, h:26, got:false, cased:1, locked:true, phase:0 };
   lv.transponderTaken = false;
@@ -10208,8 +10208,10 @@ function updateBratwurst(){
   if(mb && mb.alive){
     mb.bobT+=0.05;
     const inAttic = s.y < FLOOR-260;     // Sawyer is up in the rafters
-    if(inAttic){ mb.vx += Math.sign((s.x+s.w/2-mb.w/2)-mb.x)*0.09; mb.vx=Math.max(-2.6,Math.min(2.6,mb.vx)); }
-    else { if(mb.x<=mb.lo)mb.facing=1; if(mb.x>=mb.hi)mb.facing=-1; mb.vx += (mb.facing*1.6-mb.vx)*0.2; }
+    // Steady wide patrol across the attic, sweeping past the transponder roost (no homing chase).
+    if(mb.x<=mb.lo)mb.facing=1; if(mb.x>=mb.hi)mb.facing=-1;
+    const _spd = inAttic ? 1.9 : 1.4;
+    mb.vx += (mb.facing*_spd-mb.vx)*0.12;
     mb.x+=mb.vx;
     if(mb.x<mb.lo){mb.x=mb.lo;mb.vx=Math.abs(mb.vx);} if(mb.x>mb.hi){mb.x=mb.hi;mb.vx=-Math.abs(mb.vx);}
     mb.facing = mb.vx<0?-1:1;
@@ -10525,9 +10527,11 @@ function updateOttoGen(){
   if(currentLevel===5){
     if(sawyer.climbing){
       let lad=null; for(const pl of lv.platforms){ if(pl.isLadder && sawyer.x+sawyer.w>pl.x && sawyer.x<pl.x+pl.w){lad=pl;break;} }
-      if(lad){ o.climbing=true; const tx=lad.x+lad.w/2-o.w/2;
-        o.x+=(tx-o.x)*0.35; o.y+=((sawyer.y+8)-o.y)*0.3; o.vx=0; o.vy=0; o.onGround=false; o.facing=sawyer.facing;
-        if(Math.hypot(o.x-sawyer.x,o.y-sawyer.y)>300){ o.x=tx; o.y=sawyer.y+8; }
+      if(lad){ o.climbing=true;
+        const tx=lad.x+lad.w/2-o.w/2-18;     // trail to the side so he's not stacked on Sawyer
+        const ty=sawyer.y+26;                 // and below — following behind up the ladder
+        o.x+=(tx-o.x)*0.35; o.y+=(ty-o.y)*0.3; o.vx=0; o.vy=0; o.onGround=false; o.facing=sawyer.facing;
+        if(Math.hypot(o.x-sawyer.x,o.y-sawyer.y)>300){ o.x=tx; o.y=ty; }
         if(o.attackCooldown>0)o.attackCooldown--; if(o.attackTimer>0)o.attackTimer--;
         return;
       }
