@@ -2037,7 +2037,7 @@ function update(){
   if (s.x<0) s.x=0;
   if (s.x>WORLD_W-s.w) s.x=WORLD_W-s.w;
   if (s.invincible>0) s.invincible--;
-  if (s.y>H+60) hurt(s);
+  if (s.y>H+60) hurt(s, true);
 
   updateOtto();
   updateBottles(s); updateHearts(s); updateArtifact(s); enforceBarrier();
@@ -2275,7 +2275,7 @@ function update(){
     if (!boss.active && !cutsceneActive && artifactCollected && s.x > BOSS_GATE){ 
       cutsceneActive = true; 
       cutsceneTimer = 240; // 4 seconds at 60fps
-      s.invincible = 260; s.vx = 0; s.vy = 0; // protect during cutscene
+      s.invincible = 240; s.vx = 0; s.vy = 0; // protect during cutscene
       projectiles = []; venom = [];
     }
     if (boss.active){
@@ -2479,7 +2479,7 @@ function respawnSpot(p){
   if(checkpoint) return {x:checkpoint.x, y:checkpoint.y-p.h};
   return {x:safeRespawnX(), y:FLOOR-p.h-4};
 }
-function hurt(p){
+function hurt(p, reposition){
   if (p.ai) return;
   if (p.invincible>0) return;
   lives--; SFX.hurt();
@@ -2498,8 +2498,15 @@ function hurt(p){
     transponderRespawn = tSpot ? { level:currentLevel, x:tSpot.x, y:tSpot.y } : null;
     gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return;
   }
-  const sp = respawnSpot(p);
-  p.x=sp.x; p.y=sp.y; p.vx=0; p.vy=-4; p.invincible=90;
+  if (reposition){
+    // Fall/pit death — relocate to checkpoint or nearest safe ground.
+    const sp = respawnSpot(p);
+    p.x=sp.x; p.y=sp.y; p.vx=0; p.vy=-4;
+  } else {
+    // Enemy/projectile hit — stay put, small knockback away from facing.
+    p.vx = -p.facing * 3.2; p.vy = -3.2;
+  }
+  p.invincible=90;
 }
 
 function rr(x,y,w,h,r,fill,stroke){
@@ -2956,7 +2963,7 @@ function drawPlayer(p){
     ctx.globalAlpha = Math.max(0.3, 1 - (120 - otto.cower) / 120);
   }
   
-  const blink = p.invincible>0 && Math.floor(p.invincible/5)%2===0;
+  const blink = !cutsceneActive && p.invincible>0 && Math.floor(p.invincible/5)%2===0;
   if (!blink){ 
     let drawY = py;
     const t = Date.now();
@@ -7191,7 +7198,7 @@ function updateLevel2(){
   resolveL2(s);
   if(s.x<0)s.x=0; if(s.x>L2_WORLD_W-s.w)s.x=L2_WORLD_W-s.w;
   if(s.invincible>0)s.invincible--;
-  if(s.y>H+60) hurt(s);
+  if(s.y>H+60) hurt(s, true);
 
   updateOttoL2();
   updateL2Platforms();
@@ -7383,7 +7390,7 @@ function updateLevel2(){
   if(yeti&&yeti.alive){
     if(!yeti.active&&!cutsceneActive&&s.x>L2_BOSS_GATE&&l2ArtifactCollected){
       cutsceneActive=true;cutsceneTimer=240;
-      s.invincible=260; s.vx=0; s.vy=0;
+      s.invincible=240; s.vx=0; s.vy=0;
       projectiles=[]; venom=[]; l2Stals=[];
     }
     if(yeti.active){
@@ -8112,7 +8119,7 @@ function updateLevel3(){
     checkpoint={x:1600,y:FLOOR};
     for(let i=0;i<16;i++) particles.push({x:1600-cameraX,y:FLOOR-20,vx:(Math.random()-0.5)*5,vy:-3-Math.random()*3,life:28,maxLife:28,type:'spark',color:'#FFD700'});
   }
-  if(s.y>H+40){hurt(s);}
+  if(s.y>H+40){hurt(s, true);}
   if(s.invincible>0)s.invincible--;
   updateOttoL3();
 
@@ -8238,7 +8245,7 @@ function updateLevel3(){
     if(!kingCrab.active&&!cutsceneActive&&s.x>L3_BOSS_GATE){
       if(l3ArtifactCollected){
         cutsceneActive=true;cutsceneTimer=240;
-        s.invincible=260; s.vx=0; s.vy=0; // protect during cutscene
+        s.invincible=240; s.vx=0; s.vy=0; // protect during cutscene
         venom=[]; l3Waves=[]; // clear active hazards
       } else {
         // no transponder yet — hold the warning up; the player must backtrack for it
@@ -10386,7 +10393,7 @@ function updateGen(){
     const camYTarget=Math.max(-340, Math.min(0, s.y - H*0.5));
     cameraY+=(camYTarget-cameraY)*0.08; cameraY=Math.round(cameraY);
   } else cameraY=0;
-  if(s.y>(currentLevel===6?cameraY:0)+H+40){hurt(s);}
+  if(s.y>(currentLevel===6?cameraY:0)+H+40){hurt(s, true);}
   if(s.invincible>0)s.invincible--;
   updateOttoGen();
   updateBottles(s); updateHearts(s);
@@ -10592,7 +10599,7 @@ function updateGen(){
       else if(s.x>lv.bossGate){ trigger=true; }
       if(trigger){
         cutsceneActive=true;cutsceneTimer=240;
-        s.invincible=260; s.vx=0; s.vy=0; venom=[]; projectiles=[];
+        s.invincible=240; s.vx=0; s.vy=0; venom=[]; projectiles=[];
         if(currentLevel===5){ boss.manifestT=0; boss.manifestMax=150; SFX.bossSpit&&SFX.bossSpit(); }
       }
     }
@@ -11068,7 +11075,7 @@ function updateSwim(){
   // ---- Boss: Leviathan Lyra (2D free-roam pursuit, omni ink, phase-2 murk) ----
   if(boss&&boss.alive){
     if(!boss.active&&!cutsceneActive&&s.x>lv.bossGate){
-      cutsceneActive=true;cutsceneTimer=240; s.invincible=260; s.vx=0; s.vy=0; venom=[]; projectiles=[];
+      cutsceneActive=true;cutsceneTimer=240; s.invincible=240; s.vx=0; s.vy=0; venom=[]; projectiles=[];
     }
     if(boss.active){
       boss.phase+=0.06; boss.orbit+=0.04;
