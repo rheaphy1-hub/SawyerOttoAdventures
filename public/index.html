@@ -6292,7 +6292,7 @@ function loop(){
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel>=5&&currentLevel<=6){
     drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
-    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); } drawVenom(); drawProjectiles(); drawCheckpoint();
+    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); } drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5) drawL5TransponderWarning();
   } else {
     drawBg(); cosmicGlow(); drawPlatforms(); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawCheckpoint(); drawBossWind(); drawBossWarning();
@@ -10146,9 +10146,12 @@ function buildHausLevel(){
   // flying pretzels
   const pz=[[520,900,FLOOR-150],[1240,1620,FLOOR-150],[1960,2360,FLOOR-160]];
   pz.forEach(p=>{ mk('P',(p[0]+p[1])/2,p[2],{x:p[0],y:p[2],w:p[1]-p[0],h:14},{w:34,h:30,vx:0.85,range:[p[0],p[1]],baseY:p[2],flyT:(Math.random()*100|0)}); });
+  // two pretzel bats cross back & forth across the tall ladder climb (two heights)
+  const lpz=[[3060,3420,FLOOR-300],[3060,3420,FLOOR-430]];
+  lpz.forEach(p=>{ mk('P',(p[0]+p[1])/2,p[2],{x:p[0],y:p[2],w:p[1]-p[0],h:14},{w:34,h:30,vx:0.9,range:[p[0],p[1]],baseY:p[2],flyT:(Math.random()*100|0)}); });
   buildGenRocks(5);
   // Evil Giant Bratwurst mini-boss — roams the attic decks
-  lv.miniBoss = { x:3700, y:FLOOR-470, w:60, h:34, baseY:FLOOR-470, vx:1.5, facing:1,
+  lv.miniBoss = { x:3700, y:FLOOR-548, w:60, h:34, baseY:FLOOR-548, vx:1.5, facing:1,
                   hp:6, maxHp:6, alive:true, defeated:false, bobT:Math.random()*6,
                   shootTimer:80, hitFlash:0, lo:3220, hi:3960 };
   // Transponder, encased in a ghostly casing until the Bratwurst falls
@@ -10329,6 +10332,27 @@ function drawBratwurst(){
   ctx.restore();
 }
 
+// ── Boss-arena nudge: "find the transponder" when the Baron is still gated ──
+function drawL5TransponderWarning(){
+  const lv=LV[5]; if(!lv||lv.transponderTaken||(boss&&boss.active)||cutsceneActive) return;
+  const feast=lv.platforms.find(p=>p.haunt==='feast'); if(!feast) return;
+  const s=sawyer; if(s.x+s.w < feast.x-260) return;   // only once inside the banquet arena
+  const t=performance.now()*0.001, pulse=0.5+0.5*Math.sin(t*4);
+  const jx=(Math.random()-0.5)*2, jy=(Math.random()-0.5)*2;
+  ctx.save(); ctx.translate(0,cameraY);
+  ctx.fillStyle='rgba(18,2,10,0.34)'; ctx.fillRect(0,0,W,H);
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const cx=W/2+jx, cy=H/2+jy;
+  ctx.shadowColor='rgba(255,60,40,0.9)'; ctx.shadowBlur=16+pulse*12;
+  ctx.fillStyle='rgba(150,10,30,0.95)';
+  ctx.font='900 28px Georgia,"Times New Roman",serif'; ctx.fillText('FIND THE TRANSPONDER', cx, cy-16);
+  ctx.font='900 18px Georgia,"Times New Roman",serif'; ctx.fillText('TO WAKE THE BARON', cx, cy+18);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,200,150,'+(0.6+0.4*pulse)+')';
+  ctx.font='900 28px Georgia,"Times New Roman",serif'; ctx.fillText('FIND THE TRANSPONDER', cx, cy-16);
+  ctx.font='900 18px Georgia,"Times New Roman",serif'; ctx.fillText('TO WAKE THE BARON', cx, cy+18);
+  ctx.restore();
+}
 // ── Transponder in its ghostly casing ──
 function drawL5Transponder(){
   const lv=LV[5], tp=lv.transponder; if(!tp||tp.got) return;
@@ -10878,7 +10902,7 @@ function updateGen(){
           const sCx=s.x+s.w/2, feastMid=feast.x+feast.w/2;
           // must be standing ON the table AND have walked past its midpoint (fully up, centered-in)
           const onTable=(s.x+s.w>feast.x+6 && s.x<feast.x+feast.w-6 && Math.abs((s.y+s.h)-feast.y)<4);
-          if(onTable && sCx>=feastMid) trigger=true;
+          if(onTable && sCx>=feastMid && lv.transponderTaken) trigger=true;
         }
       } else if(currentLevel===6){ if(lv.transponderTaken && s.x>lv.bossGate) trigger=true; }
       else if(s.x>lv.bossGate){ trigger=true; }
