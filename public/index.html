@@ -1059,6 +1059,9 @@ function updateArtifact(s){
     if(p && p.x+p.w>artifact.x-6 && p.x<artifact.x+artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+40){
       artifact.got=true; artifactCollected=true;
       if(barrier) barrier.sealed=false;
+      // Checkpoint: once the transponder is in hand, deaths (and a level restart after game
+      // over) resume on the artifact plateau instead of re-running the climb to re-fetch it.
+      if(currentLevel===1){ checkpoint={x:artifact.x, y:artifact.y+32}; } // y = plateau top (artifact sits 32px above it)
       acquireItem('transponder'); popPoints(artifact.x+artifact.w/2, ay-6, 500, '#9FD8FF'); score+=500;
       SFX.win(); shakeIntensity=10;
       for(let i=0;i<28;i++) particles.push({x:artifact.x+artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
@@ -2486,10 +2489,13 @@ function hurt(p){
   // Knockback burst particles
   for(let i=0;i<10;i++) particles.push({x:p.x+p.w/2,y:p.y+p.h/2,vx:(Math.random()-0.5)*6,vy:-2-Math.random()*3,life:18,maxLife:18,type:'spark',color:'#FF4444'});
   if (lives<=0){
-    // If the transponder was already acquired this run, remember it so the level restart
-    // resumes past the acquisition point instead of forcing a re-fetch.
-    transponderRespawn = (currentLevel===1 && artifactCollected && artifact)
-      ? { level:currentLevel, x:artifact.x } : null;
+    // If a transponder was acquired this run (L1/L2/L3), remember the checkpoint so a level
+    // restart resumes on the perch/plateau instead of forcing the player to re-fetch it.
+    const tHeld = (currentLevel===1 && artifactCollected)
+               || (currentLevel===2 && l2ArtifactCollected)
+               || (currentLevel===3 && l3ArtifactCollected);
+    transponderRespawn = (tHeld && checkpoint)
+      ? { level:currentLevel, x:checkpoint.x, y:checkpoint.y } : null;
     gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return;
   }
   const sp = respawnSpot(p);
@@ -4431,21 +4437,20 @@ function drawPlatforms(){
       // Sun-warmed sand top strip
       ctx.fillStyle='#E3B16A';
       ctx.fillRect(px,p.y,p.w,8);
-      // Rich sand texture (inset 4px to keep edge caps clean), seeded by world pos
-      const ins0 = Math.max(4, -px), ins1 = Math.min(p.w-4, W-px), segW = ins1-ins0;
-      if (segW > 0){
-        ctx.save();
-        ctx.beginPath(); ctx.rect(px+ins0, p.y, segW, H-p.y); ctx.clip();
-        texGrain(px+ins0, p.y+10, segW, 40, 5, 'rgba(133,79,11,0.13)', (p.x+ins0)*0.05, 2.2, 0.7);
-        texSpeckle(px+ins0, p.y+8, segW, H-p.y-8, Math.floor(segW/4), 'rgba(101,68,16,0.16)', (p.x+ins0)*0.11, 1.3);
-        texSpeckle(px+ins0, p.y+8, segW, 30, Math.floor(segW/10), 'rgba(255,240,200,0.25)', (p.x+ins0)*0.07+5, 1.0);
-        ctx.fillStyle='rgba(133,79,11,0.3)';
-        for(let i=0;i<segW;i+=70){
-          const wx=p.x+ins0+i, pk=tRand(wx*0.03);
-          ctx.beginPath(); ctx.ellipse(px+ins0+i+pk*40, p.y+18+pk*10, 2.5+pk*2, 1.5+pk, 0, 0, 7); ctx.fill();
-        }
-        ctx.restore();
+      // Rich sand texture — anchored to the platform's STABLE world origin (p.x) & full width
+      // so the grain/speckle/pebble field is locked to the ground and scrolls with it rather
+      // than re-randomizing each frame against a camera-shifted clip window. Clip = clean caps.
+      ctx.save();
+      ctx.beginPath(); ctx.rect(px+4, p.y, Math.max(0,p.w-8), H-p.y); ctx.clip();
+      texGrain(px, p.y+10, p.w, 40, 5, 'rgba(133,79,11,0.13)', p.x*0.05, 2.2, 0.7);
+      texSpeckle(px, p.y+8, p.w, H-p.y-8, Math.floor(p.w/4), 'rgba(101,68,16,0.16)', p.x*0.11, 1.3);
+      texSpeckle(px, p.y+8, p.w, 30, Math.floor(p.w/10), 'rgba(255,240,200,0.25)', p.x*0.07+5, 1.0);
+      ctx.fillStyle='rgba(133,79,11,0.3)';
+      for(let i=0;i<p.w;i+=70){
+        const wx=p.x+i, pk=tRand(wx*0.03);
+        ctx.beginPath(); ctx.ellipse(px+i+pk*40, p.y+18+pk*10, 2.5+pk*2, 1.5+pk, 0, 0, 7); ctx.fill();
       }
+      ctx.restore();
       // Top shadow line
       ctx.fillStyle='rgba(0,0,0,0.08)';
       ctx.fillRect(px,p.y+8,p.w,2);
@@ -6053,6 +6058,7 @@ function restartCurrentLevel(){
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0;
   shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
+  checkpoint=null; // cleared here; the transponder resume block below re-arms it when applicable
   currentLevel=lvl;
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   buildPlayers();
@@ -6061,14 +6067,18 @@ function restartCurrentLevel(){
   else if(currentLevel>=4&&currentLevel<=6){ buildLevelContent(currentLevel); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   buildBottles();
-  // Resume past the transponder if it was held at game over (skip the re-fetch traversal).
-  if(transponderRespawn && transponderRespawn.level===currentLevel && artifact){
-    artifact.got=true; artifactCollected=true; if(barrier) barrier.sealed=false;
-    acquireItem('transponder');
-    const px=transponderRespawn.x, py=artifact.y; // plateau top where the artifact sat
-    sawyer.x=px; sawyer.y=py-sawyer.h-2; sawyer.vx=0; sawyer.vy=0; sawyer.invincible=90;
-    otto.x=px-26; otto.y=py-otto.h-2; otto.vx=0; otto.vy=0;
-    cameraX=Math.max(0, Math.min(px - W/3, WORLD_W - W));
+  // Resume on the transponder checkpoint if it was held at game over: restore the per-level
+  // artifact-collected state, re-arm the checkpoint, and drop the heroes there (skip the re-fetch).
+  if(transponderRespawn && transponderRespawn.level===currentLevel){
+    const cp={x:transponderRespawn.x, y:transponderRespawn.y};
+    checkpoint=cp;
+    if(currentLevel===1){ if(artifact){artifact.got=true;} artifactCollected=true; if(barrier) barrier.sealed=false; acquireItem('transponder'); }
+    else if(currentLevel===2){ if(l2Artifact){l2Artifact.got=true; l2Artifact.freed=true;} l2ArtifactCollected=true; acquireItem('transponder'); }
+    else if(currentLevel===3){ if(l3Artifact){l3Artifact.got=true;} l3ArtifactCollected=true; acquireItem('relic'); }
+    const wWorld = currentLevel===2 ? L2_WORLD_W : currentLevel===3 ? L3_WORLD_W : WORLD_W;
+    sawyer.x=cp.x; sawyer.y=cp.y-sawyer.h; sawyer.vx=0; sawyer.vy=0; sawyer.invincible=90;
+    otto.x=cp.x-26; otto.y=cp.y-otto.h; otto.vx=0; otto.vy=0;
+    cameraX=Math.max(0, Math.min(cp.x - W/3, wWorld - W));
   }
   transponderRespawn=null;
   audioManager.stop();
@@ -6732,6 +6742,8 @@ function updateL2Artifact(){
   for(const p of [sawyer,otto]){
     if(p && p.x+p.w>l2Artifact.x-6 && p.x<l2Artifact.x+l2Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+l2Artifact.h+8){
       l2Artifact.got=true; l2ArtifactCollected=true; score+=400; acquireItem('transponder'); popPoints(l2Artifact.x+14, ay-4, 400, '#9FD8FF'); sfx('win'); shakeIntensity=Math.max(shakeIntensity,9);
+      // Checkpoint: respawn on the artifact perch once the transponder is in hand.
+      { const perch=l2Platforms.find(pl=>pl.artifactPerch); if(perch) checkpoint={x:perch.x+perch.w/2, y:perch.y}; }
       for(let i=0;i<32;i++) particles.push({x:l2Artifact.x+14, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
     }
   }
@@ -6985,6 +6997,8 @@ function updateL3Artifact(s){
   for(const p of [s, otto]){
     if(p && p.x+p.w>l3Artifact.x-6 && p.x<l3Artifact.x+l3Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+40){
       l3Artifact.got=true; l3ArtifactCollected=true;
+      // Checkpoint: respawn on the ground beside the barrel once the transponder is in hand.
+      checkpoint={x:(l3Barrel?l3Barrel.x+l3Barrel.w+16:l3Artifact.x), y:FLOOR};
       sfx('ball'); shakeIntensity=Math.max(shakeIntensity,6);
       score+=250; acquireItem('relic'); popPoints(l3Artifact.x+l3Artifact.w/2, ay-6, 250, '#C9B6FF');
       for(let i=0;i<28;i++) particles.push({x:l3Artifact.x+l3Artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
@@ -8908,16 +8922,16 @@ function drawL2Platforms(){
       // Snow ground segment
       ctx.fillStyle='#C8DDEF';ctx.fillRect(px,p.y,p.w,H-p.y);
       ctx.fillStyle='#EAF4FF';ctx.fillRect(px,p.y,p.w,8);
-      // Frosty texture (inset 5px to keep edge caps clean)
-      const ins0=Math.max(5,-px), ins1=Math.min(p.w-5,W-px), segW=ins1-ins0;
-      if(segW>0){
-        ctx.save();
-        ctx.beginPath(); ctx.rect(px+ins0,p.y,segW,H-p.y); ctx.clip();
-        texGrain(px+ins0, p.y+12, segW, 40, 4, 'rgba(120,150,190,0.18)', (p.x+ins0)*0.05, 2.5, 0.7);
-        texSpeckle(px+ins0, p.y+8, segW, H-p.y-8, Math.floor(segW/6), 'rgba(255,255,255,0.5)', (p.x+ins0)*0.09, 1.2);
-        texSpeckle(px+ins0, p.y+8, segW, 20, Math.floor(segW/12), 'rgba(160,190,230,0.3)', (p.x+ins0)*0.14, 1.0);
-        ctx.restore();
-      }
+      // Frosty texture — anchored to the platform's STABLE world origin (p.x) and full width,
+      // so the speckle/grain field is locked to the ground and simply scrolls with it. (Seeding
+      // off camera-derived clip offsets caused the field to re-randomize every frame → the
+      // "fuzzy crawl", worst while the camera moved on a hop.) Clip keeps the edge caps clean.
+      ctx.save();
+      ctx.beginPath(); ctx.rect(px+5,p.y,Math.max(0,p.w-10),H-p.y); ctx.clip();
+      texGrain(px, p.y+12, p.w, 40, 4, 'rgba(120,150,190,0.18)', p.x*0.05, 2.5, 0.7);
+      texSpeckle(px, p.y+8, p.w, H-p.y-8, Math.floor(p.w/6), 'rgba(255,255,255,0.5)', p.x*0.09, 1.2);
+      texSpeckle(px, p.y+8, p.w, 20, Math.floor(p.w/12), 'rgba(160,190,230,0.3)', p.x*0.14, 1.0);
+      ctx.restore();
       ctx.fillStyle='rgba(90,130,180,0.15)';ctx.fillRect(px,p.y+8,p.w,1.5);
       // Clean edge caps
       ctx.fillStyle='#4A8AC0';ctx.fillRect(px,p.y,5,H-p.y);
