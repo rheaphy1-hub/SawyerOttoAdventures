@@ -5468,7 +5468,16 @@ function applyCutsceneCam(){
   const fy = tall ? f.y-6 : f.y;
   const focusY=Math.max(60, Math.min(H-60, fy));
   ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';   // clean atlas upscale on zoom
-  ctx.translate(W/2, focusY); ctx.scale(z,z); ctx.translate(-W/2,-focusY);
+  if(currentLevel===6){
+    // L6 has a vertical camera (cameraY) that may be looking UP at a high rock when the fight
+    // triggers, leaving the deck-bound boss off the bottom of the frame. Pin the boss to a
+    // fixed screen height so the zoom always frames it, whatever cameraY is.
+    const DESIRED=185;
+    ctx.translate(0, DESIRED - f.y + cameraY);   // recenter boss vertically (cancels cameraY)
+    ctx.translate(W/2, f.y); ctx.scale(z,z); ctx.translate(-W/2,-f.y);
+  } else {
+    ctx.translate(W/2, focusY); ctx.scale(z,z); ctx.translate(-W/2,-focusY);
+  }
   return prev;
 }
 
