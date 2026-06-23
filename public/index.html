@@ -10101,21 +10101,31 @@ function buildLevel5(){ buildHausLevel(); buildGenBoss(5); }
 const SPACE_PITS = [450, 970, 1510, 2030];
 function spacePlatforms(){
   return [
-    makePlatform(0, FLOOR, 200),          // 0 launch deck
-    makePlatform(320, FLOOR-70, 84),      // 1
-    makePlatform(560, FLOOR-120, 84),     // 2
-    makePlatform(810, FLOOR-85, 96),      // 3 BOOST
-    makePlatform(830, FLOOR-235, 110),    // 4 high reward
-    makePlatform(1070, FLOOR-110, 84),    // 5
-    makePlatform(1320, FLOOR-150, 84),    // 6
-    makePlatform(1560, FLOOR-90, 96),     // 7 BOOST
-    makePlatform(1580, FLOOR-240, 110),   // 8 high reward
-    makePlatform(1820, FLOOR-130, 84),    // 9
-    makePlatform(2060, FLOOR-95, 84),     // 10
-    makePlatform(2300, FLOOR-120, 96),    // 11 BOOST
-    makePlatform(2320, FLOOR-235, 110),   // 12 high reward
-    makePlatform(2560, FLOOR-100, 90),    // 13
-    makePlatform(2700, FLOOR, 4200-2700), // 14 boss deck — solid ground: quiet corridor + isolated arena
+    makePlatform(0,    FLOOR,     200),   // 0 launch deck
+    // ── ascending tower 1 ──
+    makePlatform(300,  FLOOR-60,  78),    // 1
+    makePlatform(450,  FLOOR-115, 78),    // 2
+    makePlatform(590,  FLOOR-170, 84),    // 3 tower-1 crest
+    makePlatform(740,  FLOOR-115, 78),    // 4 step down
+    makePlatform(820,  FLOOR-85,  96),    // 5 BOOST
+    makePlatform(840,  FLOOR-235, 110),   // 6 high reward (boost up)
+    // ── dip & climb 2 ──
+    makePlatform(1010, FLOOR-150, 80),    // 7
+    makePlatform(1150, FLOOR-95,  80),    // 8
+    makePlatform(1290, FLOOR-160, 84),    // 9
+    makePlatform(1430, FLOOR-205, 88),    // 10 crest
+    makePlatform(1570, FLOOR-120, 80),    // 11 step down
+    makePlatform(1700, FLOOR-85,  96),    // 12 BOOST
+    makePlatform(1720, FLOOR-235, 110),   // 13 high reward
+    // ── tower 3 → summit ──
+    makePlatform(1890, FLOOR-160, 80),    // 14
+    makePlatform(2030, FLOOR-110, 80),    // 15
+    makePlatform(2170, FLOOR-185, 88),    // 16 crest
+    makePlatform(2310, FLOOR-120, 80),    // 17
+    makePlatform(2440, FLOOR-85,  96),    // 18 BOOST
+    makePlatform(2460, FLOOR-235, 120),   // 19 SUMMIT — transponder rock
+    makePlatform(2660, FLOOR-130, 84),    // 20 descent to deck
+    makePlatform(2740, FLOOR, 4200-2740), // 21 boss deck — solid ground: quiet corridor + isolated arena
   ];
 }
 function buildSpaceLevel(){
@@ -10125,23 +10135,23 @@ function buildSpaceLevel(){
   lv.enemies=[]; lv.rocks=[]; lv.pitMobs=[]; lv.pitTimer=99999; lv.bossObj=null;
   const P=lv.platforms;
   const mk=(slot,plat)=>{ lv.enemies.push({slot,x:plat.x+Math.max(8,plat.w/2-14),y:plat.y-26,w:28,h:26,vx:(slot==='B'?0.7:0.95),facing:1,alive:true,plat,phase:Math.random()*6,hoverTimer:(Math.random()*100|0),shootTimer:60+(Math.random()*40|0),hitCount:0}); };
-  const eIdx={1:'A',2:'C',5:'A',6:'D',9:'B',10:'A',13:'C'};
+  const eIdx={1:'A',4:'C',8:'A',11:'B',15:'A',17:'C',20:'D'};
   for(const i in eIdx){ mk(eIdx[i], P[i]); }
   // rare rocks reward the boost climbs (on the high asteroids)
-  const rIdx=[4,8,12], rar=[3,3,3], pts=[250,250,250];
+  const rIdx=[6,10,13,16,2,8,15], rar=[3,3,3,3,1,1,1], pts=[250,250,250,250,75,75,75];
   rIdx.forEach((i,k)=>{ lv.rocks.push({x:P[i].x+P[i].w/2-8, y:P[i].y-26, got:false, rarity:rar[k], points:pts[k]}); });
-  lv.boostPads=[3,7,11].map(i=>({x:P[i].x+P[i].w/2-18, y:P[i].y-7, w:36, h:7}));
-  // ── RING GAUNTLET: fly-through ONLY. Heights trace the natural jump arcs between the
-  //    leap platforms, so clearing all ten is a continuous skill run that drops the
-  //    transponder's containment field. (Shooting rings was removed.) ──
+  lv.boostPads=[5,12,18].map(i=>({x:P[i].x+P[i].w/2-18, y:P[i].y-7, w:36, h:7}));
+  // ── TARGET GAUNTLET: SHOOTABLE energy targets scattered through the vertical climb.
+  //    Each sits where you must reach a platform with a clean line of fire — so clearing
+  //    all of them requires jumping all over the ascent. Destroy every one to drop the
+  //    transponder's containment field. (Fly-through removed — these are shot, not flown through.) ──
   lv.rings=[
-    {x:250,y:FLOOR-95},{x:460,y:FLOOR-150},{x:700,y:FLOOR-165},{x:990,y:FLOOR-150},
-    {x:1230,y:FLOOR-185},{x:1460,y:FLOOR-185},{x:1730,y:FLOOR-175},{x:1980,y:FLOOR-160},
-    {x:2200,y:FLOOR-160},{x:2460,y:FLOOR-170}
-  ].map(r=>({x:r.x,y:r.y,r:30,hit:false,phase:Math.random()*6,points:150}));
-  // ── TRANSPONDER: caged on the boss-deck approach; clearing every ring drops the field.
-  //    Nexus Nine won't manifest until it's taken. ──
-  lv.transponder = { x:2820, y:FLOOR-30, w:22, h:26, got:false, field:1, locked:true, phase:0 };
+    {x:400, y:FLOOR-95}, {x:670, y:FLOOR-150}, {x:940, y:FLOOR-200}, {x:1220,y:FLOOR-130},
+    {x:1500,y:FLOOR-175},{x:1810,y:FLOOR-200},{x:2100,y:FLOOR-150},{x:2380,y:FLOOR-160}
+  ].map(r=>({x:r.x,y:r.y,r:28,hit:false,phase:Math.random()*6,points:150}));
+  // ── TRANSPONDER: sits caged on the SUMMIT rock (platform 19). Destroying every target
+  //    drops the field. Nexus Nine won't manifest until the transponder is taken. ──
+  lv.transponder = { x:2509, y:FLOOR-263, w:22, h:26, got:false, field:1, locked:true, phase:0 };
   lv.transponderTaken = false;
   // ── ARENA SPIRES: ancient metal monoliths jutting from the crust at angles — permanent
   //    cover. The Boss's bolts shatter on them. They phase up when the fight begins. ──
@@ -10499,11 +10509,24 @@ function updateGen(){
     }
   }
   projectiles=projectiles.filter(pr=>pr.life>0&&pr.x-cameraX>-60&&pr.x-cameraX<W+60);
-  // Fly-through rings (player passes through)
-  if(lv.rings){ const pcx=s.x+s.w/2, pcy=s.y+s.h/2;
-    for(const rg of lv.rings){ if(rg.hit)continue; const dx=pcx-rg.x, dy=pcy-rg.y;
-      if(dx*dx+dy*dy<rg.r*rg.r){ rg.hit=true; score+=rg.points; popPoints(rg.x, rg.y-rg.r, rg.points, '#38F2E6'); sfx('ball'); shakeIntensity=3;
-        for(let a=0;a<16;a++) particles.push({x:rg.x,y:rg.y,vx:Math.cos(a/16*6.283)*3.2,vy:Math.sin(a/16*6.283)*3.2,life:26,maxLife:26,type:'spark',color:a%2?'#38F2E6':'#FF2E9A'}); } } }
+  // ── L6 transponder: destroying EVERY target drops the containment field; then take it ──
+  if(currentLevel===6 && lv.transponder && !lv.transponder.got){
+    const tp=lv.transponder;
+    if(tp.locked && lv.rings && lv.rings.length && lv.rings.every(rg=>rg.hit)){
+      tp.locked=false; shakeIntensity=Math.max(shakeIntensity,6); SFX.bossHit&&SFX.bossHit();
+      for(let i=0;i<26;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#C9B6FF'});
+    }
+    tp.field += ((tp.locked?1:0)-tp.field)*0.08; if(tp.field<0.01)tp.field=0;
+    tp.phase += 0.05;
+    if(!tp.locked){
+      const pcx=s.x+s.w/2, pcy=s.y+s.h/2;
+      if(pcx>tp.x-16 && pcx<tp.x+tp.w+16 && pcy>tp.y-20 && pcy<tp.y+tp.h+12){
+        tp.got=true; lv.transponderTaken=true; acquireItem('transponder');
+        score+=500; popPoints(tp.x+tp.w/2, tp.y-6, 500, '#9FD8FF');
+        for(let i=0;i<28;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*7,vy:-2-Math.random()*5,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#C9B6FF'});
+      }
+    }
+  }
   for(const r of lv.rocks){
     if(r.got)continue;
     for(const p of [s,o]){
@@ -10530,7 +10553,8 @@ function updateGen(){
           const onTable=(s.x+s.w>feast.x+6 && s.x<feast.x+feast.w-6 && Math.abs((s.y+s.h)-feast.y)<4);
           if(onTable && sCx>=feastMid) trigger=true;
         }
-      } else if(s.x>lv.bossGate){ trigger=true; }
+      } else if(currentLevel===6){ if(lv.transponderTaken && s.x>lv.bossGate) trigger=true; }
+      else if(s.x>lv.bossGate){ trigger=true; }
       if(trigger){
         cutsceneActive=true;cutsceneTimer=240;
         s.invincible=260; s.vx=0; s.vy=0; venom=[]; projectiles=[];
@@ -10652,6 +10676,14 @@ function updateGen(){
   // Venom (themed colour, clone of L1 venom)
   for(const v of venom){
     v.vy+=0.12; v.x+=v.vx; v.y+=v.vy; v.life--;
+    if(currentLevel===6 && lv.spires && lv.spireRise>0.3){
+      for(const sp of lv.spires){ const top=sp.baseY-sp.h*lv.spireRise;
+        if(v.x>sp.x-sp.w/2-2 && v.x<sp.x+sp.w/2+2 && v.y>top && v.y<sp.baseY){
+          v.life=0; sfx('ball'); shakeIntensity=Math.max(shakeIntensity,3);
+          for(let i=0;i<8;i++) particles.push({x:v.x,y:v.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,life:18,maxLife:18,type:'spark',color:'#9FD8FF'});
+          break; }
+      }
+    }
     if(s.invincible===0 && Math.abs((s.x+s.w/2)-v.x)<s.w/2+v.r && Math.abs((s.y+s.h/2)-v.y)<s.h/2+v.r){ hurt(s); v.life=0; }
     if(v.y>FLOOR+20){ v.life=0; }
   }
@@ -10675,6 +10707,11 @@ function updateGen(){
     }
   }
 
+  // L6 arena spires rise as the fight begins, sink/shatter once Nexus Nine falls
+  if(currentLevel===6 && lv.spires){
+    const fightOn=(boss && boss.active && boss.alive) || (cutsceneActive && boss && !boss.active);
+    lv.spireRise += ((fightOn?1:0)-lv.spireRise)*0.12; if(lv.spireRise<0.001) lv.spireRise=0;
+  }
   // Escape vortex only forms once the boss is down (was previously always-open → spawned pre-defeat)
   const _bossDown = !boss || (!boss.alive && (boss.dieTimer===undefined || boss.dieTimer<=110));
   genPortalOpen += ((_bossDown?1:0) - genPortalOpen) * 0.06;
@@ -12072,7 +12109,7 @@ function drawSpaceTransponder(){
     for(let k=0;k<6;k++){ const a=k/6*6.283+tp.phase*0.5, px=cx+Math.cos(a)*R, py=cy+Math.sin(a)*R*1.15; k?ctx.lineTo(px,py):ctx.moveTo(px,py); }
     ctx.closePath(); ctx.stroke(); ctx.restore();
     ctx.save(); ctx.globalAlpha=0.85*tp.field; ctx.fillStyle='#9FD8FF'; ctx.font='bold 8px monospace'; ctx.textAlign='center';
-    ctx.fillText('CLEAR THE RINGS', cx, tp.y-14); ctx.restore();
+    ctx.fillText('SHOOT THE TARGETS', cx, tp.y-14); ctx.restore();
   }
 }
 function drawGenEnemies(){
