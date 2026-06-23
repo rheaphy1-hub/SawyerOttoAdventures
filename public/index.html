@@ -1378,6 +1378,7 @@ const SFX = {
   tornado:  () => { noise(0.35, 0.05); beep(140, 0.3, 'sawtooth', 0.04, 90); beep(420, 0.18, 'sine', 0.02, 260); },
   sandstorm:() => { noise(0.6, 0.08); beep(70, 0.7, 'sawtooth', 0.07, 40); beep(260, 0.4, 'sine', 0.03, 120); },
   rattle: () => { noise(0.2, 0.06); beep(200, 0.1, 'square', 0.03); },
+  creak: () => { beep(140, 0.18, 'sawtooth', 0.05, 90); beep(210, 0.10, 'sine', 0.02, 150); noise(0.06, 0.015); },
   bossDie: () => { [400,330,260,200,140,100].forEach((f,i)=>setTimeout(()=>{ beep(f,0.4,'sine',0.08); noise(0.1,0.04); },i*100)); },
   win: () => { [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,0.25,'sine',0.1),i*150)); },
   over: () => { [350,280,200,100].forEach((f,i)=>setTimeout(()=>beep(f,0.3,'sawtooth',0.09),i*180)); }
@@ -3401,6 +3402,14 @@ function drawVenom(){
       ctx.fillStyle=cap; ctx.beginPath(); ctx.ellipse(x,topY,18,9,0,0,7); ctx.fill();
       ctx.restore();
       continue;
+    }
+    if(v.mustard){
+      ctx.save();
+      ctx.fillStyle='rgba(150,120,0,0.35)'; ctx.beginPath(); ctx.arc(x,y+v.r*0.7,v.r*1.1,0,7); ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y,v.r,0,7); ctx.fillStyle='#E8C000'; ctx.fill();
+      ctx.strokeStyle='#7A5A00'; ctx.lineWidth=1.2; ctx.stroke();
+      ctx.fillStyle='rgba(255,245,180,0.7)'; ctx.beginPath(); ctx.arc(x-1.6,y-1.6,v.r*0.42,0,7); ctx.fill();
+      ctx.restore(); continue;
     }
     ctx.beginPath(); ctx.arc(x,y,v.r,0,7);
     ctx.fillStyle='#97C459'; ctx.fill();
@@ -6262,7 +6271,7 @@ function loop(){
   ctx.setTransform(RENDER_SCALE,0,0,RENDER_SCALE,0,0);
   ctx.imageSmoothingEnabled = true;
   ctx.save();
-  ctx.translate(shakeX, shakeY - ((currentLevel===6||currentLevel===1||currentLevel===2)?cameraY:0));
+  ctx.translate(shakeX, shakeY - ((currentLevel===6||currentLevel===5||currentLevel===1||currentLevel===2)?cameraY:0));
   let _cutPrevCamX = null;
   if (cutsceneActive){ _cutPrevCamX = applyCutsceneCam(); }
   
@@ -6283,7 +6292,7 @@ function loop(){
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel>=5&&currentLevel<=6){
     drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
-    drawGenEnemies(); drawGenBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
+    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); } drawVenom(); drawProjectiles(); drawCheckpoint();
   } else {
     drawBg(); cosmicGlow(); drawPlatforms(); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawCheckpoint(); drawBossWind(); drawBossWarning();
@@ -9969,7 +9978,7 @@ const LV = {
     audio:'/audio/L4lookinatmyfish.mp3'
   },
   5: {
-    worldW:4600, bossGate:3760, next:6,
+    worldW:6500, bossGate:5600, next:6,
     pal:{ skyT:'#1A0A2E', skyM:'#16213E', skyL:'#2A2A3E', ground:'#3A3A2A',
           edge:'#5A5A4A', plat:'#5A4A3A', glow:'#8B7355',
           primary:'#FF6B35', secondary:'#FFFFFF', tertiary:'#9D4EDD',
@@ -10040,6 +10049,7 @@ function buildGenRocks(n){
   });
   for(let i=5;i<lv.platforms.length;i++){ // 14 elevated
     const p=lv.platforms[i];
+    if(p.isLadder||p.noRock)continue;
     const rt=GEN_RARITY[(i*3+1)%GEN_RARITY.length];
     lv.rocks.push({ x:p.x+Math.floor(p.w/2)-9, y:p.y-24, got:false, rarity:rt.r, points:rt.p });
   }
@@ -10065,7 +10075,7 @@ function hausPlatforms(){
     makePlatform(460, FLOOR, 480),
     makePlatform(1000, FLOOR, 480),
     makePlatform(1540, FLOOR, 460),
-    makePlatform(2060, FLOOR, 4600-2060),
+    makePlatform(2060, FLOOR, 6500-2060),
     // crypt sarcophagi
     makePlatform(160, FLOOR-58, 90),
     makePlatform(310, FLOOR-104, 80),
@@ -10093,9 +10103,34 @@ function hausPlatforms(){
     // ---- ISOLATED BOSS ARENA begins ~3760; the possessed banquet floats CENTERED on the stage ----
     // (chair → long table → chair, suspended as a haunted centerpiece — heights tuned so the
     //  jump arc (~120px peak) clears each step: floor → chair (96) → feast table (150).)
-    {...makePlatform(3900, FLOOR-96, 70),  haunt:'chairL'},
-    {...makePlatform(4140, FLOOR-150, 220), haunt:'feast'},
-    {...makePlatform(4420, FLOOR-96, 70),  haunt:'chairR'},
+    // ════ LADDER MAZE → ATTIC: a SOARING vertical climb. Every gap between decks exceeds
+    //     Sawyer's ~120px jump, so ladders are the ONLY way up; two of them SLIDE side-to-side
+    //     and carry the climber. (camera follows up — the ceiling is unreachable.) ════
+    {...makePlatform(2980, FLOOR-66, 150)},                                                      // maze base (hop up from floor)
+    // ── TIER 1 ── static ladder up the right side (150px gap)
+    {x:3098, y:FLOOR-216, w:24, h:150, isLadder:true},
+    {...makePlatform(3080, FLOOR-216, 165)},                                                     // T1 deck
+    {...makePlatform(3320, FLOOR-150, 70)},                                                       // dead-end loot pocket (off to the right)
+    // ── TIER 2 ── SLIDING ladder (oscillates) up the left side (140px gap)
+    {x:3140, y:FLOOR-356, w:24, h:140, isLadder:true, kind:'slide', dyn:true, x0:3140, range:42, speed:0.016, phase:0.4, noRock:true},
+    {...makePlatform(3055, FLOOR-356, 195)},                                                      // T2 deck — wide, catches the slide
+    // ── TIER 3 ── static ladder to the attic peak (150px gap) — the Bratwurst's roost
+    {x:3208, y:FLOOR-506, w:24, h:150, isLadder:true},
+    {...makePlatform(3188, FLOOR-506, 235)},                                                      // T3 attic peak (west)
+    // ── upper SLIDING catwalk linking the two attic halves ──
+    {...makePlatform(3470, FLOOR-506, 92), kind:'slide', dyn:true, x0:3470, range:48, speed:0.02, phase:1.4, noRock:true},
+    {...makePlatform(3600, FLOOR-506, 300), noRock:true},                                         // T3 attic peak (east) — transponder roost
+    // ════ DESCENT: drop-step staircase back to the manor floor (downward needs no ladder) ════
+    {...makePlatform(3980, FLOOR-430, 120)},
+    {...makePlatform(4150, FLOOR-330, 120)},
+    {...makePlatform(4310, FLOOR-230, 120)},
+    {...makePlatform(4470, FLOOR-140, 120)},
+    {...makePlatform(4630, FLOOR-60, 120)},
+    // ---- LONG EMPTY CROSSING ~4700 -> 5600 (manor corridor stretches; the dark swallows the level behind) ----
+    // ---- ISOLATED BOSS ARENA ~5740: the possessed banquet floats CENTERED on the stage ----
+    {...makePlatform(5740, FLOOR-96, 70),  haunt:'chairL'},
+    {...makePlatform(5980, FLOOR-150, 220), haunt:'feast'},
+    {...makePlatform(6260, FLOOR-96, 70),  haunt:'chairR'},
   ];
 }
 function buildHausLevel(){
@@ -10112,8 +10147,231 @@ function buildHausLevel(){
   const pz=[[520,900,FLOOR-150],[1240,1620,FLOOR-150],[1960,2360,FLOOR-160]];
   pz.forEach(p=>{ mk('P',(p[0]+p[1])/2,p[2],{x:p[0],y:p[2],w:p[1]-p[0],h:14},{w:34,h:30,vx:0.85,range:[p[0],p[1]],baseY:p[2],flyT:(Math.random()*100|0)}); });
   buildGenRocks(5);
+  // Evil Giant Bratwurst mini-boss — roams the attic decks
+  lv.miniBoss = { x:3700, y:FLOOR-470, w:60, h:34, baseY:FLOOR-470, vx:1.5, facing:1,
+                  hp:6, maxHp:6, alive:true, defeated:false, bobT:Math.random()*6,
+                  shootTimer:80, hitFlash:0, lo:3220, hi:3960 };
+  // Transponder, encased in a ghostly casing until the Bratwurst falls
+  lv.transponder = { x:3780, y:FLOOR-560, w:22, h:26, got:false, cased:1, locked:true, phase:0 };
+  lv.transponderTaken = false;
+  lv._slideT = 0;
 }
 function buildLevel5(){ buildHausLevel(); buildGenBoss(5); }
+
+// ════════════════════ LEVEL 5 — ATTIC / CLIMBING / BRATWURST ════════════════════
+// Horizontally-sliding attic ledges (the generic engine has no platform animator of its own).
+function updateL5Slides(){
+  const lv=LV[5]; if(!lv||!lv.platforms) return;
+  lv._slideT=(lv._slideT||0)+1;
+  for(const pl of lv.platforms){
+    if(pl.kind==='slide'){
+      const nx=pl.x0+Math.sin(lv._slideT*pl.speed+(pl.phase||0))*pl.range;
+      pl.dx=nx-pl.x; pl.x=nx;
+    }
+  }
+}
+// Carry a rider standing on a sliding ledge so it doesn't slip out from under them.
+function carryL5(p){ const sp=p&&p._standPlat; if(p&&p.onGround&&sp&&sp.kind==='slide'&&sp.dx) p.x+=sp.dx; }
+
+// Ladder climbing for Sawyer. Returns true while latched (caller skips normal ground physics).
+function handleL5Climb(s){
+  const lv=LV[5]; if(!lv||!lv.platforms) return false;
+  let lad=null;
+  for(const pl of lv.platforms){ if(!pl.isLadder)continue;
+    if(s.x+s.w>pl.x+2 && s.x<pl.x+pl.w-2 && s.y+s.h>pl.y-2 && s.y<pl.y+pl.h+4){ lad=pl; break; } }
+  if(!s.climbing){
+    if(lad && (keys['ArrowUp']||keys['ArrowDown'])){ s.climbing=true; s.vx=0; s.vy=0; if(typeof sfx==='function') sfx('creak'); }
+    else return false;
+  }
+  if(!lad){ s.climbing=false; return false; }
+  if(keys['ArrowLeft']||keys['ArrowRight']){ s.climbing=false; return false; }   // unlatch sideways
+  s.vx=0; s.vy=0; s.onGround=false;
+  const cx=lad.x+lad.w/2; s.x += ((cx-s.w/2)-s.x)*0.4;                            // ease to ladder centre
+  const CL=2.2;
+  if(keys['ArrowUp']) s.y-=CL; else if(keys['ArrowDown']) s.y+=CL;
+  if(s.y+s.h <= lad.y+4){ s.y=lad.y-s.h; s.climbing=false; s.onGround=true; s.vy=0; return false; }  // step onto deck above
+  if(s.y+s.h >= lad.y+lad.h){ s.y=lad.y+lad.h-s.h; if(keys['ArrowDown']){ s.climbing=false; return false; } } // hit the bottom
+  return true;
+}
+
+// Evil Giant Bratwurst — bounce/chase state machine, haunted-mustard spit, hp; frees the transponder on death.
+function updateBratwurst(){
+  const lv=LV[5], s=sawyer, mb=lv.miniBoss, tp=lv.transponder;
+  if(mb && mb.alive){
+    mb.bobT+=0.05;
+    const inAttic = s.y < FLOOR-260;     // Sawyer is up in the rafters
+    if(inAttic){ mb.vx += Math.sign((s.x+s.w/2-mb.w/2)-mb.x)*0.09; mb.vx=Math.max(-2.6,Math.min(2.6,mb.vx)); }
+    else { if(mb.x<=mb.lo)mb.facing=1; if(mb.x>=mb.hi)mb.facing=-1; mb.vx += (mb.facing*1.6-mb.vx)*0.2; }
+    mb.x+=mb.vx;
+    if(mb.x<mb.lo){mb.x=mb.lo;mb.vx=Math.abs(mb.vx);} if(mb.x>mb.hi){mb.x=mb.hi;mb.vx=-Math.abs(mb.vx);}
+    mb.facing = mb.vx<0?-1:1;
+    mb.y = mb.baseY + Math.sin(mb.bobT)*10;
+    if(mb.hitFlash>0)mb.hitFlash--;
+    // spit a blob of haunted mustard at Sawyer
+    mb.shootTimer--;
+    if(mb.shootTimer<=0){
+      mb.shootTimer = inAttic?72:130;
+      const sx=mb.x+mb.w/2, sy=mb.y+mb.h*0.62;
+      const dx=(s.x+s.w/2)-sx, dy=(s.y+s.h/2)-sy, d=Math.hypot(dx,dy)||1;
+      venom.push({x:sx,y:sy,vx:dx/d*3.2,vy:dy/d*3.2-0.6,life:120,r:6,col:'#E8C000',mustard:true});
+      if(typeof SFX!=='undefined' && SFX.barf) SFX.barf();
+    }
+    // contact damage
+    if(s.invincible===0 && s.x+s.w>mb.x && s.x<mb.x+mb.w && s.y+s.h>mb.y && s.y<mb.y+mb.h) hurt(s);
+    // player projectiles damage the wurst
+    for(const pr of projectiles){
+      if(pr.life<=0)continue;
+      if(pr.x>mb.x && pr.x<mb.x+mb.w && pr.y>mb.y && pr.y<mb.y+mb.h){
+        mb.hp--; mb.hitFlash=8; pr.life=(pr.type==='milk')?Math.min(pr.life,2):0;
+        shakeIntensity=Math.max(shakeIntensity,4); score+=30;
+        if(typeof SFX!=='undefined' && SFX.bossHit) SFX.bossHit();
+        for(let i=0;i<8;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,life:16,maxLife:16,type:'spark',color:'#E8C000'});
+        if(mb.hp<=0){
+          mb.alive=false; mb.defeated=true; score+=400; shakeIntensity=12;
+          if(typeof SFX!=='undefined' && SFX.bossDie) SFX.bossDie();
+          for(let i=0;i<24;i++) particles.push({x:mb.x+mb.w/2,y:mb.y+mb.h/2,vx:(Math.random()-.5)*6,vy:-2-Math.random()*4,life:36,maxLife:36,type:'spark',color:i%2?'#E8C000':'#9D4EDD'});
+          if(tp){ tp.locked=false;
+            for(let i=0;i<26;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#C9B6FF'});
+          }
+        }
+        break;
+      }
+    }
+  }
+  // transponder: ghostly casing dissolves once unlocked, then it can be collected
+  if(tp && !tp.got){
+    tp.phase+=0.05;
+    tp.cased += ((tp.locked?1:0)-tp.cased)*0.10; if(tp.cased<0.01)tp.cased=0;
+    if(!tp.locked){
+      const pcx=s.x+s.w/2, pcy=s.y+s.h/2;
+      if(pcx>tp.x-16 && pcx<tp.x+tp.w+16 && pcy>tp.y-20 && pcy<tp.y+tp.h+14){
+        tp.got=true; lv.transponderTaken=true; acquireItem('transponder'); score+=500;
+        popPoints(tp.x+tp.w/2,tp.y-6,500,'#9FD8FF');
+        if(typeof sfx==='function') sfx('win');
+        shakeIntensity=Math.max(shakeIntensity,8);
+        for(let i=0;i<28;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*7,vy:-2-Math.random()*5,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#C9B6FF'});
+      }
+    }
+  }
+}
+
+// ── Spooky wooden ladder ──
+function drawLadder(p,sx){
+  const x=sx, y=p.y, w=p.w, h=p.h, t=Date.now()*0.001;
+  ctx.save();
+  // rails
+  ctx.strokeStyle='#3A281A'; ctx.lineWidth=4; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(x+3,y); ctx.lineTo(x+3,y+h); ctx.moveTo(x+w-3,y); ctx.lineTo(x+w-3,y+h); ctx.stroke();
+  ctx.strokeStyle='rgba(90,64,38,0.7)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(x+3,y); ctx.lineTo(x+3,y+h); ctx.moveTo(x+w-3,y); ctx.lineTo(x+w-3,y+h); ctx.stroke();
+  // rungs
+  ctx.strokeStyle='#2E2012'; ctx.lineWidth=3;
+  for(let ry=y+8; ry<y+h-2; ry+=14){ ctx.beginPath(); ctx.moveTo(x+1,ry); ctx.lineTo(x+w-1,ry); ctx.stroke(); }
+  // faint cobweb in a corner + soft violet haunt glow
+  ctx.strokeStyle='rgba(210,210,225,0.18)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+w*0.6,y+10); ctx.moveTo(x+w,y); ctx.lineTo(x+w*0.4,y+10); ctx.stroke();
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const g=ctx.createLinearGradient(x,y,x+w,y); g.addColorStop(0,'rgba(150,90,210,0)'); g.addColorStop(0.5,'rgba(150,90,210,'+(0.10+0.05*Math.sin(t*2+p.x))+')'); g.addColorStop(1,'rgba(150,90,210,0)');
+  ctx.fillStyle=g; ctx.fillRect(x-2,y,w+4,h); ctx.restore();
+  ctx.restore();
+}
+
+// ── Evil Giant Bratwurst — large spooky floating sausage, glowing eyes, mustard drip, menacing aura ──
+function drawBratwurst(){
+  const lv=LV[5], mb=lv.miniBoss; if(!mb||!mb.alive) return;
+  const x=mb.x-cameraX; if(x+mb.w<-60||x>W+60) return;
+  const cx=x+mb.w/2, cy=mb.y+mb.h/2, w=mb.w, h=mb.h, t=Date.now()*0.001, fc=mb.facing;
+  ctx.save();
+  // menacing aura
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const ag=ctx.createRadialGradient(cx,cy,4,cx,cy,w*0.8);
+  const ap=0.22+0.08*Math.sin(t*3);
+  ag.addColorStop(0,'rgba(180,40,40,'+ap+')'); ag.addColorStop(0.6,'rgba(120,30,90,'+(ap*0.6)+')'); ag.addColorStop(1,'rgba(120,30,90,0)');
+  ctx.fillStyle=ag; ctx.beginPath(); ctx.ellipse(cx,cy,w*0.85,h*1.2,0,0,7); ctx.fill();
+  ctx.restore();
+  // drifting soul-wisps
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<3;i++){ const ph=t*0.7+i*1.1, rise=ph%1, wx=cx+Math.sin(ph*4+i)*w*0.4, wy=cy-rise*40, wr=3+rise*6;
+    const wg=ctx.createRadialGradient(wx,wy,0.5,wx,wy,wr); wg.addColorStop(0,'rgba(200,140,240,'+((1-rise)*0.3)+')'); wg.addColorStop(1,'rgba(160,90,210,0)');
+    ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(wx,wy,wr,0,7); ctx.fill(); }
+  ctx.restore();
+  if(mb.hitFlash>0){ ctx.globalAlpha=0.85; }
+  // sausage body (curved banger)
+  ctx.lineCap='round';
+  const bend=Math.sin(t*1.6)*6;
+  ctx.strokeStyle='#3E2410'; ctx.lineWidth=h+8;
+  ctx.beginPath(); ctx.moveTo(cx-w*0.42,cy+4); ctx.quadraticCurveTo(cx,cy-bend-6,cx+w*0.42,cy+4); ctx.stroke();
+  ctx.strokeStyle = mb.hitFlash>0 ? '#FFFFFF' : '#7A3B1E'; ctx.lineWidth=h;
+  ctx.beginPath(); ctx.moveTo(cx-w*0.42,cy+4); ctx.quadraticCurveTo(cx,cy-bend-6,cx+w*0.42,cy+4); ctx.stroke();
+  // sheen + char grill marks
+  ctx.strokeStyle='rgba(220,150,90,0.5)'; ctx.lineWidth=h*0.3;
+  ctx.beginPath(); ctx.moveTo(cx-w*0.34,cy-2); ctx.quadraticCurveTo(cx,cy-bend-10,cx+w*0.34,cy-2); ctx.stroke();
+  ctx.strokeStyle='rgba(30,14,6,0.55)'; ctx.lineWidth=2;
+  for(let i=-2;i<=2;i++){ const gx=cx+i*w*0.14; ctx.beginPath(); ctx.moveTo(gx,cy-h*0.32); ctx.lineTo(gx+3,cy+h*0.32); ctx.stroke(); }
+  // knotted ends
+  ctx.fillStyle='#5A2A14'; ctx.beginPath(); ctx.arc(cx-w*0.46,cy+4,h*0.34,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(cx+w*0.46,cy+4,h*0.34,0,7); ctx.fill();
+  // glowing eyes (lean toward the player)
+  const ex=cx+fc*w*0.16;
+  for(const s2 of [-1,1]){ const eX=ex+s2*8;
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    const eg=ctx.createRadialGradient(eX,cy-3,0.5,eX,cy-3,7); eg.addColorStop(0,'rgba(255,240,120,0.95)'); eg.addColorStop(1,'rgba(255,180,40,0)');
+    ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(eX,cy-3,7,0,7); ctx.fill(); ctx.restore();
+    ctx.fillStyle='#1A0E04'; ctx.beginPath(); ctx.arc(eX,cy-3,2.6,0,7); ctx.fill();
+    ctx.fillStyle='#FFE066'; ctx.beginPath(); ctx.arc(eX+fc*0.8,cy-3.6,1.1,0,7); ctx.fill(); }
+  // jagged grimace + mustard drool
+  ctx.fillStyle='#0A0402'; ctx.beginPath(); ctx.ellipse(ex,cy+6,8,3.5,0,0,7); ctx.fill();
+  ctx.fillStyle='#D8CBB0';
+  for(let i=0;i<5;i++){ const fx=ex-7+i*3.4; ctx.beginPath(); ctx.moveTo(fx,cy+3); ctx.lineTo(fx+2.4,cy+3); ctx.lineTo(fx+1.2,cy+7); ctx.closePath(); ctx.fill(); }
+  const drip=(t*0.6)%1; ctx.fillStyle='rgba(232,192,0,0.85)';
+  ctx.beginPath(); ctx.arc(ex+2,cy+8+drip*6,1.8,0,7); ctx.fill();
+  // hp pips above
+  const pipY=Math.max(3,mb.y-10); for(let i=0;i<mb.maxHp;i++){ ctx.fillStyle=i<mb.hp?'#E8C000':'rgba(60,40,0,0.6)'; ctx.fillRect(cx-mb.maxHp*3+i*6,pipY,4,3); }
+  ctx.restore();
+}
+
+// ── Transponder in its ghostly casing ──
+function drawL5Transponder(){
+  const lv=LV[5], tp=lv.transponder; if(!tp||tp.got) return;
+  const x=tp.x-cameraX; if(x<-60||x>W+60) return;
+  const cx=x+tp.w/2, cy=tp.y+tp.h/2, t=tp.phase;
+  ctx.save();
+  // beacon glow
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const bg=ctx.createRadialGradient(cx,cy,1,cx,cy,18+Math.sin(t*3)*3);
+  bg.addColorStop(0,'rgba(159,216,255,0.8)'); bg.addColorStop(0.5,'rgba(120,140,255,0.35)'); bg.addColorStop(1,'rgba(120,140,255,0)');
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(cx,cy,18,0,7); ctx.fill();
+  ctx.restore();
+  // device body
+  ctx.fillStyle='#1A2A3A'; ctx.beginPath(); ctx.roundRect(x+2,tp.y+2,tp.w-4,tp.h-4,3); ctx.fill();
+  ctx.fillStyle='#9FD8FF'; ctx.beginPath(); ctx.arc(cx,cy,4+Math.sin(t*4)*1,0,7); ctx.fill();
+  ctx.strokeStyle='#C9B6FF'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.roundRect(x+2,tp.y+2,tp.w-4,tp.h-4,3); ctx.stroke();
+  // antenna
+  ctx.strokeStyle='#9FD8FF'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx,tp.y+2); ctx.lineTo(cx,tp.y-8); ctx.stroke();
+  ctx.fillStyle='#FFE066'; ctx.beginPath(); ctx.arc(cx,tp.y-8,2,0,7); ctx.fill();
+  // ── ghostly casing (fades out as cased -> 0) ──
+  if(tp.cased>0.01){
+    const a=tp.cased;
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const cg=ctx.createRadialGradient(cx,cy,2,cx,cy,tp.w*1.4);
+    cg.addColorStop(0,'rgba(180,150,230,'+(0.10*a)+')'); cg.addColorStop(0.7,'rgba(150,120,210,'+(0.32*a)+')'); cg.addColorStop(1,'rgba(150,120,210,0)');
+    ctx.fillStyle=cg; ctx.beginPath(); ctx.ellipse(cx,cy,tp.w*1.1,tp.h*1.0,0,0,7); ctx.fill();
+    ctx.restore();
+    // spectral shell with a faint face
+    ctx.fillStyle='rgba(200,180,240,'+(0.30*a)+')';
+    ctx.beginPath(); ctx.moveTo(cx-tp.w*0.8,cy+tp.h*0.7);
+    ctx.quadraticCurveTo(cx-tp.w*0.9,cy-tp.h*1.1, cx,cy-tp.h*1.1);
+    ctx.quadraticCurveTo(cx+tp.w*0.9,cy-tp.h*1.1, cx+tp.w*0.8,cy+tp.h*0.7);
+    for(let i=0;i<4;i++){ const wx=cx+tp.w*0.8-i*(tp.w*1.6/3); ctx.quadraticCurveTo(wx-tp.w*0.2,cy+tp.h*1.1, wx-tp.w*0.4,cy+tp.h*0.7); }
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='rgba(40,20,60,'+(0.5*a)+')';
+    ctx.beginPath(); ctx.ellipse(cx-4,cy-3,1.8,3,0,0,7); ctx.fill(); ctx.beginPath(); ctx.ellipse(cx+4,cy-3,1.8,3,0,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(220,200,255,'+(0.4*a)+')'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(cx,cy+4,3,0.1*Math.PI,0.9*Math.PI); ctx.stroke();
+  }
+  ctx.restore();
+}
+
 const SPACE_PITS = [450, 970, 1510, 2030];
 function spacePlatforms(){
   // ── CHAOTIC ASTEROID FIELD: irregularly scattered rocks drifting in the void. A guided
@@ -10207,7 +10465,9 @@ function resolveGen(p){
     p._gp=null;                                   // walked off the edge or jumped — release
   }
   p.onGround=false;
+  p._standPlat=null;
   for(const pl of plats){
+    if(pl.isLadder)continue;
     const ptop=topOf(pl);
     const lastTop=(pl._lt!=null)?pl._lt:ptop;        // the rock's top LAST frame (moving-platform safe)
     const inX=p.x+p.w>pl.x&&p.x<pl.x+pl.w;
@@ -10218,13 +10478,14 @@ function resolveGen(p){
       if(p.id==='sawyer'&&Math.abs(p.vy)>5){
         for(let i=0;i<6;i++) particles.push({x:p.x+p.w/2+Math.random()*12-6,y:p.y+p.h,vx:Math.random()*3-1.5,vy:-0.5-Math.random()*1.5,life:14,maxLife:14,type:'dust'});
       }
-      p.vy=0;p.onGround=true; if(giveOn) p._gp=pl;   // remember the rock we're riding
+      p.vy=0;p.onGround=true; p._standPlat=pl; if(giveOn) p._gp=pl;   // remember the rock we're riding
     }
   }
 }
 function groundAheadGen(p,dir){
   const probeX=p.x+p.w/2+dir*26, footY=p.y+p.h;
   for(const pl of curLV().platforms){
+    if(pl.isLadder)continue;
     if(probeX>pl.x&&probeX<pl.x+pl.w&&footY>=pl.y-4&&footY<=pl.y+30)return true;
   }
   return false;
@@ -10232,6 +10493,18 @@ function groundAheadGen(p,dir){
 function updateOttoGen(){
   const o=otto,s=sawyer, lv=curLV();
   if(o.onGround)o.crossingPit=0;
+  if(currentLevel===5){
+    if(sawyer.climbing){
+      let lad=null; for(const pl of lv.platforms){ if(pl.isLadder && sawyer.x+sawyer.w>pl.x && sawyer.x<pl.x+pl.w){lad=pl;break;} }
+      if(lad){ o.climbing=true; const tx=lad.x+lad.w/2-o.w/2;
+        o.x+=(tx-o.x)*0.35; o.y+=((sawyer.y+8)-o.y)*0.3; o.vx=0; o.vy=0; o.onGround=false; o.facing=sawyer.facing;
+        if(Math.hypot(o.x-sawyer.x,o.y-sawyer.y)>300){ o.x=tx; o.y=sawyer.y+8; }
+        if(o.attackCooldown>0)o.attackCooldown--; if(o.attackTimer>0)o.attackTimer--;
+        return;
+      }
+    }
+    o.climbing=false;
+  }
   if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
   const desiredX=s.x-s.facing*40;
   const dx=desiredX-o.x;
@@ -10259,6 +10532,7 @@ function updateOttoGen(){
     if(needHop){o.vy=-11.5;o.onGround=false;o.hopCd=12;if(wantCross){o.vx=mdir*4.4;o.crossingPit=mdir;}sfx('jumpBaby');}
     o.vy+=GRAVITY;o.x+=o.vx;o.y+=o.vy;
     resolveGen(o);
+    if(currentLevel===5) carryL5(o);
     if(o.x<0)o.x=0; if(o.x>lv.worldW-o.w)o.x=lv.worldW-o.w;
     if(o.y>H+40||Math.abs(o.x-s.x)>460){o.x=s.x-s.facing*40;o.y=s.y-6;o.vx=0;o.vy=0;}
   }
@@ -10286,6 +10560,7 @@ function updateGen(){
     if(lightT<=0){ lightStrike=18; lightT=180+(Math.random()*240|0); SFX.thunder&&SFX.thunder(); }
     if(lightStrike>0){ lightStrike--; const k=lightStrike; lightFlash=(k>14)?1:(k>11)?0.4:(k>7)?0.9:(k*0.12); } else lightFlash=0;
   } else lightFlash=0;
+  if(currentLevel===5) updateL5Slides();
 
   if(cutsceneActive){
     cutsceneTimer--;
@@ -10354,6 +10629,9 @@ function updateGen(){
   else if(keys['ArrowRight']){s.vx=4;s.facing=1;}
   else s.vx*=0.8;
   s.vx=Math.max(-5,Math.min(5,s.vx));
+  let _l5climb=(currentLevel===5)?handleL5Climb(s):false;
+  if(_l5climb){ s.vx=0; }
+  else {
   if(s.onGround){s.coyoteTimer=6;} else s.coyoteTimer--;
   if(keys['ArrowUp']&&s.coyoteTimer>0){
     s.vy=-11.5; s.coyoteTimer=0; sfx('jump');
@@ -10385,6 +10663,8 @@ function updateGen(){
       }
     }
   }
+  } // end L5 climb wrap
+  if(currentLevel===5) carryL5(s);
   if(s.x<0)s.x=0; if(s.x>lv.worldW-s.w)s.x=lv.worldW-s.w;
   const camTarget=Math.max(0,Math.min(s.x-100,lv.worldW-W));
   cameraX+=(camTarget-cameraX)*0.06;
@@ -10392,6 +10672,9 @@ function updateGen(){
   if(currentLevel===6){ // vertical camera follows Sawyer up into the void
     const camYTarget=Math.max(-340, Math.min(0, s.y - H*0.5));
     cameraY+=(camYTarget-cameraY)*0.08; cameraY=Math.round(cameraY);
+  } else if(currentLevel===5){ // follow Sawyer up the attic ladder-maze — the ceiling soars out of reach
+    const camYTarget=Math.max(-560, Math.min(0, s.y - 150));
+    cameraY+=(camYTarget-cameraY)*0.09; if(Math.abs(cameraY)<0.5)cameraY=0; cameraY=Math.round(cameraY);
   } else cameraY=0;
   if(s.y>(currentLevel===6?cameraY:0)+H+40){hurt(s, true);}
   if(s.invincible>0)s.invincible--;
@@ -10580,6 +10863,8 @@ function updateGen(){
       }
     }
   }
+
+  if(currentLevel===5) updateBratwurst();
 
   // Boss (L1-style spit boss + phase2 slam, clone-tuned)
   if(boss&&boss.alive){
@@ -11550,6 +11835,7 @@ function drawHausDarkness(){
   if(!_darkCv){ _darkCv=document.createElement('canvas'); _darkCv.width=W; _darkCv.height=H; _darkCx=_darkCv.getContext('2d'); }
   const dc=_darkCx;
   const lv=curLV(), bo=lv.bossObj;
+  const _cy=(currentLevel===5)?cameraY:0;   // world is vertically panned in the attic; carve in screen space
   dc.setTransform(1,0,0,1,0,0);
   dc.clearRect(0,0,W,H);
   dc.globalCompositeOperation='source-over';
@@ -11559,10 +11845,10 @@ function drawHausDarkness(){
   const cone=(x,y,dir,reach,spread,st)=>{ dc.save(); dc.beginPath(); dc.moveTo(x-dir*8,y-8); dc.lineTo(x+dir*reach,y-reach*spread); dc.lineTo(x+dir*reach,y+reach*spread); dc.closePath(); dc.clip();
     const g=dc.createRadialGradient(x,y,4,x,y,reach); g.addColorStop(0,'rgba(0,0,0,'+st+')'); g.addColorStop(0.7,'rgba(0,0,0,'+(st*0.85)+')'); g.addColorStop(1,'rgba(0,0,0,0)'); dc.fillStyle=g; dc.fillRect(0,0,W,H); dc.restore(); };
   // Sawyer's flashlight
-  const sxx=sawyer.x-cameraX+sawyer.w/2, syy=sawyer.y+18, sdir=sawyer.facing>0?1:-1;
+  const sxx=sawyer.x-cameraX+sawyer.w/2, syy=sawyer.y-_cy+18, sdir=sawyer.facing>0?1:-1;
   glow(sxx,syy,68,1); cone(sxx+sdir*8,syy,sdir,240,0.55,1);
   // Otto's smaller flashlight
-  const oxx=otto.x-cameraX+otto.w/2, oyy=otto.y+14, odir=otto.facing>0?1:-1;
+  const oxx=otto.x-cameraX+otto.w/2, oyy=otto.y-_cy+14, odir=otto.facing>0?1:-1;
   glow(oxx,oyy,48,0.98); cone(oxx+odir*6,oyy,odir,170,0.52,0.98);
   // Boss + exit glow so the level stays playable
   if(bo&&bo.active){
@@ -11570,7 +11856,7 @@ function drawHausDarkness(){
     // tall stacked carve so the whole 156px Baron sprite reads vividly (head→feet)
     glow(bcx,feet-150,62,1); glow(bcx,feet-100,98,1); glow(bcx,feet-45,86,1);
   }
-  glow((lv.worldW-120)-cameraX,FLOOR-40,70,0.8);
+  glow((lv.worldW-120)-cameraX,FLOOR-40-_cy,70,0.8);
   // moonlit hall: window casts a broad cold carve so the arena reads as a vaulted room, not a tunnel
   const _aT=hausArenaT();
   if(_aT>0.001){
@@ -11578,10 +11864,10 @@ function drawHausDarkness(){
     glow(winX,winY,150*_aT,0.55*_aT);
     glow(winX,FLOOR-50,180*_aT,0.42*_aT);
   }
-  for(const m of lv.pitMobs){ const ll=m.len||30; glow(m.x-cameraX+m.w/2, FLOOR-ll*0.5, 34+ll*0.45, 0.95); }
+  for(const m of lv.pitMobs){ const ll=m.len||30; glow(m.x-cameraX+m.w/2, FLOOR-ll*0.5-_cy, 34+ll*0.45, 0.95); }
   dc.globalCompositeOperation='source-over';
-  ctx.drawImage(_darkCv,0,0);
-  if(lightFlash>0.01){ ctx.save(); ctx.fillStyle='rgba(220,228,255,'+(lightFlash*0.32)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }
+  ctx.drawImage(_darkCv,0,_cy);
+  if(lightFlash>0.01){ ctx.save(); ctx.fillStyle='rgba(220,228,255,'+(lightFlash*0.32)+')'; ctx.fillRect(0,_cy,W,H); ctx.restore(); }
   // Baron cast-release violet flash + enrage red wash + death room-reveal
   if(bo){
     if(bo.fxViolet>0.01){ ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.fillStyle='rgba(150,60,230,'+(bo.fxViolet*0.34)+')'; ctx.fillRect(0,0,W,H); ctx.restore(); }
@@ -11677,12 +11963,141 @@ function drawBaronGhoul(){
   }
   ctx.restore();
 }
+
+// ════════════════════ L5 ATTIC DRESSING (soaring rafters, dust-shaft, junk) ════════════════════
+// Drawn under the world transform (so they pan with the vertical camera). Gated to the attic
+// x-window so they cost nothing elsewhere. Stable tRand seeds — no per-frame crawl.
+function drawHausAtticBack(){
+  if(currentLevel!==5) return;
+  if(cameraX<2500 || cameraX>4500) return;
+  const t=Date.now()*0.001, wx=v=>v-cameraX;
+  ctx.save();
+  // ── heavy rafter beams across the top of the soaring room ──
+  const beamY=FLOOR-684;                                   // high tie-beam — clears the tall player on the peak deck
+  ctx.fillStyle='#2A1C10';
+  ctx.fillRect(wx(2960),beamY,1120,16);                    // main tie-beam
+  ctx.fillStyle='#3C2A18'; ctx.fillRect(wx(2960),beamY,1120,3);
+  // king-post trusses hanging down off the tie-beam
+  ctx.strokeStyle='#26190E'; ctx.lineWidth=9; ctx.lineCap='round';
+  for(let bx=3040; bx<4060; bx+=170){
+    ctx.beginPath(); ctx.moveTo(wx(bx),beamY+14); ctx.lineTo(wx(bx),beamY+58); ctx.stroke();
+    ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(wx(bx-70),beamY+14); ctx.lineTo(wx(bx),beamY+50); ctx.lineTo(wx(bx+70),beamY+14); ctx.stroke();
+    ctx.lineWidth=9;
+  }
+  // ── GABLE WINDOW high in the attic, leaking cold moonlight (the dust-shaft source) ──
+  const gx=3520, gy=FLOOR-790, gw=120, gh=96, sgx=wx(gx);
+  // triangular gable + cold sky inside
+  ctx.save();
+  ctx.beginPath(); ctx.moveTo(sgx,gy+gh); ctx.lineTo(sgx+gw/2,gy); ctx.lineTo(sgx+gw,gy+gh); ctx.closePath(); ctx.clip();
+  const sky=ctx.createLinearGradient(0,gy,0,gy+gh); sky.addColorStop(0,'#243056'); sky.addColorStop(1,'#0E1228');
+  ctx.fillStyle=sky; ctx.fillRect(sgx,gy,gw,gh);
+  // a little moon up in the gable
+  const mr=15, mxg=sgx+gw*0.62, myg=gy+gh*0.44;
+  const mg=ctx.createRadialGradient(mxg-4,myg-4,2,mxg,myg,mr);
+  mg.addColorStop(0,'#E9E2C8'); mg.addColorStop(1,'#7E83A0');
+  ctx.fillStyle=mg; ctx.beginPath(); ctx.arc(mxg,myg,mr,0,7); ctx.fill();
+  ctx.restore();
+  // gable frame + muntins
+  ctx.strokeStyle='#1E1308'; ctx.lineWidth=6;
+  ctx.beginPath(); ctx.moveTo(sgx,gy+gh); ctx.lineTo(sgx+gw/2,gy); ctx.lineTo(sgx+gw,gy+gh); ctx.closePath(); ctx.stroke();
+  ctx.lineWidth=2.5; ctx.beginPath();
+  ctx.moveTo(sgx+gw/2,gy+8); ctx.lineTo(sgx+gw/2,gy+gh);
+  ctx.moveTo(sgx+gw*0.2,gy+gh*0.55); ctx.lineTo(sgx+gw*0.8,gy+gh*0.55); ctx.stroke();
+  // ── DUST-SHAFT: a soft moonbeam cone falling from the window onto the attic deck ──
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const beamTopX=sgx+gw/2, beamTopY=gy+gh-6, deckY=FLOOR-506;
+  const spread=120;
+  const bg=ctx.createLinearGradient(0,beamTopY,0,deckY);
+  bg.addColorStop(0,'rgba(176,190,235,0.16)'); bg.addColorStop(1,'rgba(176,190,235,0)');
+  ctx.fillStyle=bg;
+  ctx.beginPath(); ctx.moveTo(beamTopX-14,beamTopY); ctx.lineTo(beamTopX+14,beamTopY);
+  ctx.lineTo(beamTopX+spread,deckY); ctx.lineTo(beamTopX-spread,deckY); ctx.closePath(); ctx.fill();
+  // floating motes inside the shaft (stable seeds, slow drift)
+  for(let i=0;i<16;i++){
+    const f=(t*0.12 + tRand(i*3+1))%1;                     // 0..1 fall progress
+    const my2=beamTopY + f*(deckY-beamTopY);
+    const lerp=(my2-beamTopY)/(deckY-beamTopY+1);
+    const mx2=beamTopX + (tRand(i*5+2)-0.5)*spread*1.6*lerp + Math.sin(t*0.6+i)*4;
+    const a=(1-Math.abs(f-0.5)*2)*0.5;
+    ctx.fillStyle='rgba(220,228,255,'+a.toFixed(3)+')';
+    ctx.beginPath(); ctx.arc(mx2,my2,0.8+tRand(i*7+3)*1.1,0,7); ctx.fill();
+  }
+  ctx.restore();
+  // ── cobwebs strung in the rafter corners ──
+  ctx.strokeStyle='rgba(210,210,225,0.12)'; ctx.lineWidth=1;
+  for(const cwx of [3020,3760,4040]){ const ox=wx(cwx), oy=beamY+16, dir=(cwx<3500?1:-1);
+    for(let r=14;r<=56;r+=14){ ctx.beginPath(); ctx.moveTo(ox,oy); ctx.lineTo(ox+dir*r,oy); ctx.moveTo(ox,oy); ctx.lineTo(ox,oy+r); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ox+dir*r,oy); ctx.lineTo(ox,oy+r); ctx.stroke(); }
+  }
+  ctx.restore();
+}
+// Junk props resting on the attic decks (drawn after platforms so they sit on top). Non-colliding.
+function drawHausAtticProps(){
+  if(currentLevel!==5) return;
+  if(cameraX<2500 || cameraX>4500) return;
+  const t=Date.now()*0.001, wx=v=>v-cameraX;
+  const wood='#3A281A', woodHi='#5A4026', woodSh='rgba(0,0,0,0.45)';
+  const sheet='#8E887A', sheetHi='#A7A091', sheetSh='#5C5749';
+  // sheet-draped furniture lump
+  function draped(bx,baseY,w,h){
+    const X=wx(bx);
+    ctx.fillStyle=woodSh; ctx.beginPath(); ctx.ellipse(X+w/2,baseY,w*0.6,5,0,0,7); ctx.fill();
+    ctx.fillStyle=sheet; ctx.beginPath();
+    ctx.moveTo(X,baseY);
+    ctx.quadraticCurveTo(X,baseY-h, X+w*0.5,baseY-h);
+    ctx.quadraticCurveTo(X+w,baseY-h, X+w,baseY);
+    // scalloped hem
+    for(let hx=w; hx>=0; hx-=w/5){ ctx.lineTo(X+hx,baseY); ctx.lineTo(X+hx-w/10,baseY-5); }
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle=sheetHi; ctx.beginPath(); ctx.ellipse(X+w*0.42,baseY-h*0.7,w*0.18,h*0.22,-0.3,0,7); ctx.fill();
+    ctx.strokeStyle=sheetSh; ctx.lineWidth=1; ctx.beginPath();
+    ctx.moveTo(X+w*0.3,baseY-h*0.5); ctx.quadraticCurveTo(X+w*0.4,baseY-h*0.2,X+w*0.34,baseY); ctx.stroke();
+  }
+  // humpback steamer trunk
+  function trunk(bx,baseY,w,h){
+    const X=wx(bx);
+    ctx.fillStyle=woodSh; ctx.beginPath(); ctx.ellipse(X+w/2,baseY,w*0.55,4,0,0,7); ctx.fill();
+    ctx.fillStyle=wood; ctx.fillRect(X,baseY-h*0.6,w,h*0.6);
+    ctx.beginPath(); ctx.moveTo(X,baseY-h*0.6); ctx.quadraticCurveTo(X+w/2,baseY-h*1.15,X+w,baseY-h*0.6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle=woodHi; ctx.fillRect(X,baseY-h*0.6,w,2);
+    // iron straps + clasp
+    ctx.fillStyle='#2A2A30'; ctx.fillRect(X+w*0.18,baseY-h*0.95,5,h*0.95); ctx.fillRect(X+w*0.72,baseY-h*0.95,5,h*0.95);
+    ctx.fillStyle='#54545E'; ctx.fillRect(X+w*0.45,baseY-h*0.42,w*0.1,h*0.14);
+  }
+  // stacked crates
+  function crate(bx,baseY,sz){
+    const X=wx(bx);
+    ctx.fillStyle=wood; ctx.fillRect(X,baseY-sz,sz,sz);
+    ctx.fillStyle=woodHi; ctx.fillRect(X,baseY-sz,sz,2);
+    ctx.strokeStyle=woodSh; ctx.lineWidth=2;
+    ctx.strokeRect(X+1,baseY-sz+1,sz-2,sz-2);
+    ctx.beginPath(); ctx.moveTo(X,baseY-sz); ctx.lineTo(X+sz,baseY); ctx.moveTo(X+sz,baseY-sz); ctx.lineTo(X,baseY); ctx.stroke();
+  }
+  // leaning empty picture frame
+  function frame(bx,baseY,w,h,lean){
+    const X=wx(bx);
+    ctx.save(); ctx.translate(X,baseY); ctx.rotate(lean);
+    ctx.fillStyle='#6B4A20'; ctx.fillRect(-w/2,-h,w,h);
+    ctx.fillStyle='#120B1A'; ctx.fillRect(-w/2+5,-h+5,w-10,h-10);
+    ctx.fillStyle='#7E5A2A'; ctx.fillRect(-w/2,-h,w,3);
+    ctx.restore();
+  }
+  // ── T2 deck (top FLOOR-356) ──
+  draped(3070, FLOOR-356, 56, 46);
+  crate(3170, FLOOR-356, 26);
+  // ── T3 west peak (top FLOOR-506) ──
+  trunk(3210, FLOOR-506, 60, 40);
+  crate(3300, FLOOR-506, 24); crate(3300, FLOOR-530, 20);
+  // ── T3 east peak (top FLOOR-506), around the transponder roost ──
+  frame(3680, FLOOR-506, 44, 56, -0.12);
+  draped(3820, FLOOR-506, 50, 42);
+}
 function drawGenBg(){
   const lv=curLV(), pal=lv.pal;
   if(currentLevel===6){ ctx.save(); ctx.translate(0,cameraY); } // keep void screen-anchored while world scrolls
   const g=ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,pal.skyT); g.addColorStop(0.5,pal.skyM); g.addColorStop(1,pal.skyL);
-  ctx.fillStyle=g; ctx.fillRect(0,-40,W,H+80);
+  ctx.fillStyle=g; ctx.fillRect(0,-680,W,H+760);
   const t=Date.now()*0.001;
   if(currentLevel===4){
     // Far kelp / bioluminescent motes
@@ -11703,7 +12118,8 @@ function drawGenBg(){
     const _arenaT=hausArenaT();
     ctx.save(); ctx.globalAlpha=Math.max(0,1-0.9*_arenaT);
     ctx.fillStyle='rgba(255,255,255,0.025)';
-    for(let i=0;i<24;i++){ const x=((i*60-cameraX*0.3)%(W+80)+W+80)%(W+80)-40; ctx.fillRect(x,0,28,FLOOR); }
+    for(let i=0;i<24;i++){ const x=((i*60-cameraX*0.3)%(W+80)+W+80)%(W+80)-40; ctx.fillRect(x,-680,28,FLOOR+680); }
+    drawHausAtticBack();   // rafters + gable dust-shaft high above (attic region only)
     ctx.fillStyle='rgba(20,14,28,0.6)'; ctx.fillRect(0,FLOOR-64,W,64);
     ctx.fillStyle='rgba(60,44,30,0.5)'; ctx.fillRect(0,FLOOR-64,W,4);
     for(let i=0;i<4;i++){ const x=((i*420-cameraX*0.2)%(W+560)+W+560)%(W+560)-280, wy=46, ww=70, wh=150;
@@ -11939,6 +12355,7 @@ function drawGenPlatforms(){
   for(const p of lv.platforms){
     const sx=p.x-cameraX;
     if(sx+p.w<-20||sx>W+20)continue;
+    if(p.isLadder){ drawLadder(p,sx); continue; }
     if(p.y===FLOOR){
       if(haus){
         ctx.fillStyle='#2A1E14'; ctx.fillRect(sx,p.y,p.w,H-p.y);
