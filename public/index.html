@@ -5431,15 +5431,24 @@ function getBossFocus(){
   else b=boss;
   if(!b) return null;
   const w=b.w||80, h=b.h||80;
+  // The Baron's sprite is bottom-registered and ~156px tall — far taller than his 64px hit-tile.
+  // Center the cutscene on the visible sprite's middle (feet minus half the display height),
+  // otherwise the zoom frames his knees and crops his head.
+  if(currentLevel===5 && typeof BARON_DISPLAY_H!=='undefined'){
+    const feet=b.y+h, midY=feet-BARON_DISPLAY_H*0.5;
+    return { x:b.x+w/2, y:midY, h:BARON_DISPLAY_H };
+  }
   return { x:b.x+w/2, y:b.y+h/2, h:h };
 }
 let cutsceneZoom = 1;
 // Applies a cinematic zoom-in→hold→out on the live boss sprite during a cutscene.
 // Overrides cameraX so the boss is framed; returns the previous cameraX to restore after the scene draws.
 function applyCutsceneCam(){
-  const TOTAL=240, ZMAX=2.35;
   const f=getBossFocus();
   if(!f){ cutsceneZoom=1; return null; }
+  // Tall sprites (Baron) need a gentler zoom so the upscale stays crisp and the whole figure fits.
+  const tall = (currentLevel===5);
+  const TOTAL=240, ZMAX= tall?1.6:2.35;
   const el=TOTAL-cutsceneTimer;
   const ez=t=>t<0?0:t>1?1:(t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2); // easeInOut cubic
   const zin=ez(el/72), zout=ez(cutsceneTimer/72);
@@ -5447,7 +5456,10 @@ function applyCutsceneCam(){
   cutsceneZoom=z;
   const prev=cameraX;
   cameraX=Math.round(f.x - W/2);                 // center boss horizontally
-  const focusY=Math.max(70, Math.min(H-70, f.y));
+  // Pivot on the sprite's visual centre. Bias slightly upward for the tall sprite so the
+  // zoom favours the head/torso rather than framing the legs.
+  const fy = tall ? f.y-6 : f.y;
+  const focusY=Math.max(60, Math.min(H-60, fy));
   ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';   // clean atlas upscale on zoom
   ctx.translate(W/2, focusY); ctx.scale(z,z); ctx.translate(-W/2,-focusY);
   return prev;
@@ -10050,14 +10062,15 @@ function hausPlatforms(){
     makePlatform(1560, FLOOR-110, 90),
     makePlatform(1720, FLOOR-160, 90),
     makePlatform(1880, FLOOR-110, 90),
-    // TOWER climb toward the boss hall
+    // TOWER climb toward the boss hall (last traversal content ends at x=2400)
     makePlatform(2120, FLOOR-90, 90),
     makePlatform(2300, FLOOR-150, 100),
-    // POSSESSED BANQUET — chair → long table → chair, floating as if held up by the haunting.
-    // (these sit in the empty approach so the player crosses the suspended feast to reach the Baron)
-    {...makePlatform(2880, FLOOR-104, 70),  haunt:'chairL'},
-    {...makePlatform(3020, FLOOR-150, 220), haunt:'feast'},
-    {...makePlatform(3300, FLOOR-104, 70),  haunt:'chairR'},
+    // ---- EMPTY CROSSING 2400 → 2760 (~360px, mirrors L1's GAP_START→ARENA_X0) ----
+    // ---- ISOLATED BOSS ARENA begins ~2760; the possessed banquet floats CENTERED on the stage ----
+    // (chair → long table → chair, suspended mid-stage as a haunted centerpiece in front of the Baron)
+    {...makePlatform(2940, FLOOR-150, 70),  haunt:'chairL'},
+    {...makePlatform(3060, FLOOR-186, 220), haunt:'feast'},
+    {...makePlatform(3340, FLOOR-150, 70),  haunt:'chairR'},
   ];
 }
 function buildHausLevel(){
@@ -11486,7 +11499,17 @@ function drawBaronGhoul(){
     ctx.globalAlpha=(1-rise)*0.22; const wg=ctx.createRadialGradient(wx,wy,1,wx,wy,wr);
     wg.addColorStop(0,'rgba('+A+',0.55)'); wg.addColorStop(1,'rgba('+A+',0)'); ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(wx,wy,wr,0,7); ctx.fill(); }
   ctx.globalAlpha=1;
-  // 3) (orbiting spectral eyes removed — read as background ghouls during the fight)
+  // 3) orbiting spectral eyes — all snap wide open during the enrage cinematic
+  const n=enr?6:4;
+  for(let i=0;i<n;i++){ const a=t*1.05+i*(6.283/n), rx=72+Math.sin(t*1.7+i)*12, ry=48;
+    const ex=cx+Math.cos(a)*rx, ey=mid+Math.sin(a)*ry;
+    const blink=Math.max(snap, Math.sin(t*2.6+i*2)>-0.55?1:0.12);
+    const er=9.5*(1+snap*0.7);
+    const eg=ctx.createRadialGradient(ex,ey,0.5,ex,ey,er);
+    eg.addColorStop(0,'rgba(255,255,255,'+(0.9*blink)+')'); eg.addColorStop(0.4,E); eg.addColorStop(1,'rgba('+A+',0)');
+    ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(ex,ey,er,0,7); ctx.fill();
+    ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(8,2,12,'+blink+')';
+    ctx.beginPath(); ctx.ellipse(ex,ey,1.6,3.4,0,0,7); ctx.fill(); ctx.globalCompositeOperation='lighter'; }
   // 4) floating embers drifting upward
   for(let i=0;i<10;i++){ const rise=(t*0.5+i*0.13)%1, ex=cx+Math.sin(i*2.3+t*0.6)*72, ey=feet-rise*156, er=1.2+Math.sin(t*4+i)*0.8;
     ctx.globalAlpha=(1-rise)*0.7; ctx.fillStyle=E; ctx.beginPath(); ctx.arc(ex,ey,Math.max(0.4,er),0,7); ctx.fill(); }
@@ -11543,9 +11566,13 @@ function drawGenBg(){
     }
     for(let i=0;i<4;i++){ const x=((i*420+210-cameraX*0.35)%(W+560)+W+560)%(W+560)-280, py=70, tilt=(i%2?1:-1)*0.05;
       ctx.save(); ctx.translate(x,py); ctx.rotate(tilt);
-      ctx.fillStyle='#6B4A20'; ctx.fillRect(-22,-26,44,52); ctx.fillStyle='#2A1830'; ctx.fillRect(-17,-21,34,42);
-      ctx.fillStyle='rgba(210,200,180,0.7)'; ctx.beginPath(); ctx.ellipse(0,-2,10,13,0,0,7); ctx.fill();
-      ctx.fillStyle='#1A1A1A'; ctx.beginPath(); ctx.arc(-4,-4,1.6,0,7); ctx.fill(); ctx.beginPath(); ctx.arc(4,-4,1.6,0,7); ctx.fill();
+      // gilt frame + dark empty canvas (the ghostly faces were removed)
+      ctx.fillStyle='#6B4A20'; ctx.fillRect(-22,-26,44,52);
+      ctx.fillStyle='#150D1E'; ctx.fillRect(-17,-21,34,42);
+      // faint mildew/craquelure so it reads as an old painting, not a window
+      ctx.strokeStyle='rgba(70,55,40,0.4)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(-14,-12); ctx.lineTo(-4,4); ctx.lineTo(2,-8); ctx.moveTo(8,-16); ctx.lineTo(12,10); ctx.stroke();
+      ctx.fillStyle='rgba(40,60,30,0.25)'; ctx.beginPath(); ctx.arc(-8,12,5,0,7); ctx.fill();
       ctx.restore();
     }
     for(let i=0;i<3;i++){ const x=((i*360+120-cameraX*0.5)%(W+460)+W+460)%(W+460)-230, sway=Math.sin(t*1.5+i)*4;
@@ -11795,6 +11822,23 @@ function drawGenPlatforms(){
           for(const lx of [sx+8, sx+p.w-14]){ ctx.fillStyle=wood; ctx.fillRect(lx,seatY+p.h+4,6,14);
             ctx.fillStyle='rgba(20,12,8,0.9)'; ctx.beginPath(); ctx.moveTo(lx,seatY+p.h+18); ctx.lineTo(lx+6,seatY+p.h+18); ctx.lineTo(lx+3,seatY+p.h+23); ctx.closePath(); ctx.fill(); }
         }
+        // ── POSSESSION EFFECTS (shared) ──
+        ctx.save(); ctx.globalCompositeOperation='lighter';
+        // pulsing ghostly rim-light along the standable top edge
+        const rim=0.18+0.14*Math.sin(t2*3+p.x*0.02)+give*0.04;
+        ctx.fillStyle='rgba(170,110,230,'+Math.max(0,rim)+')'; ctx.fillRect(sx,oy-1,p.w,2);
+        // violet soul-wisps curling upward off the furniture
+        for(let i=0;i<3;i++){ const ph2=t2*0.6+i*0.9+p.x*0.01, rise=ph2%1;
+          const wx2=sx+p.w*(0.25+0.5*((i*0.37)%1))+Math.sin(ph2*4+i)*8;
+          const wy2=oy-rise*46, wr=3+rise*7;
+          const wg=ctx.createRadialGradient(wx2,wy2,0.5,wx2,wy2,wr);
+          wg.addColorStop(0,'rgba(190,130,240,'+((1-rise)*0.35)+')'); wg.addColorStop(1,'rgba(150,80,210,0)');
+          ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(wx2,wy2,wr,0,7); ctx.fill(); }
+        // occasional spectral spark sliding along the edge
+        const spk=(t2*0.5+p.x*0.013)%1; const spkX=sx+spk*p.w;
+        ctx.fillStyle='rgba(220,180,255,'+(0.5*(0.5+0.5*Math.sin(t2*5)))+')';
+        ctx.beginPath(); ctx.arc(spkX,oy-2,1.4,0,7); ctx.fill();
+        ctx.restore();
         ctx.restore();
       } else if(haus){
         if(p.y!==FLOOR && p.x>=1540 && p.x<=2000){ // ballroom: hang as a chandelier
@@ -12236,27 +12280,54 @@ const BARON_ATLAS=new Image(); let baronAtlasReady=false;
 // (some packed frames — notably death — shipped with a red bounding box). Same-origin asset,
 // so getImageData is safe; on any failure we fall back to the raw atlas so nothing breaks.
 let BARON_SRC=BARON_ATLAS;
+// Strips the baked-in coloured matte/box that shipped around some packed frames.
+// Two passes: (1) per-frame border flood — sample the actual box colour from each frame's
+// own edge and clear pixels matching it (precise to whatever hue the box really is);
+// (2) a broad red-dominant sweep as a safety net. Same-origin asset → getImageData is safe.
 function _baronDespill(){
   try{
-    const cv=document.createElement('canvas'); cv.width=BARON_ATLAS.naturalWidth; cv.height=BARON_ATLAS.naturalHeight;
-    const c=cv.getContext('2d'); c.drawImage(BARON_ATLAS,0,0);
-    const id=c.getImageData(0,0,cv.width,cv.height), d=id.data;
+    const W0=BARON_ATLAS.naturalWidth, H0=BARON_ATLAS.naturalHeight;
+    if(!W0||!H0) return;
+    const cv=document.createElement('canvas'); cv.width=W0; cv.height=H0;
+    const c=cv.getContext('2d',{willReadFrequently:true}); c.drawImage(BARON_ATLAS,0,0);
+    const id=c.getImageData(0,0,W0,H0), d=id.data;
+    const at=(x,y)=>((y*W0+x)<<2);
+    const near=(i,r,g,b,tol)=>{ const dr=d[i]-r, dg=d[i+1]-g, db=d[i+2]-b; return (dr*dr+dg*dg+db*db)<=tol*tol; };
+    // ---- pass 1: per-frame border-matched flood fill ----
+    const FR=(typeof BARON_FRAMES!=='undefined')?BARON_FRAMES:null;
+    if(FR){
+      for(const row in FR){ for(const fr of FR[row]){
+        const [sx,sy,sw,sh]=fr;
+        // sample box colour = median-ish of the four corners (the matte sits at the rect edge)
+        const corners=[at(sx,sy),at(sx+sw-1,sy),at(sx,sy+sh-1),at(sx+sw-1,sy+sh-1)];
+        let rr=0,gg=0,bb=0,nn=0; for(const ci of corners){ if(d[ci+3]>16){ rr+=d[ci]; gg+=d[ci+1]; bb+=d[ci+2]; nn++; } }
+        if(!nn) continue; rr/=nn; gg/=nn; bb/=nn;
+        // only treat as a matte if the sampled corner colour is clearly NOT black/transparent backdrop
+        const lum=rr+gg+bb; if(lum<60) continue;            // black border = the intended void, leave it
+        // BFS flood from the frame border inward, clearing pixels matching the box colour
+        const tol=46, stack=[];
+        const push=(x,y)=>{ if(x<sx||y<sy||x>=sx+sw||y>=sy+sh)return; const i=at(x,y); if(d[i+3]===0)return; if(near(i,rr,gg,bb,tol)) stack.push(x,y); };
+        for(let x=sx;x<sx+sw;x++){ push(x,sy); push(x,sy+sh-1); }
+        for(let y=sy;y<sy+sh;y++){ push(sx,y); push(sx+sw-1,y); }
+        while(stack.length){ const y=stack.pop(), x=stack.pop(); const i=at(x,y);
+          if(d[i+3]===0) continue; if(!near(i,rr,gg,bb,tol)) continue;
+          d[i+3]=0;
+          push(x+1,y); push(x-1,y); push(x,y+1); push(x,y-1);
+        }
+      }}
+    }
+    // ---- pass 2: broad red-dominant safety sweep (whole atlas) ----
     for(let i=0;i<d.length;i+=4){
-      const r=d[i], g=d[i+1], b=d[i+2], a=d[i+3];
-      if(a<8) continue;
-      // matte test: red clearly dominant over both green and blue → it's the chroma box, not skin/cloth.
-      // (Baron's art is greys/violet/black, so red-dominant pixels are matte by construction.)
-      if(r>96 && (r-g)>40 && (r-b)>40){
-        const edge=Math.min((r-g),(r-b));            // purity of the red
-        if(edge>70){ d[i+3]=0; }                      // solid matte → fully clear
-        else { d[i+3]=Math.max(0, a-Math.round((edge/70)*a)); // feathered border → fade
-               if(d[i+3]>0){ d[i]=Math.min(r,g+18); } }       // de-fringe survivors
+      const r=d[i], g=d[i+1], b=d[i+2], a=d[i+3]; if(a<8) continue;
+      if(r>90 && (r-g)>34 && (r-b)>34){
+        const edge=Math.min(r-g,r-b);
+        if(edge>60){ d[i+3]=0; }
+        else { d[i+3]=Math.max(0,a-Math.round((edge/60)*a)); if(d[i+3]>0) d[i]=Math.min(r,g+16); }
       }
     }
     c.putImageData(id,0,0); BARON_SRC=cv;
   }catch(e){ BARON_SRC=BARON_ATLAS; }
 }
-BARON_ATLAS.crossOrigin='anonymous';   // keep the canvas untainted so getImageData works after deploy
 BARON_ATLAS.onload=()=>{baronAtlasReady=true; _baronDespill();}; BARON_ATLAS.src='assets/baron/baron_atlas.webp';
 // [sx,sy,sw,sh] per packed frame, bottom-center registered within its cell
 const BARON_FRAMES={"walk":[[95,5,190,299],[476,5,191,299],[856,4,193,300],[1230,7,206,297],[1622,5,184,299],[2015,7,161,297]],"sword":[[109,351,163,261],[418,354,307,258],[791,358,322,254],[1147,358,373,254],[1581,354,267,258],[2024,351,143,261]],"magic":[[97,652,186,268],[462,660,218,260],[833,658,238,262],[1147,659,373,261],[1535,662,359,258],[2032,662,127,258]],"death":[[59,1024,263,204],[408,1024,326,204],[789,1034,326,194],[1170,1067,326,161],[1566,1074,297,154],[1989,1081,212,147]]};
