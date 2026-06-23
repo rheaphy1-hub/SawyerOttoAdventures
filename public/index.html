@@ -10506,7 +10506,12 @@ function updateGen(){
       let trigger=false;
       if(currentLevel===5){
         const feast=lv.platforms.find(p=>p.haunt==='feast');
-        if(feast && s.onGround && s.x+s.w>feast.x && s.x<feast.x+feast.w && Math.abs((s.y+s.h)-feast.y)<4) trigger=true;
+        if(feast && s.onGround){
+          const sCx=s.x+s.w/2, feastMid=feast.x+feast.w/2;
+          // must be standing ON the table AND have walked past its midpoint (fully up, centered-in)
+          const onTable=(s.x+s.w>feast.x+6 && s.x<feast.x+feast.w-6 && Math.abs((s.y+s.h)-feast.y)<4);
+          if(onTable && sCx>=feastMid) trigger=true;
+        }
       } else if(s.x>lv.bossGate){ trigger=true; }
       if(trigger){
         cutsceneActive=true;cutsceneTimer=240;
@@ -12333,23 +12338,27 @@ function _baronDespill(){
         }
       }}
     }
-    // ---- pass 2: tight red-BOX detector (corners only, no interior sweep) ----
+    // ---- pass 2: tight red-BOX detector (border region, no interior sweep) ----
     // The clean atlas has no matte; only a STALE export would carry a red bounding box.
-    // We sample each frame's outer corner: if it's strongly red we flood-clear that red from
-    // the border inward. The Baron's own red brooch/buttons sit in the interior and are never
-    // sampled, so legitimate art is preserved. (The old whole-atlas red sweep ate those reds.)
+    // We probe each frame's border band: if red pixels sit on the rectangle edge we flood-clear
+    // that contiguous red inward. The Baron's own red brooch/buttons sit in the interior and are
+    // never seeded from the border, so legitimate art is preserved. (The old whole-atlas red
+    // sweep ate those interior reds.)
     const FR2=(typeof BARON_FRAMES!=='undefined')?BARON_FRAMES:null;
     if(FR2){
-      const isRed=(i)=> d[i+3]>16 && d[i]>110 && (d[i]-d[i+1])>45 && (d[i]-d[i+2])>45;
+      const isRed=(i)=> d[i+3]>16 && d[i]>105 && (d[i]-d[i+1])>42 && (d[i]-d[i+2])>42;
       for(const row in FR2){ for(const fr of FR2[row]){
         const [sx,sy,sw,sh]=fr;
-        // only act if an actual corner is red (a true bounding box)
-        const corner=at(sx,sy);
-        if(!isRed(corner)) continue;
+        // does this frame actually have a red box? probe the whole border band (handles
+        // matte boxes that leave a 1-2px transparent gutter at the very corners)
+        let boxed=false;
+        for(let x=sx;x<sx+sw&&!boxed;x++){ if(isRed(at(x,sy))||isRed(at(x,sy+sh-1))) boxed=true; }
+        for(let y=sy;y<sy+sh&&!boxed;y++){ if(isRed(at(sx,y))||isRed(at(sx+sw-1,y))) boxed=true; }
+        if(!boxed) continue;
         const stack=[];
         const pushR=(x,y)=>{ if(x<sx||y<sy||x>=sx+sw||y>=sy+sh)return; const i=at(x,y); if(d[i+3]===0)return; if(isRed(i)) stack.push(x,y); };
-        for(let x=sx;x<sx+sw;x++){ pushR(x,sy); pushR(x,sy+sh-1); }
-        for(let y=sy;y<sy+sh;y++){ pushR(sx,y); pushR(sx+sw-1,y); }
+        for(let x=sx;x<sx+sw;x++){ pushR(x,sy); pushR(x,sy+sh-1); pushR(x,sy+1); pushR(x,sy+sh-2); }
+        for(let y=sy;y<sy+sh;y++){ pushR(sx,y); pushR(sx+sw-1,y); pushR(sx+1,y); pushR(sx+sw-2,y); }
         while(stack.length){ const y=stack.pop(), x=stack.pop(); const i=at(x,y);
           if(d[i+3]===0) continue; if(!isRed(i)) continue; d[i+3]=0;
           pushR(x+1,y); pushR(x-1,y); pushR(x,y+1); pushR(x,y-1);
