@@ -509,12 +509,31 @@ let bossArena = { active:false, spawnT:0, deathBurst:0 };
 let musicOn = true, sfxOn = true;
 let score = 0, levelStartScore = 0, lives = 5, gameOver = false, won = false;
 
+// Unified per-level metadata (victory surfaces). Name, boss, accent + deep theme colors.
+const LEVEL_META = {
+  1:{name:'Desert Dash',  boss:'The Drifter',       accent:'#E6A23C', deep:'#3A2A12'},
+  2:{name:'Frozen Peaks', boss:'The Yeti',          accent:'#6FA8DC', deep:'#16314A'},
+  3:{name:'Moonlight Bay',boss:'King Crab Krawley', accent:'#37B6A6', deep:'#0F3A38'},
+  4:{name:'The Abyss',    boss:'Leviathan Lyra',    accent:'#9B6BFF', deep:'#1A1040'},
+  5:{name:'Spooky Haus',  boss:'Baron Von Scream',  accent:'#D2456B', deep:'#3A0F1E'},
+  6:{name:'Space Void',   boss:'Nexus Nine',        accent:'#FF6BD6', deep:'#2A0F2A'},
+};
+// Victory surface runtime state: count-up gate + new-best flag.
+// vicNewBest is set by saveBestScore at the win moment (before the record is overwritten),
+// so the victory surfaces can read it even though they draw on later frames.
+let vicNewBest = false;
+function vicReset(){ vicNewBest=false; }
+
 // High score persistence
 function getBestScore(level){
   try{ return parseInt(localStorage.getItem('sawyer_best_'+level)||'0',10); }catch(e){ return 0; }
 }
 function saveBestScore(level, s){
-  try{ const best=getBestScore(level); if(s>best) localStorage.setItem('sawyer_best_'+level,s); }catch(e){}
+  try{
+    const best=getBestScore(level);
+    vicNewBest = (best>0 && s>best); // capture BEFORE overwrite; first-ever completion isn't a "new best"
+    if(s>best) localStorage.setItem('sawyer_best_'+level,s);
+  }catch(e){}
 }
 let gameRunning = false;
 let gamePaused = false;
@@ -5578,7 +5597,7 @@ function drawVictoryAnimation(){
   ctx.save();
   ctx.translate(W/2 - 20, 50);
   ctx.rotate(flagWave);
-  ctx.fillStyle = isL2 ? '#3F51B5' : '#854F0B';
+  ctx.fillStyle = (LEVEL_META[currentLevel]||{}).accent || (isL2 ? '#3F51B5' : '#854F0B');
   ctx.fillRect(-3,0,6,70);
   ctx.save();
   ctx.fillStyle = isL2 ? '#E8EAF6' : '#1D9E75';
@@ -5592,26 +5611,45 @@ function drawVictoryAnimation(){
   ctx.restore();
 
   // Victory title
+  const meta = LEVEL_META[currentLevel] || {boss:'',accent:'#FFD700'};
+  const subtotal = score - levelStartScore;
+  // Count-up driven by prog (0..1 over the animation). Settles by ~55% through.
+  const cp = Math.max(0, Math.min(1, prog/0.55));
+  const shownSub = Math.round(subtotal * cp);
+  const shownTot = Math.round(levelStartScore + subtotal*cp);
+  if(cp<1 && victoryTimer%4===0 && subtotal>0 && sfxOn) beep(660+shownSub%140,0.04,'square',0.04);
   const textAlpha = Math.min(1, prog*3);
   ctx.save();
   ctx.globalAlpha = textAlpha;
   ctx.textAlign = 'center';
   const victoryText = 'VICTORY!';
-  const victoryColor = '#FFD700';
   // Shadow
   ctx.fillStyle = 'rgba(0,0,0,0.6)';
   ctx.font = 'bold 44px "Arial Black",Impact,sans-serif';
   ctx.fillText(victoryText, W/2+3, H/3+3);
   // Main text
-  ctx.fillStyle = victoryColor;
+  ctx.fillStyle = '#FFD700';
   ctx.fillText(victoryText, W/2, H/3);
-  // Score: this level's points + running total
+  // Boss-defeat callout
+  if(meta.boss){
+    ctx.font = '700 15px system-ui,sans-serif';
+    ctx.fillStyle = meta.accent;
+    ctx.fillText(meta.boss + ' defeated!', W/2, H/3+24);
+  }
+  // Score: animated subtotal + running total
   ctx.font = 'bold 18px system-ui,sans-serif';
   ctx.fillStyle = '#fff';
-  ctx.fillText('Level: ' + (score - levelStartScore), W/2, H/3+40);
+  ctx.fillText('Level: ' + shownSub, W/2, H/3+52);
   ctx.font = 'bold 22px system-ui,sans-serif';
   ctx.fillStyle = '#FFD700';
-  ctx.fillText('Total: ' + score, W/2, H/3+66);
+  ctx.fillText('Total: ' + shownTot, W/2, H/3+78);
+  // New-best flash
+  if(vicNewBest && cp>=1){
+    const pulse = 0.55 + 0.45*Math.sin(victoryTimer*0.25);
+    ctx.globalAlpha = textAlpha*pulse;
+    ctx.font='bold 16px system-ui,sans-serif'; ctx.fillStyle='#FFD700';
+    ctx.fillText('\u2605 NEW BEST! \u2605', W/2, H/3+104);
+  }
   ctx.restore();
 
   // Celebratory sparkle burst (vector stars, no emojis)
@@ -5773,28 +5811,45 @@ function drawOverlay(msg,sub){
 }
 
 function drawFinishCard(){
+  const meta = LEVEL_META[currentLevel] || {name:'',accent:'#4CBA7A',deep:'#1B3A28'};
+  const subtotal = score - levelStartScore;
+  // Count-up: timer runs 240->0; map elapsed frames to a 0..1 progress over ~50 frames.
+  const elapsed = 240 - finishCardTimer;
+  const cp = Math.max(0, Math.min(1, elapsed/50));
+  const shownSub = Math.round(subtotal * cp);
+  const shownTot = Math.round((levelStartScore + subtotal*cp));
+  // Soft blip while counting
+  if(cp<1 && finishCardTimer%4===0 && subtotal>0 && sfxOn) beep(660+shownSub%140, 0.04, 'square', 0.04);
   // Semi-transparent panel
   ctx.save();
-  ctx.fillStyle='rgba(10,30,15,0.72)'; ctx.fillRect(0,0,W,H);
-  // Card background
-  const cw=420,ch=200,cx2=(W-cw)/2,cy2=(H-ch)/2;
-  ctx.fillStyle='#1B3A28'; ctx.beginPath(); ctx.roundRect(cx2,cy2,cw,ch,14); ctx.fill();
-  ctx.strokeStyle='#4CBA7A'; ctx.lineWidth=3; ctx.beginPath(); ctx.roundRect(cx2,cy2,cw,ch,14); ctx.stroke();
-  // Trophy / stars
+  ctx.fillStyle='rgba(6,6,14,0.74)'; ctx.fillRect(0,0,W,H);
+  // Card background — themed to level
+  const cw=420,ch=210,cx2=(W-cw)/2,cy2=(H-ch)/2;
+  ctx.fillStyle=meta.deep; ctx.beginPath(); ctx.roundRect(cx2,cy2,cw,ch,14); ctx.fill();
+  ctx.strokeStyle=meta.accent; ctx.lineWidth=3; ctx.beginPath(); ctx.roundRect(cx2,cy2,cw,ch,14); ctx.stroke();
+  // Trophy
   ctx.font='38px system-ui'; ctx.textAlign='center';
-  ctx.fillText('🏆', W/2, cy2+56);
-  // Level name
-  const lvlNames={1:'Desert Dash',2:'Frozen Peaks',3:'Moonlight Bay',4:'The Abyss',5:'Spooky Haus',6:'Space Void'};
-  ctx.font='bold 22px system-ui,sans-serif'; ctx.fillStyle='#FFD700';
-  ctx.fillText('LEVEL COMPLETE!', W/2, cy2+92);
+  ctx.fillText('🏆', W/2, cy2+54);
+  // Headings
+  ctx.font='bold 22px system-ui,sans-serif'; ctx.fillStyle=meta.accent;
+  ctx.fillText('LEVEL COMPLETE!', W/2, cy2+88);
   ctx.font='600 15px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)';
-  ctx.fillText(lvlNames[currentLevel]||'', W/2, cy2+114);
-  // Score: level subtotal + running total
+  ctx.fillText(meta.name, W/2, cy2+110);
+  // Score: animated subtotal + running total
   ctx.font='600 14px system-ui,sans-serif'; ctx.fillStyle='#A8F0C6';
-  ctx.fillText('Level: ' + (score - levelStartScore) + '   Total: ' + score, W/2, cy2+140);
-  // Best
+  ctx.fillText('Level: ' + shownSub + '   Total: ' + shownTot, W/2, cy2+136);
+  // New-best flash (pulses) — only after count-up settles
+  let by = cy2+160;
+  if(vicNewBest && cp>=1){
+    const pulse = 0.6 + 0.4*Math.sin(finishCardTimer*0.25);
+    ctx.save(); ctx.globalAlpha=pulse;
+    ctx.font='bold 14px system-ui,sans-serif'; ctx.fillStyle='#FFD700';
+    ctx.fillText('\u2605 NEW BEST! \u2605', W/2, by); ctx.restore();
+    by += 22;
+  }
+  // Best line
   const best=getBestScore(currentLevel);
-  if(best>0){ ctx.font='600 12px system-ui,sans-serif'; ctx.fillStyle='#FFD700'; ctx.fillText('🏆 Best: '+best+' pts',W/2,cy2+162); }
+  if(best>0 && !vicNewBest){ ctx.font='600 12px system-ui,sans-serif'; ctx.fillStyle='#FFD700'; ctx.fillText('🏆 Best: '+best+' pts',W/2,by); }
   ctx.restore();
 }
 
@@ -5978,7 +6033,7 @@ function restartCurrentLevel(){
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
-  cutsceneActive=false; victoryActive=false; shakeIntensity=0;
+  cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
   shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
   currentLevel=lvl;
@@ -6000,7 +6055,7 @@ function jumpToLevel(n){
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; acquiredItems=[];
-  cutsceneActive=false; victoryActive=false; shakeIntensity=0;
+  cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
   currentLevel=n;
   bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0};
@@ -6032,7 +6087,7 @@ function restart(resetLevel){
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
-  cutsceneActive=false; victoryActive=false; shakeIntensity=0;
+  cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; giantOttoPhase='idle'; giantOttoTimer=0;
   checkpoint=null;
   currentLevel=lvl;
