@@ -387,7 +387,7 @@
       <h2 style="font-size:clamp(20px,5.5vw,28px);">YOU WON!</h2>
       <div id="ne-total" class="ne-total">TOTAL SCORE: 0</div>
       <div class="ne-prompt">Add your name to the global leaderboard</div>
-      <input id="ne-input" type="text" maxlength="16" placeholder="ENTER NAME" autocomplete="off"
+      <input id="ne-input" type="text" maxlength="20" placeholder="ENTER NAME" autocomplete="off"
         onkeydown="if(event.key==='Enter'){finishNameEntry(true);}" />
       <div class="ne-hint">Leave blank for a fun random name</div>
       <div class="ne-row">
@@ -968,7 +968,7 @@ function sillyName(){
   return r(a)+' '+r(b)+' '+(Math.floor(Math.random()*90)+10);
 }
 function cleanName(raw){
-  let n=(raw||'').replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ').trim().slice(0,16);
+  let n=(raw||'').replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ').trim().slice(0,20);
   return n || sillyName();
 }
 async function submitScore(name){
@@ -5630,13 +5630,13 @@ function drawVictoryAnimation(){
   // Sawyer victory hero pose — faces left; sprite frame is the fallback
   {
     const hS = window.heroVictory;
-    const scx = W/2 - 56, feetY = FLOOR - 4 - bounce;
+    const scx = W/2 - 56, feetY = FLOOR + 34 - bounce;
     if(hS && hS.complete && hS.naturalWidth){
       const sh = 120 + prog*12, sw = hS.naturalWidth*sh/hS.naturalHeight;
       ctx.save();
       ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.filter='none'; ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
       ctx.fillStyle='rgba(0,0,0,0.4)';
-      ctx.beginPath(); ctx.ellipse(scx, FLOOR-6, sw*0.38, 9, 0,0,7); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(scx, FLOOR+32, sw*0.38, 9, 0,0,7); ctx.fill();
       ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
       ctx.drawImage(hS, 0,0, hS.naturalWidth, hS.naturalHeight*0.988, scx-sw/2, feetY - sh, sw, sh);
       ctx.restore();
@@ -5650,9 +5650,9 @@ function drawVictoryAnimation(){
     const oh=110+prog*14, ow=ottoConfidentImg.naturalWidth*oh/ottoConfidentImg.naturalHeight;
     ctx.save();
     ctx.fillStyle='rgba(0,0,0,0.4)';
-    ctx.beginPath(); ctx.ellipse(W/2+46, FLOOR-6, ow*0.38, 9, 0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(W/2+46, FLOOR+32, ow*0.38, 9, 0,0,7); ctx.fill();
     ctx.imageSmoothingEnabled=true; ctx.imageSmoothingQuality='high';
-    ctx.drawImage(ottoConfidentImg, 0, 0, ottoConfidentImg.naturalWidth, ottoConfidentImg.naturalHeight*0.988, W/2+46-ow/2, (FLOOR-4) - oh - bounce*1.2, ow, oh);
+    ctx.drawImage(ottoConfidentImg, 0, 0, ottoConfidentImg.naturalWidth, ottoConfidentImg.naturalHeight*0.988, W/2+46-ow/2, (FLOOR+34) - oh - bounce*1.2, ow, oh);
     ctx.restore();
   }
 
@@ -5951,7 +5951,7 @@ function drawLeaderboardPanel(c, t){
     c.fillStyle = i===0?'#FFD700' : i===1?'#D8D8E8' : i===2?'#E6A86B' : 'rgba(255,255,255,0.82)';
     if(mine){ c.fillStyle='#7CFFC4'; }
     c.fillText((i+1)+'.', x0, ry);
-    const nm=(e.name||'???').slice(0,16);
+    const nm=(e.name||'???').slice(0,20);
     c.fillText(nm, x0+22, ry);
     c.textAlign='right';
     c.fillText(String(e.score), x1, ry);
@@ -6043,6 +6043,10 @@ function drawCreditsOverlay(){
     ['item','The Drifter  \u00b7  The Yeti'],
     ['item','King Crab Krawley  \u00b7  Leviathan Lyra'],
     ['item','Baron Von Skream  \u00b7  Nexus Nine'],
+    ['gap',''],
+    ['gap',''],
+    ['label','DEDICATED TO'],
+    ['name','Brittney, Sawyer & Otto'],
     ['gap',''],
     ['name','Thank you for playing! \u2764\ufe0f'],
     ['gap',''],['gap',''],
@@ -6231,6 +6235,7 @@ function loop(){
   if(portalDump.active) _portalDumpInputLock = tickPortalDump(!levelPaused);
   // Drain whole steps; the sub-step remainder carries to next frame (no per-frame lurch)
   while(_stepAccum >= STEP_MS && _steps < MAX_STEPS){
+    if(nameEntryActive) break;   // freeze sim while name box is open (stops victory re-trigger wiping input)
     // Entry portal dump: input lock while the riders are tossed out (only when live).
     let _dumpLock = portalDump.active ? _portalDumpInputLock : false;
     let _kL,_kR,_kU,_kD,_kSp;
@@ -6471,7 +6476,7 @@ function loop(){
   }
   
   // Draw victory animation
-  if (victoryActive){
+  if (victoryActive && !(won && currentLevel===6)){
     drawVictoryAnimation();
   }
 
@@ -6493,7 +6498,7 @@ function loop(){
   if (gameOver) drawOverlay('Game Over', 'Score: ' + score);
   if (won && currentLevel===1) drawOverlay('You Beat The Drifter! \u{1F3DC}\uFE0F', 'Final Score: ' + score);
   if (won && currentLevel===2) drawOverlay('You Beat the Yeti! \u2744\uFE0F', 'Final Score: ' + score);
-  if (won && currentLevel===6) drawCreditsOverlay();
+  if (won && currentLevel===6){ victoryActive=false; drawCreditsOverlay(); }
   if (finishCardActive) drawFinishCard();
   
   // Draw HUD (score, lives, and character info)
