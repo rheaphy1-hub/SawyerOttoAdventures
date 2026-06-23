@@ -322,7 +322,7 @@
     <div class="popup-badge">👻</div>
     <div class="popup-kicker">Level 5</div>
     <h2>SPOOKY HAUS</h2>
-    <p>You've entered a haunted German manor where a rotten feast has come alive. Creaking floors, guttering candlelight, and grotesque banquet-horrors await — survive to meet Baron Von Scream!</p>
+    <p>You've entered a haunted German manor where a rotten feast has come alive. Creaking floors, guttering candlelight, and grotesque banquet-horrors await — survive to meet Baron Von Skream!</p>
     <p class="popup-scoring">Grab coins & spell orbs (75–250 pts), put down the feast-horrors (100–150 pts), beat the boss (+1 000)!</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
@@ -515,7 +515,7 @@ const LEVEL_META = {
   2:{name:'Frozen Peaks', boss:'The Yeti',          accent:'#6FA8DC', deep:'#16314A'},
   3:{name:'Moonlight Bay',boss:'King Crab Krawley', accent:'#37B6A6', deep:'#0F3A38'},
   4:{name:'The Abyss',    boss:'Leviathan Lyra',    accent:'#9B6BFF', deep:'#1A1040'},
-  5:{name:'Spooky Haus',  boss:'Baron Von Scream',  accent:'#D2456B', deep:'#3A0F1E'},
+  5:{name:'Spooky Haus',  boss:'Baron Von Skream',   accent:'#D2456B', deep:'#3A0F1E'},
   6:{name:'Space Void',   boss:'Nexus Nine',        accent:'#FF6BD6', deep:'#2A0F2A'},
 };
 // Victory surface runtime state: count-up gate + new-best flag.
@@ -5469,7 +5469,7 @@ function drawCutscene(){
   ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
   ctx.restore();
   // Boss name
-  const NAMES = {1:'THE DRIFTER!',2:'THE YETI!',3:'KING CRAB KRAWLEY!',4:'LEVIATHAN LYRA!',5:'BARON VON SCREAM!',6:'NEXUS NINE!'};
+  const NAMES = {1:'THE DRIFTER!',2:'THE YETI!',3:'KING CRAB KRAWLEY!',4:'LEVIATHAN LYRA!',5:'BARON VON SKREAM!',6:'NEXUS NINE!'};
   const COLS  = {1:'#E2B04A',2:'#B0C4FF',3:'#8FD0A0',4:'#00FFFF',5:'#C9A0FF',6:'#7AF0FF'};
   const ta = Math.min(1, Math.max(0, (prog - 0.18) * 4)) * fadeOut;
   ctx.save();
@@ -5998,7 +5998,7 @@ function drawCreditsOverlay(){
     ['label','BOSSES DEFEATED'],
     ['item','The Drifter  \u00b7  The Yeti'],
     ['item','King Crab Krawley  \u00b7  Leviathan Lyra'],
-    ['item','Baron Von Scream  \u00b7  Nexus Nine'],
+    ['item','Baron Von Skream  \u00b7  Nexus Nine'],
     ['gap',''],
     ['name','Thank you for playing! \u2764\ufe0f'],
     ['gap',''],['gap',''],
@@ -9934,12 +9934,12 @@ const LV = {
     audio:'/audio/L4lookinatmyfish.mp3'
   },
   5: {
-    worldW:3700, bossGate:2900, next:6,
+    worldW:4100, bossGate:3300, next:6,
     pal:{ skyT:'#1A0A2E', skyM:'#16213E', skyL:'#2A2A3E', ground:'#3A3A2A',
           edge:'#5A5A4A', plat:'#5A4A3A', glow:'#8B7355',
           primary:'#FF6B35', secondary:'#FFFFFF', tertiary:'#9D4EDD',
           r1:'#FFD700', r2:'#FF6B35', r3:'#9D4EDD', pit:'#0A0612' },
-    boss:{ name:'Baron Von Scream', tag:'🎩 BARON VON SCREAM', rage:'🎩 BARON VON SCREAM — ENRAGED',
+    boss:{ name:'Baron Von Skream', tag:'BARON VON SKREAM', rage:'BARON VON SKREAM — ENRAGED',
            hp:18, vx1:1.5, vx2:2.3, spit1:55, spit2:38, n1:1, n2:3,
            proj:'#9D4EDD', body:'#E8E8E8', limb:'#1A1A1A', eye:'#FFD700', aura:'rgba(157,78,221,0.32)' },
     audio:'/audio/L5strangerthangs.mp3'
@@ -10033,7 +10033,7 @@ function hausPlatforms(){
     makePlatform(460, FLOOR, 480),
     makePlatform(1000, FLOOR, 480),
     makePlatform(1540, FLOOR, 460),
-    makePlatform(2060, FLOOR, 3700-2060),
+    makePlatform(2060, FLOOR, 4100-2060),
     // crypt sarcophagi
     makePlatform(160, FLOOR-58, 90),
     makePlatform(310, FLOOR-104, 80),
@@ -10055,9 +10055,9 @@ function hausPlatforms(){
     makePlatform(2300, FLOOR-150, 100),
     // POSSESSED BANQUET — chair → long table → chair, floating as if held up by the haunting.
     // (these sit in the empty approach so the player crosses the suspended feast to reach the Baron)
-    {...makePlatform(2560, FLOOR-104, 70),  haunt:'chairL'},
-    {...makePlatform(2700, FLOOR-150, 220), haunt:'feast'},
-    {...makePlatform(2980, FLOOR-104, 70),  haunt:'chairR'},
+    {...makePlatform(2880, FLOOR-104, 70),  haunt:'chairL'},
+    {...makePlatform(3020, FLOOR-150, 220), haunt:'feast'},
+    {...makePlatform(3300, FLOOR-104, 70),  haunt:'chairR'},
   ];
 }
 function buildHausLevel(){
@@ -10595,6 +10595,25 @@ function updateGen(){
   for(const sw of shockwaves){ sw.w+=6; sw.life--; }
   shockwaves=shockwaves.filter(sw=>sw.life>0);
 
+  // Possessed-furniture spring: visual "give" when a player stands on it, plus livelier sway.
+  if(currentLevel===5){
+    for(const pl of lv.platforms){
+      if(!pl.haunt) continue;
+      if(pl.giveY===undefined){ pl.giveY=0; pl.giveV=0; }
+      const standing = (s.onGround&&s.x+s.w>pl.x&&s.x<pl.x+pl.w&&Math.abs((s.y+s.h)-pl.y)<3)
+                    || (o.onGround&&o.x+o.w>pl.x&&o.x<pl.x+pl.w&&Math.abs((o.y+o.h)-pl.y)<3);
+      const rest = standing ? 5 : 0;            // sag target (px) — springs back when stepped off
+      pl.giveV += (rest - pl.giveY)*0.18;        // spring toward target
+      pl.giveV *= 0.78;                           // damping
+      pl.giveY += pl.giveV;
+    }
+  }
+
+  // Escape vortex only forms once the boss is down (was previously always-open → spawned pre-defeat)
+  const _bossDown = !boss || (!boss.alive && (boss.dieTimer===undefined || boss.dieTimer<=110));
+  genPortalOpen += ((_bossDown?1:0) - genPortalOpen) * 0.06;
+  if(genPortalOpen<0.001) genPortalOpen=0;
+
   // Flag / win — portal warp replaces bike
   const flagX=lv.worldW-140;
   if(!victoryActive&&s.x+s.w>flagX+10&&s.x<flagX+90&&s.y+s.h>=FLOOR-10){
@@ -10615,6 +10634,9 @@ function updateGen(){
 // Self-contained swim engine for L4. L5/L6 stay on the platformer engine.
 const SWIM = { accel:0.62, drag:0.86, maxV:4.4, buoy:0.05, surfaceY:62 };
 let swimMurk = 0; // 0..1 visibility-reduction (boss phase 2 ink)
+// Escape-vortex openness for generic levels (L4-6). Stays 0 until the boss is defeated,
+// then eases open — so the portal/vortex isn't visible before the fight is won.
+let genPortalOpen = 0;
 
 function swimFloorY(){ return FLOOR; }
 
@@ -11464,17 +11486,7 @@ function drawBaronGhoul(){
     ctx.globalAlpha=(1-rise)*0.22; const wg=ctx.createRadialGradient(wx,wy,1,wx,wy,wr);
     wg.addColorStop(0,'rgba('+A+',0.55)'); wg.addColorStop(1,'rgba('+A+',0)'); ctx.fillStyle=wg; ctx.beginPath(); ctx.arc(wx,wy,wr,0,7); ctx.fill(); }
   ctx.globalAlpha=1;
-  // 3) orbiting spectral eyes — all snap wide open during the enrage cinematic
-  const n=enr?6:4;
-  for(let i=0;i<n;i++){ const a=t*1.05+i*(6.283/n), rx=72+Math.sin(t*1.7+i)*12, ry=48;
-    const ex=cx+Math.cos(a)*rx, ey=mid+Math.sin(a)*ry;
-    const blink=Math.max(snap, Math.sin(t*2.6+i*2)>-0.55?1:0.12);
-    const er=9.5*(1+snap*0.7);
-    const eg=ctx.createRadialGradient(ex,ey,0.5,ex,ey,er);
-    eg.addColorStop(0,'rgba(255,255,255,'+(0.9*blink)+')'); eg.addColorStop(0.4,E); eg.addColorStop(1,'rgba('+A+',0)');
-    ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(ex,ey,er,0,7); ctx.fill();
-    ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(8,2,12,'+blink+')';
-    ctx.beginPath(); ctx.ellipse(ex,ey,1.6,3.4,0,0,7); ctx.fill(); ctx.globalCompositeOperation='lighter'; }
+  // 3) (orbiting spectral eyes removed — read as background ghouls during the fight)
   // 4) floating embers drifting upward
   for(let i=0;i<10;i++){ const rise=(t*0.5+i*0.13)%1, ex=cx+Math.sin(i*2.3+t*0.6)*72, ey=feet-rise*156, er=1.2+Math.sin(t*4+i)*0.8;
     ctx.globalAlpha=(1-rise)*0.7; ctx.fillStyle=E; ctx.beginPath(); ctx.arc(ex,ey,Math.max(0.4,er),0,7); ctx.fill(); }
@@ -11514,6 +11526,9 @@ function drawGenBg(){
     }
   } else if(currentLevel===5){
     // INTERIOR of the haunted manor: wallpaper, windows (moon outside), portraits, chandeliers, cobwebs
+    // Distance transition (L1-style): the corridor dressing recedes as the boss hall opens up.
+    const _arenaT=hausArenaT();
+    ctx.save(); ctx.globalAlpha=Math.max(0,1-0.9*_arenaT);
     ctx.fillStyle='rgba(255,255,255,0.025)';
     for(let i=0;i<24;i++){ const x=((i*60-cameraX*0.3)%(W+80)+W+80)%(W+80)-40; ctx.fillRect(x,0,28,FLOOR); }
     ctx.fillStyle='rgba(20,14,28,0.6)'; ctx.fillRect(0,FLOOR-64,W,64);
@@ -11547,6 +11562,7 @@ function drawGenBg(){
     }
     ctx.fillStyle='rgba(220,210,190,0.18)';
     for(let i=0;i<16;i++){ const x=((i*97-cameraX*0.6)%(W+40)+W+40)%(W+40)-20, y=(i*53+t*20*(1+i%2))%(FLOOR-30)+10; ctx.beginPath(); ctx.arc(x,y,1.2,0,7); ctx.fill(); }
+    ctx.restore();   // end corridor-dressing fade
     // ===== GHOULISH BANQUET ARENA (revealed only at the boss hall) =====
     const aT=hausArenaT();
     if(aT>0.001){
@@ -11725,15 +11741,20 @@ function drawGenPlatforms(){
       }
     } else {
       if(haus && p.haunt){
-        // ── Floating possessed furniture: standable top stays exactly at p.y ──
+        // ── Floating possessed furniture: standable top stays at p.y; visual sways + sags ──
         const t2=Date.now()*0.001;
-        const bob=Math.sin(t2*1.4+p.x*0.01)*3;          // gentle levitation (visual only)
-        const oy=p.y+bob;
+        const bob=Math.sin(t2*1.7+p.x*0.013)*6 + Math.sin(t2*0.9+p.x*0.05)*2.5;  // livelier levitation
+        const sway=Math.sin(t2*1.15+p.x*0.02)*0.045;                              // gentle haunted tilt
+        const give=p.giveY||0;                                                     // press-down when stood on
+        const oy=p.y+bob+give;
+        const pivX=sx+p.w/2;
         ctx.save();
+        // sway about the platform centre (visual only — collision uses flat p.y)
+        ctx.translate(pivX,oy); ctx.rotate(sway); ctx.translate(-pivX,-oy);
         // faint violet possession glow underneath
         ctx.save(); ctx.globalCompositeOperation='lighter';
         const pg=ctx.createRadialGradient(sx+p.w/2,oy+18,2,sx+p.w/2,oy+18,p.w*0.7);
-        pg.addColorStop(0,'rgba(150,80,210,0.20)'); pg.addColorStop(1,'rgba(150,80,210,0)');
+        pg.addColorStop(0,'rgba(150,80,210,'+(0.20+give*0.03)+')'); pg.addColorStop(1,'rgba(150,80,210,0)');
         ctx.fillStyle=pg; ctx.beginPath(); ctx.ellipse(sx+p.w/2,oy+20,p.w*0.6,16,0,0,7); ctx.fill();
         ctx.restore();
         const wood='#3A281A', woodHi='#5A4026', woodSh='rgba(0,0,0,0.4)';
@@ -12221,17 +12242,21 @@ function _baronDespill(){
     const c=cv.getContext('2d'); c.drawImage(BARON_ATLAS,0,0);
     const id=c.getImageData(0,0,cv.width,cv.height), d=id.data;
     for(let i=0;i<d.length;i+=4){
-      const r=d[i], g=d[i+1], b=d[i+2];
-      // matte test: strongly red, weak green/blue → transparent. Feather near the edge.
-      if(r>132 && g<96 && b<96 && (r-g)>56 && (r-b)>56){
-        const edge=Math.min((r-g),(r-b));        // how "pure" the red is
-        d[i+3]= edge>96 ? 0 : Math.max(0, d[i+3]-Math.round((edge/96)*d[i+3]));
-        if(d[i+3]>0){ d[i]=Math.min(r,g+20); }   // de-fringe survivors
+      const r=d[i], g=d[i+1], b=d[i+2], a=d[i+3];
+      if(a<8) continue;
+      // matte test: red clearly dominant over both green and blue → it's the chroma box, not skin/cloth.
+      // (Baron's art is greys/violet/black, so red-dominant pixels are matte by construction.)
+      if(r>96 && (r-g)>40 && (r-b)>40){
+        const edge=Math.min((r-g),(r-b));            // purity of the red
+        if(edge>70){ d[i+3]=0; }                      // solid matte → fully clear
+        else { d[i+3]=Math.max(0, a-Math.round((edge/70)*a)); // feathered border → fade
+               if(d[i+3]>0){ d[i]=Math.min(r,g+18); } }       // de-fringe survivors
       }
     }
     c.putImageData(id,0,0); BARON_SRC=cv;
   }catch(e){ BARON_SRC=BARON_ATLAS; }
 }
+BARON_ATLAS.crossOrigin='anonymous';   // keep the canvas untainted so getImageData works after deploy
 BARON_ATLAS.onload=()=>{baronAtlasReady=true; _baronDespill();}; BARON_ATLAS.src='assets/baron/baron_atlas.webp';
 // [sx,sy,sw,sh] per packed frame, bottom-center registered within its cell
 const BARON_FRAMES={"walk":[[95,5,190,299],[476,5,191,299],[856,4,193,300],[1230,7,206,297],[1622,5,184,299],[2015,7,161,297]],"sword":[[109,351,163,261],[418,354,307,258],[791,358,322,254],[1147,358,373,254],[1581,354,267,258],[2024,351,143,261]],"magic":[[97,652,186,268],[462,660,218,260],[833,658,238,262],[1147,659,373,261],[1535,662,359,258],[2032,662,127,258]],"death":[[59,1024,263,204],[408,1024,326,204],[789,1034,326,194],[1170,1067,326,161],[1566,1074,297,154],[1989,1081,212,147]]};
@@ -12308,7 +12333,8 @@ function drawBossSpace(boss,bc,flash){
   } else { ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(cx-cr*0.3,cy-cr*0.35,cr*0.22,0,7); ctx.fill(); }
 }
 function drawGenFlag(){
-  drawEscapePortal((curLV().worldW-140) - cameraX + 24, FLOOR-50, 34, 1, performance.now()*0.004);
+  if(genPortalOpen<=0.01) return;   // vortex hidden until the boss is defeated
+  drawEscapePortal((curLV().worldW-140) - cameraX + 24, FLOOR-50, 34, genPortalOpen, performance.now()*0.004);
 }
 
 // =========================================================================
@@ -12330,6 +12356,7 @@ function goToLevel(n){
   projectiles=[]; venom=[]; particles=[]; killCombo=0;
   cutsceneActive=false; victoryActive=false; victoryTimer=0;
   finishCardActive=false; finishCardTimer=0; shockwaves=[]; icicles=[];
+  genPortalOpen=0;
   bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0}; bikeLift=0; bikeTilt=0;
   buildPlayers();
   buildLevelContent(n);
