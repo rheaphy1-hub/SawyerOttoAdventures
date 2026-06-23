@@ -5784,7 +5784,7 @@ function drawFinishCard(){
   ctx.font='38px system-ui'; ctx.textAlign='center';
   ctx.fillText('🏆', W/2, cy2+56);
   // Level name
-  const lvlNames={1:'Desert Dash',2:'Frozen Peaks',3:'Sandy Shores'};
+  const lvlNames={1:'Desert Dash',2:'Frozen Peaks',3:'Moonlight Bay',4:'The Abyss',5:'Spooky Haus',6:'Space Void'};
   ctx.font='bold 22px system-ui,sans-serif'; ctx.fillStyle='#FFD700';
   ctx.fillText('LEVEL COMPLETE!', W/2, cy2+92);
   ctx.font='600 15px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)';
@@ -5917,8 +5917,8 @@ function drawCreditsOverlay(){
     ['gap',''],
     ['label','WORLDS'],
     ['item','Desert Dash  \u00b7  Frozen Peaks'],
-    ['item','Sandy Shores  \u00b7  Under the Sea'],
-    ['item','Spooky Haus  \u00b7  Outer Space'],
+    ['item','Moonlight Bay  \u00b7  The Abyss'],
+    ['item','Spooky Haus  \u00b7  Space Void'],
     ['gap',''],
     ['label','BOSSES DEFEATED'],
     ['item','The Drifter  \u00b7  The Yeti'],
@@ -5991,7 +5991,7 @@ function restartCurrentLevel(){
   buildBottles();
   audioManager.stop();
   audioManager.play(currentLevel);
-  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'SANDY SHORES',4:'UNDER THE SEA',5:'SPOOKY HAUS',6:'OUTER SPACE'};
+  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
   const popupDescs={1:'Guide Sawyer across the Texas desert!',2:'Brave the blizzard — defeat the Yeti!',3:'Otto spotted a hermit crab and now they\'re sprinting down the beach!'};
   levelPaused = true;
   showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
@@ -6055,7 +6055,7 @@ function restart(resetLevel){
   console.log(`[GAME] Restart called, playing audio for level ${currentLevel}`);
   audioManager.play(currentLevel);
   levelPaused = true;
-  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'SANDY SHORES',4:'UNDER THE SEA',5:'SPOOKY HAUS',6:'OUTER SPACE'};
+  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
   showLevelPopup(popupTitles[currentLevel],'');
 }
 const STEP_MS=1000/60, MAX_STEPS=4, MAX_FRAME_MS=STEP_MS*MAX_STEPS;
