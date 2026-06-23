@@ -6267,7 +6267,7 @@ function loop(){
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
   } else if(currentLevel>=5&&currentLevel<=6){
     drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
-    drawGenEnemies(); drawGenBoss(); if(currentLevel===6)drawSpaceSpires(); drawVenom(); drawProjectiles(); drawCheckpoint();
+    drawGenEnemies(); drawGenBoss(); drawVenom(); drawProjectiles(); drawCheckpoint();
   } else {
     drawBg(); cosmicGlow(); drawPlatforms(); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawCheckpoint(); drawBossWind(); drawBossWarning();
@@ -9964,7 +9964,7 @@ const LV = {
     audio:'/audio/L5strangerthangs.mp3'
   },
   6: {
-    worldW:4200, bossGate:3300, next:null,
+    worldW:4000, bossGate:3450, next:null,
     pal:{ skyT:'#000000', skyM:'#0A0A2E', skyL:'#16213E', ground:'#2A2A3A',
           edge:'#3A4A6A', plat:'#4A5A7A', glow:'#7ABAFF',
           primary:'#00FF00', secondary:'#00CCFF', tertiary:'#FFFF00',
@@ -10100,33 +10100,45 @@ function buildHausLevel(){
 function buildLevel5(){ buildHausLevel(); buildGenBoss(5); }
 const SPACE_PITS = [450, 970, 1510, 2030];
 function spacePlatforms(){
-  return [
-    makePlatform(0,    FLOOR,     200),   // 0 launch deck
-    // ── ascending tower 1 ──
-    makePlatform(300,  FLOOR-60,  78),    // 1
-    makePlatform(450,  FLOOR-115, 78),    // 2
-    makePlatform(590,  FLOOR-170, 84),    // 3 tower-1 crest
-    makePlatform(740,  FLOOR-115, 78),    // 4 step down
-    makePlatform(820,  FLOOR-85,  96),    // 5 BOOST
-    makePlatform(840,  FLOOR-235, 110),   // 6 high reward (boost up)
-    // ── dip & climb 2 ──
-    makePlatform(1010, FLOOR-150, 80),    // 7
-    makePlatform(1150, FLOOR-95,  80),    // 8
-    makePlatform(1290, FLOOR-160, 84),    // 9
-    makePlatform(1430, FLOOR-205, 88),    // 10 crest
-    makePlatform(1570, FLOOR-120, 80),    // 11 step down
-    makePlatform(1700, FLOOR-85,  96),    // 12 BOOST
-    makePlatform(1720, FLOOR-235, 110),   // 13 high reward
-    // ── tower 3 → summit ──
-    makePlatform(1890, FLOOR-160, 80),    // 14
-    makePlatform(2030, FLOOR-110, 80),    // 15
-    makePlatform(2170, FLOOR-185, 88),    // 16 crest
-    makePlatform(2310, FLOOR-120, 80),    // 17
-    makePlatform(2440, FLOOR-85,  96),    // 18 BOOST
-    makePlatform(2460, FLOOR-235, 120),   // 19 SUMMIT — transponder rock
-    makePlatform(2660, FLOOR-130, 84),    // 20 descent to deck
-    makePlatform(2740, FLOOR, 4200-2740), // 21 boss deck — solid ground: quiet corridor + isolated arena
-  ];
+  // ── CHAOTIC ASTEROID FIELD: irregularly scattered rocks drifting in the void. A guided
+  //    random walk guarantees a traversable chain (gaps & heights vary wildly — some hops
+  //    short, some long, some up, some down) while the scatter + per-rock drift reads as
+  //    chaos. Each rock carries its own slow drift. ──
+  const P=[ makePlatform(0, FLOOR, 200) ];          // launch deck
+  let seed=20260623>>>0;
+  const rnd=()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
+  const drift=(p)=>{ p.drift={ amp:32+rnd()*42, sp:0.0009+rnd()*0.0017, ph:rnd()*6.283, sway:1+rnd()*2.6 }; return p; };  // BIG up/down sweep — time the jump
+  let x=270, y=FLOOR-65; const LOY=FLOOR-430, HIY=FLOOR-55;
+  for(let i=0;i<32 && x<2300;i++){
+    const w=52+Math.round(rnd()*36);                 // 52..88 — varied sizes
+    P.push(drift(makePlatform(Math.round(x), Math.round(y), w)));
+    const gap=52+Math.round(rnd()*70);               // 52..122 — FAR apart; cross only when the drift lines up
+    let dy=Math.round((rnd()-0.5)*220);
+    if(dy<-56) dy=-56;                                // base climb capped; the big oscillation supplies the timing window
+    if(dy>150) dy=150;                                // descents (falling) can be bigger
+    x += w+gap;
+    y = Math.max(LOY, Math.min(HIY, y+dy));
+  }
+  // ── final approach: a short staircase rises to the TRANSPONDER beacon — your ride home ──
+  let ay=y;
+  const stepUp=(t,w)=>{ ay=Math.max(t, ay-64); P.push(drift(makePlatform(Math.round(x), Math.round(ay), w))); x+=w+72; };
+  stepUp(FLOOR-150,74); stepUp(FLOOR-220,78);
+  const txi=P.length;                                // index the transponder rock will occupy
+  ay=Math.max(FLOOR-290, ay-64);
+  P.push(drift(makePlatform(Math.round(x), Math.round(ay), 96))); x+=96+92;   // ★ transponder rock (high, prominent)
+  // ── descent to the ground boss deck ──
+  P.push(drift(makePlatform(Math.round(x), FLOOR-175, 80))); x+=80+80;
+  P.push(drift(makePlatform(Math.round(x), FLOOR-75,  84))); x+=84+72;
+  const deckX=Math.round(x)+10;
+  P.push(makePlatform(deckX, FLOOR, 4000-deckX));    // boss deck — quiet corridor + arena
+  // ── BOSS-ARENA ROCK COLUMNS: tall rock spires rising from the deck — STANDABLE platforms to
+  //    leap on top of and dodge Nexus Nine. Spread far apart, random lengths. (Not shields.) ──
+  for(const ox of [330,510,690,850]){
+    const col=makePlatform(deckX+ox, FLOOR-(50+Math.round(rnd()*72)), 44+Math.round(rnd()*22));
+    col.arenaRock=true; P.push(col);
+  }
+  P._txi=txi;
+  return P;
 }
 function buildSpaceLevel(){
   const lv=LV[6];
@@ -10134,49 +10146,63 @@ function buildSpaceLevel(){
   lv.pits=[];
   lv.enemies=[]; lv.rocks=[]; lv.pitMobs=[]; lv.pitTimer=99999; lv.bossObj=null;
   const P=lv.platforms;
+  const txi=P._txi, fieldEnd=txi-2;   // last pure-field asteroid (before the beacon approach)
   const mk=(slot,plat)=>{ lv.enemies.push({slot,x:plat.x+Math.max(8,plat.w/2-14),y:plat.y-26,w:28,h:26,vx:(slot==='B'?0.7:0.95),facing:1,alive:true,plat,phase:Math.random()*6,hoverTimer:(Math.random()*100|0),shootTimer:60+(Math.random()*40|0),hitCount:0}); };
-  const eIdx={1:'A',4:'C',8:'A',11:'B',15:'A',17:'C',20:'D'};
-  for(const i in eIdx){ mk(eIdx[i], P[i]); }
-  // rare rocks reward the boost climbs (on the high asteroids)
-  const rIdx=[6,10,13,16,2,8,15], rar=[3,3,3,3,1,1,1], pts=[250,250,250,250,75,75,75];
-  rIdx.forEach((i,k)=>{ lv.rocks.push({x:P[i].x+P[i].w/2-8, y:P[i].y-26, got:false, rarity:rar[k], points:pts[k]}); });
-  lv.boostPads=[5,12,18].map(i=>({x:P[i].x+P[i].w/2-18, y:P[i].y-7, w:36, h:7}));
-  // ── TARGET GAUNTLET: SHOOTABLE energy targets scattered through the vertical climb.
-  //    Each sits where you must reach a platform with a clean line of fire — so clearing
-  //    all of them requires jumping all over the ascent. Destroy every one to drop the
-  //    transponder's containment field. (Fly-through removed — these are shot, not flown through.) ──
-  lv.rings=[
-    {x:400, y:FLOOR-95}, {x:670, y:FLOOR-150}, {x:940, y:FLOOR-200}, {x:1220,y:FLOOR-130},
-    {x:1500,y:FLOOR-175},{x:1810,y:FLOOR-200},{x:2100,y:FLOOR-150},{x:2380,y:FLOOR-160}
-  ].map(r=>({x:r.x,y:r.y,r:28,hit:false,phase:Math.random()*6,points:150}));
-  // ── TRANSPONDER: sits caged on the SUMMIT rock (platform 19). Destroying every target
-  //    drops the field. Nexus Nine won't manifest until the transponder is taken. ──
-  lv.transponder = { x:2509, y:FLOOR-263, w:22, h:26, got:false, field:1, locked:true, phase:0 };
+  // a scatter of enemies across the field (skip the transponder rock)
+  ['A','C','B','A','D'].forEach((sl,k,arr)=>{ const i=2+Math.round(k*(fieldEnd-2)/(arr.length-1)); if(i>=1&&i<=fieldEnd) mk(sl, P[i]); });
+  // rocks: rares on the highest rocks, commons lower
+  const cand=[]; for(let i=1;i<=fieldEnd;i++) cand.push(i);
+  cand.sort((a,b)=>P[a].y-P[b].y);                            // lowest y (highest rock) first
+  cand.slice(0,3).forEach(i=>lv.rocks.push({x:P[i].x+P[i].w/2-8, y:P[i].y-26, got:false, rarity:3, points:250}));
+  [cand[cand.length-1], cand[(cand.length/2)|0], cand[cand.length-3]].forEach(i=>{ if(i!=null) lv.rocks.push({x:P[i].x+P[i].w/2-8, y:P[i].y-26, got:false, rarity:1, points:75}); });
+  lv.boostPads=[];
+  // ── SHOOTABLE TARGETS scattered through the field at chaotic heights — some high above
+  //    (hop several rocks to line up the shot), some low. Hit them ALL to drop the
+  //    transponder's containment field. ──
+  lv.rings=[];
+  const picks=8;
+  for(let k=0;k<picks;k++){
+    const i=1+Math.round(k*(fieldEnd-1)/(picks-1));
+    const a=P[i], b=P[Math.min(i+1,fieldEnd)];
+    const tx=(a.x+a.w/2 + b.x+b.w/2)/2, ty=Math.min(a.y,b.y)-16;
+    lv.rings.push({x:Math.round(tx), y:Math.round(ty), r:28, hit:false, phase:Math.random()*6, points:150});
+  }
+  // ── TRANSPONDER: your ticket home — perched on the high beacon rock at the far end. ──
+  const _ta=P[txi]; lv.transponder = { x:_ta.x+_ta.w/2-11, y:_ta.y-28, w:22, h:26, got:false, field:1, locked:true, phase:0 };
   lv.transponderTaken = false;
-  // ── ARENA SPIRES: ancient metal monoliths jutting from the crust at angles — permanent
-  //    cover. The Boss's bolts shatter on them. They phase up when the fight begins. ──
-  lv.spires = [
-    {x:3470, baseY:FLOOR, h:96,  w:26, tilt:-0.22, seed:11},
-    {x:3640, baseY:FLOOR, h:120, w:30, tilt: 0.14, seed:23},
-    {x:3820, baseY:FLOOR, h:104, w:24, tilt:-0.10, seed:37}
-  ];
-  lv.spireRise = 0;
+  // (Boss-arena ROCK COLUMNS are generated as standable platforms in spacePlatforms —
+  //  things to jump on top of to dodge the boss, not shields. Old spire system removed.)
 }
 function buildLevel6(){ buildSpaceLevel(); buildGenBoss(6); }
 
 // ---- physics / collision (clones of resolveL3 / groundAheadL3) ----
+function astDriftY(pl){ const d=pl.drift; return (d && !pl.arenaRock)? Math.sin(performance.now()*d.sp + d.ph)*d.amp : 0; }
 function resolveGen(p){
   const plats=curLV().platforms;
+  const giveOn=currentLevel===6;
+  const topOf=(pl)=> pl.y + (giveOn ? (astDriftY(pl) + (pl.giveY||0)) : 0);   // L6: drift + low-g give
+  // ── STICK to a moving rock: while grounded on a drifting platform and not jumping, ride its
+  //    current top so a downward-sweeping rock can't drop out from under you (fixes fall-through). ──
+  if(giveOn && p._gp && p.vy>=0){
+    const pl=p._gp, t=topOf(pl);
+    if(p.x+p.w>pl.x+2 && p.x<pl.x+pl.w-2 && p.y+p.h>=t-34 && p.y+p.h<=t+pl.h+18){
+      p.y=t-p.h; p.vy=0; p.onGround=true; return;
+    }
+    p._gp=null;                                   // walked off the edge or jumped — release
+  }
   p.onGround=false;
   for(const pl of plats){
+    const ptop=topOf(pl);
+    const lastTop=(pl._lt!=null)?pl._lt:ptop;        // the rock's top LAST frame (moving-platform safe)
     const inX=p.x+p.w>pl.x&&p.x<pl.x+pl.w;
-    const wasAbove=(p.y+p.h-p.vy)<=pl.y+2;
-    if(inX&&wasAbove&&p.y+p.h>=pl.y&&p.y+p.h<=pl.y+pl.h+10){
-      p.y=pl.y-p.h;
+    const footPrev=p.y+p.h-p.vy, footNow=p.y+p.h;
+    // swept one-way landing: foot was above the rock last frame, now crossed its current top
+    if(inX && p.vy>=0 && footPrev<=lastTop+2 && footNow>=ptop){
+      p.y=ptop-p.h;
       if(p.id==='sawyer'&&Math.abs(p.vy)>5){
         for(let i=0;i<6;i++) particles.push({x:p.x+p.w/2+Math.random()*12-6,y:p.y+p.h,vx:Math.random()*3-1.5,vy:-0.5-Math.random()*1.5,life:14,maxLife:14,type:'dust'});
       }
-      p.vy=0;p.onGround=true;
+      p.vy=0;p.onGround=true; if(giveOn) p._gp=pl;   // remember the rock we're riding
     }
   }
 }
@@ -10704,6 +10730,22 @@ function updateGen(){
       pl.giveV += (rest - pl.giveY)*0.18;        // spring toward target
       pl.giveV *= 0.78;                           // damping
       pl.giveY += pl.giveV;
+    }
+  }
+  // Low-gravity platform "give": L6 asteroid ledges press down when stood on and float
+  // back up slowly (soft spring + heavy damping = spacey recoil).
+  if(currentLevel===6){
+    for(const pl of lv.platforms){
+      if(pl.y===FLOOR || pl.arenaRock) continue; // skip ground + solid arena rock columns
+      if(pl.giveY===undefined){ pl.giveY=0; pl.giveV=0; }
+      const _pt=pl.y+astDriftY(pl)+pl.giveY;
+      const standing = (s.onGround&&s.x+s.w>pl.x&&s.x<pl.x+pl.w&&Math.abs((s.y+s.h)-_pt)<5)
+                    || (o.onGround&&o.x+o.w>pl.x&&o.x<pl.x+pl.w&&Math.abs((o.y+o.h)-_pt)<5);
+      const rest = standing ? 7 : 0;             // deeper, floatier sag
+      pl.giveV += (rest - pl.giveY)*0.12;         // soft low-g spring
+      pl.giveV *= 0.80;                            // heavy damping → slow float-back
+      pl.giveY += pl.giveV;
+      pl._lt = pl.y + astDriftY(pl) + pl.giveY;   // stamp this frame's top for next-frame swept collision
     }
   }
 
@@ -11988,11 +12030,31 @@ function drawGenPlatforms(){
         ctx.fillStyle='rgba(120,140,80,0.5)'; ctx.fillRect(sx+4,p.y+1,Math.min(14,p.w-8),2);
         ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(sx,p.y+p.h,p.w,4);
       } else if(space){
-        drawAsteroid(sx,p.y,p.w,p.h+6);
-        // soft top-shade only (hard bright rim line removed per design)
-        const _tg=ctx.createLinearGradient(0,p.y,0,p.y+5);
-        _tg.addColorStop(0,'rgba(160,185,220,0.16)'); _tg.addColorStop(1,'rgba(160,185,220,0)');
-        ctx.fillStyle=_tg; ctx.fillRect(sx+4,p.y,p.w-8,5);
+        if(p.arenaRock){
+          // ── standable ROCK COLUMN rising from the deck (jump on top to dodge the boss) ──
+          const topY=p.y, colH=FLOOR-topY;
+          ctx.fillStyle='#23232F'; ctx.beginPath();
+          ctx.moveTo(sx-5,FLOOR); ctx.lineTo(sx+p.w+5,FLOOR);
+          ctx.lineTo(sx+p.w-2,topY+8); ctx.quadraticCurveTo(sx+p.w/2,topY+2,sx+2,topY+8); ctx.closePath(); ctx.fill();
+          ctx.save(); ctx.clip();
+          texSpeckle(sx-5,topY,p.w+10,colH,Math.max(8,(p.w*colH/90)|0),'rgba(0,0,0,0.30)',p.x*0.11,1.6);
+          texSpeckle(sx-5,topY,p.w+10,colH,Math.max(5,(p.w*colH/160)|0),'rgba(180,190,210,0.16)',p.x*0.17+5,1.1);
+          ctx.strokeStyle='rgba(0,0,0,0.22)'; ctx.lineWidth=1;
+          for(let gx=sx; gx<sx+p.w; gx+=10){ ctx.beginPath(); ctx.moveTo(gx,topY+6); ctx.lineTo(gx+4,FLOOR); ctx.stroke(); }
+          ctx.restore();
+          ctx.fillStyle='#3A3F52'; ctx.beginPath(); ctx.ellipse(sx+p.w/2,topY+3,p.w/2+2,5,0,0,7); ctx.fill();
+          ctx.fillStyle='rgba(160,185,220,0.5)'; ctx.fillRect(sx+3,topY,p.w-6,2);
+          ctx.strokeStyle='rgba(150,170,210,0.4)'; ctx.lineWidth=1.4;
+          ctx.beginPath(); ctx.moveTo(sx-5,FLOOR); ctx.lineTo(sx+2,topY+8); ctx.moveTo(sx+p.w+5,FLOOR); ctx.lineTo(sx+p.w-2,topY+8); ctx.stroke();
+        } else {
+          const oy=p.y+astDriftY(p)+(p.giveY||0);                          // chaotic drift + low-g give
+          const dxw=p.drift?Math.cos(performance.now()*p.drift.sp*0.8+p.drift.ph)*p.drift.sway:0;
+          const sx2=sx+dxw;
+          drawAsteroid(sx2,oy,p.w,p.h+6);
+          const _tg=ctx.createLinearGradient(0,oy,0,oy+5);
+          _tg.addColorStop(0,'rgba(160,185,220,0.16)'); _tg.addColorStop(1,'rgba(160,185,220,0)');
+          ctx.fillStyle=_tg; ctx.fillRect(sx2+4,oy,p.w-8,5);
+        }
       } else {
         ctx.fillStyle=pal.plat; ctx.beginPath();ctx.roundRect(sx,p.y,p.w,p.h+4,4);ctx.fill();
         ctx.fillStyle=pal.glow; ctx.fillRect(sx,p.y,p.w,3);
@@ -12082,6 +12144,12 @@ function drawSpaceTransponder(){
   const lv=curLV(); if(currentLevel!==6 || !lv.transponder || lv.transponder.got) return;
   const tp=lv.transponder, x=tp.x-cameraX; if(x<-60||x>W+60)return;
   const cx=x+tp.w/2, cy=tp.y+tp.h/2, t=Date.now()*0.004;
+  // tall beacon beam — your ride home, glimpsed across the void
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const beam=ctx.createLinearGradient(cx,cy-300,cx,cy+10);
+  beam.addColorStop(0,'rgba(159,216,255,0)'); beam.addColorStop(0.7,'rgba(159,216,255,0.10)'); beam.addColorStop(1,'rgba(159,216,255,0.26)');
+  ctx.fillStyle=beam; ctx.fillRect(cx-4,cy-300,8,310);
+  ctx.restore();
   // pedestal
   ctx.fillStyle='#2A3346'; ctx.fillRect(x-4,tp.y+tp.h-2,tp.w+8,8);
   ctx.fillStyle='#3E4A66'; ctx.fillRect(x-4,tp.y+tp.h-2,tp.w+8,2);
@@ -12347,7 +12415,7 @@ function drawGenBoss(){
   if(!boss.alive&&boss.dieTimer<=0)return;
   // L5: the Baron must not stand on stage during the approach — he only manifests once the
   // table-mount cutscene begins (cutsceneActive) or the fight is live (active) or he's dying.
-  if(currentLevel===5 && boss.alive && !boss.active && !cutsceneActive) return;
+  if((currentLevel===5||currentLevel===6) && boss.alive && !boss.active && !cutsceneActive) return;
   const bx=boss.x-cameraX, by=boss.y;
   if(bx+boss.w<-60||bx>W+60){ /* still draw bar below */ } else {
     const dying=!boss.alive;
