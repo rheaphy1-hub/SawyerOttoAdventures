@@ -6320,7 +6320,7 @@ function restartCurrentLevel(){
     checkpoint=cp;
     if(currentLevel===1){ if(artifact){artifact.got=true;} artifactCollected=true; if(barrier) barrier.sealed=false; acquireItem('transponder'); }
     else if(currentLevel===2){ if(l2Artifact){l2Artifact.got=true; l2Artifact.freed=true;} l2ArtifactCollected=true; acquireItem('transponder'); }
-    else if(currentLevel===3){ if(l3Artifact){l3Artifact.got=true;} l3ArtifactCollected=true; acquireItem('relic'); }
+    else if(currentLevel===3){ if(l3Artifact){l3Artifact.got=true;} l3ArtifactCollected=true; acquireItem('transponder'); }
     else if(currentLevel===5||currentLevel===6){ const lv=LV[currentLevel]; if(lv.transponder){lv.transponder.got=true; lv.transponder.locked=false;} lv.transponderTaken=true; acquireItem('transponder'); }
     const wWorld = currentLevel===2 ? L2_WORLD_W : currentLevel===3 ? L3_WORLD_W : (currentLevel>=4&&LV[currentLevel]) ? LV[currentLevel].worldW : WORLD_W;
     sawyer.x=cp.x; sawyer.y=cp.y-sawyer.h; sawyer.vx=0; sawyer.vy=0; sawyer.invincible=90;
@@ -7272,7 +7272,7 @@ function updateL3Artifact(s){
       l3Artifact.got=true; l3ArtifactCollected=true;
       transponderAnchor = { level:3, x:sawyer.x, y:sawyer.y+sawyer.h };
       sfx('ball'); shakeIntensity=Math.max(shakeIntensity,6);
-      score+=250; acquireItem('relic'); popPoints(l3Artifact.x+l3Artifact.w/2, ay-6, 250, '#C9B6FF');
+      score+=250; acquireItem('transponder'); popPoints(l3Artifact.x+l3Artifact.w/2, ay-6, 250, '#9FD8FF');
       for(let i=0;i<28;i++) particles.push({x:l3Artifact.x+l3Artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
     }
   }
@@ -10109,6 +10109,9 @@ function drawKingCrabVector(){
 function drawKingCrab(){
   if(!kingCrab)return;
   if(!kingCrab.alive&&kingCrab.dieTimer<=0)return;
+  // Boss stays hidden until the transponder (boss key) is collected. Once active or
+  // dying it always renders (both states only occur post-acquisition).
+  if(kingCrab.alive && !kingCrab.active && !l3ArtifactCollected) return;
   // drive the animation (state transitions are issued from updateLevel3)
   if(kingCrab.active||!kingCrab.alive) crabAdvance(kingCrab);
   const bx=kingCrab.x-cameraX, by=kingCrab.y;
