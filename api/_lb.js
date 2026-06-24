@@ -518,9 +518,17 @@ const PHYS = {
   varJumpLift: 0,          // Task 2b: sustained lift while held. 0 => full hold == legacy -11.5 arc (see report)
   ottoAccel: 0.5, ottoMaxSpd: 3.6
 };
+// ---- Time-attack par thresholds (client-only). GENEROUS placeholders.
+//      A par = a competent-but-not-perfect clear, NOT a world record.
+const PAR_TIME  = {1:90000,2:105000,3:105000,4:120000,5:120000,6:135000}; // ms  // TODO tune par after real run data
+const PAR_SCORE = {1:8000,2:9000,3:9000,4:9000,5:10000,6:12000};          // pts // TODO tune par after real run data
 let jumpBufferedAt = -1;   // Task 2a: simFrame of last ArrowUp press
 let simFrame = 0;          // Task 2a: monotonic fixed-step counter (incremented in loop())
 let runStartMs = Date.now(); // Task 4: wall-clock start of the current run
+// ---- Time-attack + star-rating (client-only) ----
+let levelStartFrame = 0;         // simFrame at PLAY-click; pause-proof time-attack clock origin
+let _runTookDamage = false;      // player (not AI) took a hit this run -> blocks No-Damage star
+let _levelClearRecorded = false; // idempotent guard: some levels clear via >1 code path
 
 // ---- Task 2/3: player jump (Sawyer) lives in ONE place, called by every engine ----
 function playerCoyoteJump(s, dustType){
@@ -627,6 +635,7 @@ const LEVEL_META = {
 // vicNewBest is set by saveBestScore at the win moment (before the record is overwritten),
 // so the victory surfaces can read it even though they draw on later frames.
 let vicNewBest = false;
+let _newBestTime = false, _lastClearMs = 0; // time-attack: beat-best flag + frozen run time for clear surfaces
 function vicReset(){ vicNewBest=false; }
 
 // High score persistence
@@ -639,6 +648,40 @@ function saveBestScore(level, s){
     vicNewBest = (best>0 && s>best); // capture BEFORE overwrite; first-ever completion isn't a "new best"
     if(s>best) localStorage.setItem('sawyer_best_'+level,s);
   }catch(e){}
+}
+// ---- Time-attack best-time + star storage (mirrors sawyer_best_<level>) ----
+function getBestTime(level){
+  try{ return parseInt(localStorage.getItem('sawyer_btime_'+level)||'0',10); }catch(e){ return 0; }
+}
+function saveBestTime(level, ms){
+  try{ localStorage.setItem('sawyer_btime_'+level, ms); }catch(e){}
+}
+function getStars(level){
+  try{ return parseInt(localStorage.getItem('sawyer_stars_'+level)||'0',10); }catch(e){ return 0; }
+}
+function setStars(level, mask){
+  try{ const cur=getStars(level); localStorage.setItem('sawyer_stars_'+level, cur|mask); }catch(e){} // OR-merge: never downgrade earned stars
+}
+function fmtTime(ms){
+  ms=Math.max(0,ms|0); const cs=Math.floor(ms/10)%100, sec=Math.floor(ms/1000)%60, m=Math.floor(ms/60000);
+  return m+':'+String(sec).padStart(2,'0')+'.'+String(cs).padStart(2,'0');
+}
+function recordLevelClear(level){
+  if(_levelClearRecorded) return;            // idempotent — some levels clear via two paths
+  _levelClearRecorded = true;
+  const frames = Math.max(0, simFrame - levelStartFrame);
+  const timeMs = Math.round(frames / 60 * 1000);   // deterministic, pause-proof clock
+  _lastClearMs = timeMs;
+  const best = getBestTime(level);
+  if(best===0 || timeMs < best){ saveBestTime(level, timeMs); _newBestTime = true; }
+  else _newBestTime = false;
+  // stars: bit0 cleared, bit1 under par, bit2 no-damage
+  let st = getStars(level) | 1;
+  const underPar = (PAR_TIME[level] && timeMs <= PAR_TIME[level]) ||
+                   (PAR_SCORE[level] && score >= PAR_SCORE[level]);
+  if(underPar) st |= 2;
+  if(!_runTookDamage) st |= 4;
+  setStars(level, st);
 }
 let gameRunning = false;
 let gamePaused = false;
@@ -1636,6 +1679,7 @@ function closeLevelPopup(){
     setTimeout(()=>{ el.style.display='none'; }, 300);
   });
   levelPaused = false;
+  levelStartFrame = simFrame; // time-attack clock origin = actual play-start, not popup time
   // Ensure game state is clean when player clicks Play
   if(won){ won = false; }
   if(victoryActive){ victoryActive = false; }
@@ -1650,6 +1694,7 @@ let sawyer = null, otto = null;
 function buildPlayers(){
   cameraY = 0;
   runStartMs = Date.now(); // Task 4
+  _runTookDamage = false; _levelClearRecorded = false; // time-attack per-run reset
   lives = 5;                              // hearts fully refill at every level start
   emberStone = null; emberCollected = false; // L2-only mechanic — never carry into other levels
   sawyer = {
@@ -2197,6 +2242,7 @@ function update(){
     if (bikeEscape.timer <= 0){
       victoryActive = true;
       victoryTimer = 300;
+      recordLevelClear(currentLevel);
       bikeEscape.active = false;
       bikeEscape.phase = 'idle';
     }
@@ -2596,6 +2642,7 @@ function update(){
   if (!victoryActive && portal.open>0.55 && s.x+s.w > FLAG.x+10 && s.x < FLAG.x+90 && s.y+s.h >= FLOOR-10){
     if (!boss || !boss.alive){
       victoryActive = true; victoryTimer = 360;
+      recordLevelClear(currentLevel);
       s.vx = 0; s.vy = 0; s.facing = 1;
       otto.vx = 0; otto.vy = 0; otto.facing = 1;
       SFX.win();
@@ -2669,6 +2716,7 @@ function respawnSpot(p){
 }
 function hurt(p, reposition){
   if (p.ai) return;
+  _runTookDamage = true; // Otto/AI hits already returned above; only player damage breaks a no-damage run
   if (p.invincible>0) return;
   lives--; SFX.hurt();
   shakeIntensity = 10;
@@ -5916,6 +5964,22 @@ function drawVictoryAnimation(){
   }
   ctx.restore();
 
+  // Time-attack results strip (bottom) — run time + 3 labeled stars
+  {
+    const sw=300, sh=54, sx=W/2-sw/2, sy2=H-sh-6;
+    ctx.save();
+    ctx.globalAlpha=Math.min(1,prog*3);
+    ctx.fillStyle='rgba(8,6,18,0.66)'; ctx.beginPath(); ctx.roundRect(sx,sy2,sw,sh,9); ctx.fill();
+    ctx.strokeStyle='rgba(155,107,255,0.5)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.roundRect(sx,sy2,sw,sh,9); ctx.stroke();
+    ctx.textAlign='left'; ctx.font='700 12px system-ui,sans-serif';
+    ctx.fillStyle=_newBestTime?'#FFD700':'#fff';
+    ctx.fillText('Time '+fmtTime(_lastClearMs), sx+12, sy2+20);
+    const _bt=getBestTime(currentLevel);
+    ctx.font='600 10px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.72)';
+    ctx.fillText(_newBestTime ? '\u2605 NEW BEST!' : (_bt>0?'Best '+fmtTime(_bt):''), sx+12, sy2+38);
+    drawStarRow(ctx, sx+sw-78, sy2+18, 7, 46, currentLevel);
+    ctx.restore();
+  }
   // Celebratory sparkle burst (vector stars, no emojis)
   const sparkCols = ['#FFD700','#FF7AD9','#5FE6FF','#FFE066','#9B6BFF'];
   for(let i=0;i<5;i++){
@@ -5950,6 +6014,28 @@ function heartPath(c, cx, cy, s){
   c.closePath();
 }
 
+function starPath(c,cx,cy,r){
+  c.beginPath();
+  for(let k=0;k<5;k++){ const a=-Math.PI/2+k*(2*Math.PI/5); c.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r);
+    const a2=a+Math.PI/5; c.lineTo(cx+Math.cos(a2)*r*0.42,cy+Math.sin(a2)*r*0.42); }
+  c.closePath();
+}
+// 3 labeled time-attack stars from the persisted bitmask. Centered on midX.
+function drawStarRow(c, midX, y, sr, slotW, lvl){
+  const stars=getStars(lvl), defs=[[1,'Cleared'],[2,'Under Par'],[4,'No Damage']], prev=c.textAlign;
+  const x0=midX-slotW; c.textAlign='center';
+  for(let i=0;i<3;i++){
+    const bit=defs[i][0], on=(stars&bit)!==0, sx=x0+i*slotW;
+    starPath(c,sx,y,sr);
+    if(on){ c.fillStyle='#FFD700'; c.shadowColor='rgba(255,210,80,0.7)'; c.shadowBlur=6; c.fill(); c.shadowBlur=0;
+            c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.6)'; c.stroke(); }
+    else { c.fillStyle='rgba(255,255,255,0.12)'; c.fill(); c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.30)'; c.stroke(); }
+    c.font='700 8px system-ui,sans-serif';
+    c.fillStyle = on ? '#FFE9A8' : 'rgba(255,255,255,0.45)';
+    c.fillText('\u2605 '+defs[i][1], sx, y+sr+9);
+  }
+  c.textAlign=prev;
+}
 function drawHUD(){
   if(gameOver || won) return;
   const c = ctx; c.save();
@@ -5985,6 +6071,13 @@ function drawHUD(){
   sg.addColorStop(0,'#9B6BFF'); sg.addColorStop(0.5,'#FF7AD9'); sg.addColorStop(1,'#5FE6FF');
   c.fillStyle = sg; c.shadowColor = 'rgba(150,90,255,0.55)'; c.shadowBlur = 6;
   c.fillText(txt, rightX, sy);
+  // Live time-attack timer — small/secondary, only while a level is actively running
+  if(gameRunning && !levelPaused && !victoryActive && !cutsceneActive && !finishCardActive && !nameEntryActive){
+    const _tms=Math.max(0,simFrame-levelStartFrame)/60*1000, _tt=fmtTime(_tms), _ty=sy+18;
+    c.shadowBlur=0; c.textAlign='right'; c.font='800 12px system-ui,-apple-system,sans-serif';
+    c.lineWidth=3; c.lineJoin='round'; c.strokeStyle='rgba(6,4,18,0.9)'; c.strokeText(_tt, rightX, _ty);
+    c.fillStyle='rgba(222,212,255,0.92)'; c.fillText(_tt, rightX, _ty);
+  }
   c.restore();
   drawAcquiredTray();
 }
@@ -6088,7 +6181,7 @@ function drawFinishCard(){
   ctx.save();
   ctx.fillStyle='rgba(6,6,14,0.74)'; ctx.fillRect(0,0,W,H);
   // Card background — themed to level
-  const cw=420,ch=210,cx2=(W-cw)/2,cy2=(H-ch)/2;
+  const cw=420,ch=240,cx2=(W-cw)/2,cy2=(H-ch)/2;
   ctx.fillStyle=meta.deep; ctx.beginPath(); ctx.roundRect(cx2,cy2,cw,ch,14); ctx.fill();
   ctx.strokeStyle=meta.accent; ctx.lineWidth=3; ctx.beginPath(); ctx.roundRect(cx2,cy2,cw,ch,14); ctx.stroke();
   // Trophy
@@ -6114,6 +6207,11 @@ function drawFinishCard(){
   // Best line
   const best=getBestScore(currentLevel);
   if(best>0 && !vicNewBest){ ctx.font='600 12px system-ui,sans-serif'; ctx.fillStyle='#FFD700'; ctx.fillText('🏆 Best: '+best+' pts',W/2,by); }
+  // Time-attack: run/best time + 3 labeled stars
+  const _taY=cy2+186; ctx.textAlign='center';
+  ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle=_newBestTime?'#FFD700':'#A8F0C6';
+  ctx.fillText('Time '+fmtTime(_lastClearMs)+(_newBestTime?'  \u2605 NEW BEST!':(getBestTime(currentLevel)>0?'   Best '+fmtTime(getBestTime(currentLevel)):'')), W/2, _taY);
+  drawStarRow(ctx, W/2, _taY+22, 8, 92, currentLevel);
   ctx.restore();
 }
 
@@ -7404,7 +7502,7 @@ function updateLevel2(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L2_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=360;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -7774,7 +7872,7 @@ function updateLevel2(){
   // L2 flag check — yeti must be defeated; portal warp replaces bike
   if(!victoryActive && l2Portal.open>0.55 && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
     if(!yeti || !yeti.alive){
-      saveBestScore(currentLevel,score);
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
       victoryActive = true; victoryTimer = 360;
       s.vx=0; s.vy=0; s.facing=1;
       otto.vx=0; otto.vy=0; otto.facing=1;
@@ -8281,7 +8379,7 @@ function updateLevel3(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L3_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=360;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -8600,7 +8698,7 @@ function updateLevel3(){
 
   if(!victoryActive&&s.x+s.w>L3_FLAG.x+10&&s.x<L3_FLAG.x+90&&s.y+s.h>=FLOOR-10){
     if(!kingCrab||!kingCrab.alive){
-      saveBestScore(currentLevel,score);
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
       victoryActive=true; victoryTimer=360;
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
@@ -10876,7 +10974,7 @@ function updateGen(){
       }
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=360;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -11417,7 +11515,7 @@ function updateGen(){
   const flagX=lv.worldW-140;
   if(!victoryActive&&s.x+s.w>flagX+10&&s.x<flagX+90&&s.y+s.h>=FLOOR-10){
     if(!boss||!boss.alive){
-      saveBestScore(currentLevel,score);
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
       victoryActive=true; victoryTimer=360;
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
@@ -11809,7 +11907,7 @@ function updateSwim(){
   // ---- Exit beacon / win ----
   const exitX=lv.worldW-120;
   if(!victoryActive && s.x+s.w>exitX-30 && (!boss||!boss.alive)){
-    saveBestScore(currentLevel,score); victoryActive=true; victoryTimer=360; SFX.win();
+    saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; SFX.win();
     for(let i=0;i<24;i++) particles.push({x:exitX,y:SY+40+Math.random()*120,vx:(Math.random()-.5)*2,vy:-1-Math.random()*2,life:40,maxLife:40,type:'spark',color:lv.pal.secondary});
   }
   document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -13851,6 +13949,19 @@ function showLevelPopup(title, desc){
   popup.style.opacity = '1';
   popup.style.pointerEvents = '';
   popup.style.display = 'flex';
+  // Per-level best time / score / stars. Storage (§3) is the single source of truth.
+  // TODO: move onto locked-tile menu when level-lock ships
+  try{
+    let strip = popup.querySelector('.ta-stats');
+    if(!strip){ strip=document.createElement('div'); strip.className='ta-stats';
+      strip.style.cssText='margin-top:10px;font:600 13px system-ui,sans-serif;color:#FFD86B;text-align:center;opacity:0.9;';
+      const pb=popup.querySelector('.play-btn');
+      if(pb&&pb.parentElement){ pb.parentElement.insertBefore(strip, pb); } else { popup.appendChild(strip); }
+    }
+    const bt=getBestTime(currentLevel), bs=getBestScore(currentLevel), sm=getStars(currentLevel);
+    const starStr=[1,2,4].map(b=>(sm&b)?'\u2605':'\u2606').join('');
+    strip.innerHTML=(bt>0?('Best '+fmtTime(bt)):'No time yet')+(bs>0?(' \u00b7 '+bs):'')+' \u00b7 '+starStr;
+  }catch(e){}
 }
 
 // =========================================================================
