@@ -364,8 +364,9 @@
       <source src="assets/intro_cutscene.mp4" type="video/mp4">
     </video>
     <div id="intro-black" style="position:absolute;inset:0;background:#000;border-radius:10px;opacity:0;display:none;z-index:61;pointer-events:none;transition:opacity .5s ease;"></div>
-    <div id="intro-transit" style="position:absolute;inset:0;border-radius:10px;opacity:0;display:none;z-index:63;pointer-events:none;transition:opacity .9s ease;background:radial-gradient(ellipse at 50% 42%, #3a1c66 0%, #1d0f38 58%, #0b0518 100%);">
-      <div id="intro-transit-text" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 11%;text-align:center;color:#F3E9FF;font:500 18px/1.62 Georgia,'Times New Roman',serif;letter-spacing:.015em;text-shadow:0 0 20px rgba(160,110,255,0.55),0 2px 6px rgba(0,0,0,0.6);opacity:0;transition:opacity 1s ease .35s;">A portal appeared in their home, and two curious brothers leapt in. The adventure turned to peril &mdash; only the transponder in each world opens the way back.</div>
+    <div id="intro-transit" style="position:absolute;inset:0;border-radius:10px;opacity:0;display:none;z-index:63;pointer-events:none;transition:opacity 1.4s ease;background:#08040f;overflow:hidden;">
+      <canvas id="intro-transit-fx" style="position:absolute;inset:0;width:100%;height:100%;display:block;"></canvas>
+      <div id="intro-transit-text" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 12%;text-align:center;color:#F3E9FF;font:900 19px/1.6 Georgia,'Times New Roman',serif;letter-spacing:.015em;text-shadow:0 0 22px rgba(170,120,255,0.6),0 2px 7px rgba(0,0,0,0.7);opacity:0;transition:opacity 1.4s ease;z-index:1;"></div>
     </div>
     <div id="intro-skip" style="position:absolute;bottom:14px;right:16px;z-index:62;display:none;color:#FAEEDA;font:600 13px system-ui,sans-serif;background:rgba(0,0,0,0.45);border:1px solid rgba(250,238,218,0.35);border-radius:20px;padding:6px 14px;cursor:pointer;user-select:none;letter-spacing:.04em;">Skip &#9654;&#9654;</div>
     <video id="return-cutscene" playsinline preload="auto" muted
@@ -13309,6 +13310,69 @@ function showLevelPopup(title, desc){
 // =========================================================================
 let introPlayed = false;
 let skipNextLevelPopup = false; // armed by the intro launch so L1 drops straight into the portal dump
+// ── Intro transit portal FX — a living purple portal behind the narrative card ──
+let _transitFx = { raf:0, running:false, t:0 };
+function startTransitFx(){
+  const cv = document.getElementById('intro-transit-fx');
+  const host = document.getElementById('intro-transit');
+  if(!cv || !host) return;
+  const dpr = Math.min(2, window.devicePixelRatio||1);
+  const w = host.clientWidth||680, h = host.clientHeight||360;
+  cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+  const g = cv.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
+  const parts = [];
+  for(let i=0;i<48;i++){
+    parts.push({ a:Math.random()*Math.PI*2, r:60+Math.random()*Math.max(w,h)*0.6,
+                 vr:0.25+Math.random()*0.55, sz:0.8+Math.random()*1.9,
+                 hue: Math.random()<0.5 ? '#B98BFF' : '#9FE8FF' });
+  }
+  _transitFx = { raf:0, running:true, t:0, g, w, h, parts };
+  const frame = ()=>{ if(!_transitFx.running) return; _transitFx.t++; drawTransitPortal(); _transitFx.raf = requestAnimationFrame(frame); };
+  _transitFx.raf = requestAnimationFrame(frame);
+}
+function stopTransitFx(){ _transitFx.running=false; if(_transitFx.raf) cancelAnimationFrame(_transitFx.raf); _transitFx.raf=0; }
+function drawTransitPortal(){
+  const { g, w, h, t, parts } = _transitFx; if(!g) return;
+  const cx=w/2, cy=h*0.5, R=Math.min(w,h)*0.34, pulse=0.6+0.4*Math.sin(t*0.04);
+  // deep portal-purple base
+  let bg=g.createRadialGradient(cx,cy,0,cx,cy,Math.max(w,h)*0.75);
+  bg.addColorStop(0,'#2a1556'); bg.addColorStop(0.45,'#180b34'); bg.addColorStop(1,'#08040f');
+  g.fillStyle=bg; g.fillRect(0,0,w,h);
+  g.save(); g.globalCompositeOperation='lighter';
+  // pulsing halo
+  let halo=g.createRadialGradient(cx,cy,R*0.2,cx,cy,R*1.8);
+  halo.addColorStop(0,`rgba(150,100,255,${0.30*pulse})`);
+  halo.addColorStop(0.5,`rgba(110,70,220,${0.15*pulse})`);
+  halo.addColorStop(1,'rgba(40,20,80,0)');
+  g.fillStyle=halo; g.beginPath(); g.arc(cx,cy,R*1.8,0,Math.PI*2); g.fill();
+  // counter-rotating wobbling rings
+  for(let i=0;i<6;i++){
+    const rr=R*(0.5+i*0.13), dir=(i%2?-1:1);
+    g.strokeStyle = i%2 ? `rgba(160,230,255,${0.22-i*0.02})` : `rgba(185,135,255,${0.30-i*0.03})`;
+    g.lineWidth = 2.2 - i*0.18; g.beginPath();
+    for(let s=0;s<=64;s++){
+      const ang=(s/64)*Math.PI*2, wob=1+0.06*Math.sin(ang*5 + dir*t*0.05 + i);
+      const x=cx+Math.cos(ang)*rr*wob, y=cy+Math.sin(ang)*rr*wob;
+      s===0?g.moveTo(x,y):g.lineTo(x,y);
+    }
+    g.closePath(); g.stroke();
+  }
+  // bright swirling core
+  let core=g.createRadialGradient(cx,cy,0,cx,cy,R*0.55);
+  core.addColorStop(0,`rgba(245,235,255,${0.85*pulse})`);
+  core.addColorStop(0.35,`rgba(190,140,255,${0.5*pulse})`);
+  core.addColorStop(1,'rgba(120,70,210,0)');
+  g.fillStyle=core; g.beginPath(); g.arc(cx,cy,R*0.55,0,Math.PI*2); g.fill();
+  // inward-spiraling sparks
+  for(const p of parts){
+    p.a += 0.006 + 0.4/Math.max(p.r,1); p.r -= p.vr;
+    if(p.r<12){ p.r=R*1.7+Math.random()*60; p.a=Math.random()*Math.PI*2; }
+    const x=cx+Math.cos(p.a)*p.r, y=cy+Math.sin(p.a)*p.r;
+    g.globalAlpha=Math.max(0,Math.min(1,(R*1.7-p.r)/(R*1.7)))*0.9;
+    g.fillStyle=p.hue; g.beginPath(); g.arc(x,y,p.sz,0,Math.PI*2); g.fill();
+  }
+  g.globalAlpha=1; g.restore();
+}
 function playIntroCutscene(onDone){
   const vid   = document.getElementById('intro-cutscene');
   const black = document.getElementById('intro-black');
@@ -13337,33 +13401,49 @@ function playIntroCutscene(onDone){
       return;
     }
     try{ skip.style.display='none'; }catch(e){}
-    // Match-cut: swell the purple portal wash up off the flash, fade the card in.
+    // Match-cut: swell the living purple portal up off the flash, start its FX.
     transit.style.display='block';
     void transit.offsetWidth;
+    startTransitFx();
     transit.style.opacity='1';
-    if(ttext) ttext.style.opacity='1';
     try{ introWhoosh(); }catch(e){}
-    // Drop the video once the wash covers it.
-    setTimeout(()=>{ try{ vid.pause(); vid.style.display='none'; }catch(e){} }, 700);
+    // Drop the video once the portal covers it.
+    setTimeout(()=>{ try{ vid.pause(); vid.style.display='none'; }catch(e){} }, 900);
+
+    const beats=[
+      'A portal appeared in their home, and two curious brothers leapt in.',
+      'The adventure turned to peril \u2014 only the transponder in each world opens the way back.'
+    ];
+    const showBeat=(txt)=>{ if(ttext){ ttext.textContent=txt; void ttext.offsetWidth; ttext.style.opacity='1'; } };
+    const hideBeat=()=>{ if(ttext) ttext.style.opacity='0'; };
+    const timers=[];
 
     let advanced=false;
     const go = ()=>{ if(advanced) return; advanced=true;
+      timers.forEach(clearTimeout);
       transit.style.pointerEvents='none';
       transit.removeEventListener('click', go);
       window.removeEventListener('keydown', onAdvKey, true);
-      // Launch the level UNDER the purple, then fade the wash away to reveal the
-      // entry portal already yawning open — the boys are mid-tumble as it clears.
+      // soft portal-release punctuation as the boys are flung through
+      try{ if(sfxOn){ beep(520,0.3,'sine',0.04,1400); noise(0.25,0.04); } }catch(e){}
+      // Launch the level UNDER the portal, then dissolve it to reveal the entry
+      // portal already yawning open — the boys are mid-tumble as it clears.
       cleanup();
       onDone && onDone();
+      hideBeat();
       transit.style.opacity='0';
-      setTimeout(()=>{ transit.style.display='none'; if(ttext) ttext.style.opacity='0'; }, 950);
+      setTimeout(()=>{ transit.style.display='none'; stopTransitFx(); }, 1400);
     };
     const onAdvKey=(e)=>{ if(e.key==='Escape'||e.key===' '||e.key==='Enter'){ e.preventDefault(); go(); } };
-    // Let the line breathe; allow an early skip via click/key.
+    // Let the two lines breathe (~10s); allow an early skip via click/key.
     transit.style.pointerEvents='auto';
     transit.addEventListener('click', go);
     window.addEventListener('keydown', onAdvKey, true);
-    setTimeout(go, 4400);
+    timers.push(setTimeout(()=>showBeat(beats[0]), 1500));
+    timers.push(setTimeout(hideBeat,               4900));
+    timers.push(setTimeout(()=>showBeat(beats[1]), 6300));
+    timers.push(setTimeout(hideBeat,               9600));
+    timers.push(setTimeout(go,                     10800));
   };
   const onEnded = ()=> end();
   const onErr   = ()=>{ cleanup(); onDone && onDone(); };
