@@ -538,6 +538,63 @@ function playerVarJump(s){
   if(s.vy<0 && keys['ArrowUp']){ s.vy-=PHYS.varJumpLift; s.jumpHeldFrames++; }
   else if(s.vy<0 && !keys['ArrowUp']){ s.vy*=PHYS.varJumpCutMul; s.jumpHeldFrames=PHYS.varJumpHoldFrames; }
 }
+// ---- Task 3b: ONE shared player-control core, parameterized by LV[lvl].phys ----
+// Owns the camera-independent control sequence common to every land engine:
+// duck -> horizontal(+ice/+clamp) -> [L5 climb gate] -> coyote/buffer jump ->
+// shoot(at original slot) -> attack decrements -> variable jump -> gravity*mul ->
+// integrate -> vyCap -> resolve -> [L6 post-resolve] -> [L5 carry] -> world-x clamp.
+// Camera, void-death and invincible-- stay inline per engine (they diverge in
+// threshold and in ordering relative to the camera). Swim (L4) does NOT use this.
+// Behavior-preserving extraction — proven frame-identical against the prior inline
+// math across all 5 land engines (see diff_harness.js).
+function stepPlayer(s, P, shoot){
+  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
+  applyDuckState(s, _sDuck);
+  if(P.horiz){ P.horiz(s); }
+  else {
+    if(s.ducking){ s.vx*=0.6; }
+    else if(keys['ArrowLeft']){ s.vx=-P.speed; s.facing=-1; }
+    else if(keys['ArrowRight']){ s.vx=P.speed; s.facing=1; }
+    else s.vx*=P.fric;
+    if(P.vclamp) s.vx=Math.max(-P.vclamp,Math.min(P.vclamp,s.vx));
+  }
+  let _climbing=false;
+  if(P.climb){ _climbing=P.climb(s); if(_climbing) s.vx=0; }
+  if(!_climbing){
+    playerCoyoteJump(s, P.dust);
+    if(shoot) shoot();
+    if(s.attackTimer>0)s.attackTimer--;
+    if(s.attackCooldown>0)s.attackCooldown--;
+    playerVarJump(s);
+    s.vy += GRAVITY*P.gravMul; s.x+=s.vx; s.y+=s.vy;
+    if(P.vyCap && s.vy>P.vyCap) s.vy=P.vyCap;
+    P.resolve(s);
+    if(P.postResolve) P.postResolve(s);
+  }
+  if(P.carry) P.carry(s);
+  const _ww=P.worldW();
+  if(s.x<0)s.x=0; if(s.x>_ww-s.w)s.x=_ww-s.w;
+}
+// L2 horizontal override — preserves the ice-slide chute + skid-spray else-binding verbatim.
+function _physHorizL2(s){
+  if(s.ducking){ s.vx*=0.6; }
+  else if(keys['ArrowLeft']){s.vx=-3.1;s.facing=-1;}
+  else if(keys['ArrowRight']){s.vx=3.1;s.facing=1;}
+  else if(s.onSlick) s.vx = s.vx*0.96 + s.facing*0.25;   // ice-slide chute
+  if(s.onSlick && Math.abs(s.vx)>1.2 && Math.random()<0.5)   // skid spray
+    particles.push({x:s.x+s.w/2-s.facing*4,y:s.y+s.h,vx:-s.facing*(0.5+Math.random()),vy:-0.3-Math.random()*0.9,life:14,maxLife:14,type:'snow',color:'#EAF6FF'});
+  else s.vx*=0.72;
+}
+// L6 post-resolve — generous void ceiling + boost-pad launch (verbatim).
+function _physPostL6(s){
+  if(s.y<-360){ s.y=-360; if(s.vy<0)s.vy=0; }
+  const lv=curLV(); if(lv && lv.boostPads) for(const bp of lv.boostPads){
+    if(s.x+s.w>bp.x && s.x<bp.x+bp.w && (s.y+s.h)>=bp.y-3 && (s.y+s.h)<=bp.y+16 && s.vy>-1){
+      s.vy=-12; s.onGround=false; sfx('jump');
+      for(let i=0;i<10;i++) particles.push({x:bp.x+bp.w/2+(Math.random()-.5)*22,y:bp.y,vx:(Math.random()-.5)*2,vy:-2-Math.random()*4,life:18,maxLife:18,type:'spark',color:'#7AF0FF'});
+    }
+  }
+}
 // ---- Boss-stage geometry: a long empty no-enemy run leads into an isolated arena ----
 const ARENA_X0   = 3260;          // left edge of the isolated boss arena floor
 const ARENA_X1   = 3760;          // right edge (where the escape flag sits)
@@ -1003,6 +1060,7 @@ let victoryActive = false, victoryTimer = 0;
 let nameEntryActive = false;       // showing the name-entry overlay
 let nameEntryDone = false;         // submitted/skipped this run
 let leaderboardData = null;        // cached top-N once fetched
+let lbToken = null;                 // opaque server-issued session token (Task 4)
 let leaderboardLoading = false;
 let leaderboardError = false;
 const LB_API = '';                 // same-origin /api on Vercel
@@ -1016,28 +1074,41 @@ function cleanName(raw){
   let n=(raw||'').replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ').trim().slice(0,20);
   return n || sillyName();
 }
+// HMAC-SHA256(message) keyed by the opaque session token, hex output. The token
+// is a per-session shared secret minted by /api/top; the real signing secret never
+// reaches the client. Matches the server's payloadHmacHex().
+async function hmacHex(keyStr, msg){
+  const enc=new TextEncoder();
+  const key=await crypto.subtle.importKey('raw', enc.encode(keyStr), {name:'HMAC', hash:'SHA-256'}, false, ['sign']);
+  const sig=await crypto.subtle.sign('HMAC', key, enc.encode(msg));
+  return [...new Uint8Array(sig)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 async function submitScore(name){
-  // Task 4: the client is NOT trusted. We only attach run metadata; real validation
-  // happens server-side in /api/submit per the contract below. No secret ships here.
-  const payload = {
-    name: name,
-    score: score|0,
-    level: currentLevel|0,                          // highest level reached this run
-    runMs: Math.max(0, Date.now() - runStartMs)     // coarse wall-clock of the run
-  };
-  /* ===== SERVER CONTRACT — implement in Vercel /api/submit (DO NOT trust client) =====
-     1. Reject score > plausibleMax(level): server-computed carry-forward ceiling
-        (max obtainable across levels 1..level); 400/drop if exceeded.
-     2. Reject impossibly-fast runs: if runMs < minRunMs(level), flag as suspect.
-     3. Rate-limit by IP (token bucket, N submits/min) to stop flooding.
-     4. HMAC verification: /api/top issues a short-lived per-session token signed with a
-        secret env var (NEVER sent to the client beyond the opaque token). Client echoes
-        the token; server recomputes HMAC(token, name|score|level|runMs) and rejects on
-        mismatch or expiry. Secret key stays server-side only.
+  // Task 4 (server-enforced): the client is NOT trusted. We attach run metadata and a
+  // token-bound HMAC; /api/submit does the real validation (see contract below). The
+  // signing secret never ships — the token is opaque and one-time-use.
+  const score0=score|0, level0=currentLevel|0, runMs0=Math.max(0, Date.now()-runStartMs);
+  /* ===== SERVER CONTRACT — implemented in Vercel /api/top + /api/submit (DO NOT trust client) =====
+     1. Reject score > plausibleMax(level): cumulative carry-forward ceiling 1..level.
+     2. Reject impossibly-fast runs: runMs < minRunMs(level).
+     3. Rate-limit by IP (token bucket, N submits/min).
+     4. /api/top issues a short-lived per-session token signed with a secret env var
+        (never sent to the client beyond the opaque token, one-time-use). Client echoes
+        the token + HMAC(token, name|score|level|runMs); server recomputes and rejects on
+        mismatch, expiry or replay. Secret stays server-side only.
      ================================================================================ */
   try{
+    // obtain a fresh signed token (also refreshes the cached board)
+    let token=lbToken;
+    if(!token){
+      const tr=await fetch(LB_API+'/api/top');
+      if(tr.ok){ const td=await tr.json(); token=td&&td.token; if(td&&Array.isArray(td.top)) leaderboardData=td.top; }
+    }
+    if(!token) return;   // board offline / legacy server: skip silently, credits still play
+    lbToken=null;        // tokens are one-time-use; force a fresh mint next run
+    const hmac=await hmacHex(token, `${name}|${score0}|${level0}|${runMs0}`);
     await fetch(LB_API+'/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)});
+      body:JSON.stringify({name, score:score0, level:level0, runMs:runMs0, token, hmac})});
   }catch(e){ /* offline: silently skip, credits still play */ }
 }
 async function fetchLeaderboard(){
@@ -1046,7 +1117,10 @@ async function fetchLeaderboard(){
   try{
     const r=await fetch(LB_API+'/api/top');
     if(!r.ok) throw new Error('bad');
-    leaderboardData=await r.json();
+    const data=await r.json();
+    // new shape {top, token}; tolerate a legacy bare-array response
+    leaderboardData = Array.isArray(data) ? data : (Array.isArray(data.top) ? data.top : []);
+    if(data && data.token) lbToken=data.token;
   }catch(e){ leaderboardError=true; leaderboardData=[]; }
   leaderboardLoading=false;
 }
@@ -2103,39 +2177,24 @@ function update(){
     return;
   }
 
-  // Sawyer control
-  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
-  applyDuckState(s, _sDuck);
-  if (s.ducking) { s.vx*=0.6; }
-  else if (keys['ArrowLeft']) { s.vx=-speed; s.facing=-1; }
-  else if (keys['ArrowRight']) { s.vx=speed; s.facing=1; }
-  else s.vx*=0.72;
-  
-  // Coyote + buffered jump unified (Task 2/3)
-  playerCoyoteJump(s, 'dust');
-  
-  const sawyerShot = keys['Space'] && s.attackCooldown<=0;
-  if (sawyerShot){
-    s.attackTimer=10; s.attackCooldown=20; fireAttack(s);
-    // Otto shoots simultaneously
-    if (otto.attackCooldown<=0){
-      otto.attackTimer=10; otto.attackCooldown=34;
-      if(ottoPower===2){
-        // spray: 5 milk blobs in a spread
-        for(let k=-2;k<=2;k++){
-          projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
-        }
-        SFX.barf();
-      } else { fireAttack(otto); }
+  // Sawyer control — unified player physics (Task 3b: shared stepPlayer)
+  stepPlayer(s, LV[1].phys, ()=>{
+    const sawyerShot = keys['Space'] && s.attackCooldown<=0;
+    if (sawyerShot){
+      s.attackTimer=10; s.attackCooldown=20; fireAttack(s);
+      // Otto shoots simultaneously
+      if (otto.attackCooldown<=0){
+        otto.attackTimer=10; otto.attackCooldown=34;
+        if(ottoPower===2){
+          // spray: 5 milk blobs in a spread
+          for(let k=-2;k<=2;k++){
+            projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
+          }
+          SFX.barf();
+        } else { fireAttack(otto); }
+      }
     }
-  }
-  if (s.attackTimer>0) s.attackTimer--;
-  if (s.attackCooldown>0) s.attackCooldown--;
-  playerVarJump(s);
-  s.vy+=GRAVITY; s.x+=s.vx; s.y+=s.vy;
-  resolve(s);
-  if (s.x<0) s.x=0;
-  if (s.x>WORLD_W-s.w) s.x=WORLD_W-s.w;
+  });
   if (s.invincible>0) s.invincible--;
   if (s.y>H+60) hurt(s, true);
 
@@ -2413,6 +2472,7 @@ function update(){
       boss.lungeTimer--;
       if (boss.lungeTimer<=0 && boss.windup<=0){
         boss.windup = 22;                         // telegraph the special
+        boss.windupMax = boss.windup;             // cache for the danger-ring ramp
         boss.lungeTimer = (ph?100:150)+Math.random()*90;
         boss.hitFlash = Math.max(boss.hitFlash, 3); SFX.rattle();
       } else if (Math.abs(boss.vx)>1.4) boss.vx*=0.96;
@@ -4311,6 +4371,10 @@ function drawBoss(){
   if (!boss.alive && boss.dieTimer<=0) return;
   const bx=boss.x-cameraX, by=boss.y;
   if (bx+boss.w<-20||bx>W+20) return;
+  // --- shared danger-tell: sandstorm-lunge lane (front, facing). Geyser keeps its own bespoke tell. ---
+  if (currentLevel===1 && boss.alive && boss.windup>0){
+    _dangerRing(bx+boss.w/2+boss.facing*(boss.w*0.55+34),by+boss.h*0.6,'lunge',boss.windup,boss.windupMax||22,boss.facing,1.25);
+  }
   ctx.save();
   // fade only at the very end of the death hold (anim itself dissolves him)
   if (!boss.alive){ ctx.globalAlpha = Math.min(1, Math.max(0, boss.dieTimer/25)); }
@@ -7315,35 +7379,20 @@ function updateLevel2(){
     return;
   }
 
-  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
-  applyDuckState(s, _sDuck);
-  if(s.ducking){ s.vx*=0.6; }
-  else if(keys['ArrowLeft']){s.vx=-speed;s.facing=-1;}
-  else if(keys['ArrowRight']){s.vx=speed;s.facing=1;}
-  else if(s.onSlick) s.vx = s.vx*0.96 + s.facing*0.25;   // ice-slide chute: slick downhill glide (intentional reward ride)
-  if(s.onSlick && Math.abs(s.vx)>1.2 && Math.random()<0.5)   // skid spray kicks up off slick ice — reinforces the hazard
-    particles.push({x:s.x+s.w/2-s.facing*4,y:s.y+s.h,vx:-s.facing*(0.5+Math.random()),vy:-0.3-Math.random()*0.9,life:14,maxLife:14,type:'snow',color:'#EAF6FF'});
-  else s.vx*=0.72;
-
-  playerCoyoteJump(s, 'snow');
-  const sawyerShot=keys['Space']&&s.attackCooldown<=0;
-  if(sawyerShot){
-    s.attackTimer=10;s.attackCooldown=20;fireAttack(s);
-    if(emberCollected){ for(const pr of projectiles){ if(pr.owner===s && pr.type==='ball' && !pr.flame){ pr.flame=true; pr.r=9; } } }
-    if(otto.attackCooldown<=0){
-      otto.attackTimer=10;otto.attackCooldown=34;
-      if(ottoPower===2){
-        for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
-        SFX.barf();
-      } else { fireAttack(otto); }
+  stepPlayer(s, LV[2].phys, ()=>{
+    const sawyerShot=keys['Space']&&s.attackCooldown<=0;
+    if(sawyerShot){
+      s.attackTimer=10;s.attackCooldown=20;fireAttack(s);
+      if(emberCollected){ for(const pr of projectiles){ if(pr.owner===s && pr.type==='ball' && !pr.flame){ pr.flame=true; pr.r=9; } } }
+      if(otto.attackCooldown<=0){
+        otto.attackTimer=10;otto.attackCooldown=34;
+        if(ottoPower===2){
+          for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
+          SFX.barf();
+        } else { fireAttack(otto); }
+      }
     }
-  }
-  if(s.attackTimer>0)s.attackTimer--;
-  if(s.attackCooldown>0)s.attackCooldown--;
-  playerVarJump(s);
-  s.vy+=GRAVITY;s.x+=s.vx;s.y+=s.vy;
-  resolveL2(s);
-  if(s.x<0)s.x=0; if(s.x>L2_WORLD_W-s.w)s.x=L2_WORLD_W-s.w;
+  });
   if(s.invincible>0)s.invincible--;
   if(s.y>H+60) hurt(s, true);
 
@@ -7565,6 +7614,7 @@ function updateLevel2(){
         yeti.lungeTimer--;
         if(yeti.lungeTimer<=0){
           yeti.roarTell = yeti.currentPhase===2 ? 22 : 30;   // wind-up beat the player can read
+          yeti.roarTellMax = yeti.roarTell;                  // cache for the danger-ring ramp
           yeti.lungeTimer = 140+Math.random()*80;
           SFX.bossSpit();
         } else {
@@ -7601,6 +7651,7 @@ function updateLevel2(){
         if(yeti.poundTimer<=0){
           yeti.poundTimer = (yeti.currentPhase===2 ? 150 : 230) + Math.random()*70;
           yeti.poundTell  = yeti.currentPhase===2 ? 26 : 34;   // readable wind-up before the slam
+          yeti.poundTellMax = yeti.poundTell;                  // cache for the danger-ring ramp
           if(yeti.animName==='idle') yetiSetAnim(yeti,'roar');  // rear-up tell reuses the bellow pose
           SFX.bossSpit();
         }
@@ -8229,37 +8280,20 @@ function updateLevel3(){
     return;
   }
 
-  // Sawyer movement
-  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
-  applyDuckState(s, _sDuck);
-  if(s.ducking){ s.vx*=0.6; }
-  else if(keys['ArrowLeft']){s.vx=-4;s.facing=-1;}
-  else if(keys['ArrowRight']){s.vx=4;s.facing=1;}
-  else s.vx*=0.8;
-  s.vx=Math.max(-5,Math.min(5,s.vx));
-
-  // Coyote time jump
-  playerCoyoteJump(s, 'dust');
-
-  // Shoot (Space only) — identical to L1/L2
-  const sawyerShot3 = keys['Space'] && s.attackCooldown<=0;
-  if(sawyerShot3){
-    s.attackTimer=10; s.attackCooldown=20; fireAttack(s);
-    if(o.attackCooldown<=0){
-      o.attackTimer=10; o.attackCooldown=34;
-      if(ottoPower===2){
-        for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
-        SFX.barf();
-      } else { fireAttack(o); }
+  // Sawyer movement — unified player physics (Task 3b: shared stepPlayer)
+  stepPlayer(s, LV[3].phys, ()=>{
+    const sawyerShot3 = keys['Space'] && s.attackCooldown<=0;
+    if(sawyerShot3){
+      s.attackTimer=10; s.attackCooldown=20; fireAttack(s);
+      if(o.attackCooldown<=0){
+        o.attackTimer=10; o.attackCooldown=34;
+        if(ottoPower===2){
+          for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
+          SFX.barf();
+        } else { fireAttack(o); }
+      }
     }
-  }
-  if(s.attackTimer>0)s.attackTimer--;
-  if(s.attackCooldown>0)s.attackCooldown--;
-
-  playerVarJump(s);
-  s.vy+=GRAVITY; s.x+=s.vx; s.y+=s.vy;
-  resolveL3(s);
-  if(s.x<0)s.x=0; if(s.x>L3_WORLD_W-s.w)s.x=L3_WORLD_W-s.w;
+  });
   const camTarget3 = Math.max(0, Math.min(s.x - 100, L3_WORLD_W - W));
   cameraX += (camTarget3 - cameraX) * 0.06;
   cameraX = Math.max(0, Math.min(cameraX, L3_WORLD_W - W));
@@ -9407,6 +9441,12 @@ function drawYeti(){
   if(yeti.alive && !yeti.active && !cutsceneActive) return;   // dormant until the artifact unlocks the reveal
   const bx=yeti.x-cameraX,by=yeti.y;
   if(bx+yeti.w<-20||bx>W+20)return;
+  // --- shared danger-tell: lunge lane (front, facing) + pound impact (under him) ---
+  if(yeti.alive){
+    const cx=bx+yeti.w/2;
+    if(yeti.roarTell>0)  _dangerRing(cx+yeti.facing*(yeti.w*0.55+34),by+yeti.h*0.62,'lunge',yeti.roarTell,yeti.roarTellMax||30,yeti.facing,1.3);
+    if(yeti.poundTell>0) _dangerRing(cx,FLOOR,'pound',yeti.poundTell,yeti.poundTellMax||34,1,1.4);
+  }
   ctx.save();
   const dying=!yeti.alive;
   // gentle alpha fade only at the very end of the death hold (the death anim collapses him)
@@ -10051,6 +10091,13 @@ function drawKingCrab(){
     const drew=drawCrabSprite(kingCrab, bx, by+subOff, flash);
     ctx.restore();
     if(!drew) drawKingCrabVector();                               // atlas not ready -> vector art
+    // --- shared danger-tell: claw-slam targets the player; spit/charge telegraph the front lane ---
+    if(kingCrab.alive && kingCrab.tell>0 && !kingCrab.submerge){
+      let rx,ry;
+      if(kingCrab.pending==='slam'){ rx=sawyer.x-cameraX+sawyer.w/2; ry=sawyer.y+sawyer.h/2; }
+      else { rx=bx+kingCrab.w/2+(kingCrab.facing||1)*(kingCrab.w*0.55+30); ry=by+kingCrab.h*0.55; }
+      _dangerRing(rx,ry,kingCrab.pending||'slam',kingCrab.tell,kingCrab.tellMax||32,kingCrab.facing||1,1.3);
+    }
   }
   // Health bar (not scaled, always on top)
   if(kingCrab.active&&kingCrab.alive){
@@ -10136,6 +10183,7 @@ const LV = {
           r1:'#FFD700', r2:'#FF6B35', r3:'#9D4EDD', pit:'#0A0612' },
     boss:{ name:'Baron Von Skream', tag:'BARON VON SKREAM', rage:'BARON VON SKREAM — ENRAGED',
            hp:18, vx1:1.5, vx2:2.3, spit1:55, spit2:38, n1:1, n2:3,
+           melee:{ range:170, windup:26, dashV:7.5, arc:64, dur:14, cooldown1:150, cooldown2:95 },
            proj:'#9D4EDD', body:'#E8E8E8', limb:'#1A1A1A', eye:'#FFD700', aura:'rgba(157,78,221,0.32)' },
     audio:'/audio/L5strangerthangs.mp3'
   },
@@ -10147,11 +10195,22 @@ const LV = {
           r1:'#FFD700', r2:'#00CCFF', r3:'#FFFF00', pit:'#000008' },
     boss:{ name:'Nexus Nine', tag:'🛰 NEXUS NINE', rage:'🛰 NEXUS NINE — OVERCLOCKED',
            hp:18, vx1:2.0, vx2:2.9, spit1:50, spit2:35, n1:3, n2:5,
+           drones:{ count:4, orbitR:78, orbitSpd:0.03 },
+           beam:{ chargeWarn:60, sweepDur:90, sweepArc:Math.PI, width:14, dmg:true, cooldown:240 },
            proj:'#FFFF00', body:'#00CCFF', limb:'#FFD700', eye:'#00FFFF', aura:'rgba(0,204,255,0.35)' },
     audio:'/audio/L6probed.mp3'
   }
 };
 function curLV(){ return LV[currentLevel]; }
+// ---- Task 3a: register Levels 1-3 in the LV table and attach every land level's
+// player-physics profile (consumed by the shared stepPlayer). No art/data rewritten;
+// L4/swim is intentionally absent (it runs its own buoyancy physics in updateSwim). ----
+LV[1]=LV[1]||{}; LV[2]=LV[2]||{}; LV[3]=LV[3]||{};
+LV[1].phys={ speed:3.1, fric:0.72, vclamp:0, dust:'dust', resolve:resolve,    gravMul:1,    vyCap:0,   worldW:()=>WORLD_W };
+LV[2].phys={ horiz:_physHorizL2,            dust:'snow', resolve:resolveL2,  gravMul:1,    vyCap:0,   worldW:()=>L2_WORLD_W };
+LV[3].phys={ speed:4,   fric:0.8,  vclamp:5, dust:'dust', resolve:resolveL3,  gravMul:1,    vyCap:0,   worldW:()=>L3_WORLD_W };
+LV[5].phys={ speed:4,   fric:0.8,  vclamp:5, dust:'dust', resolve:resolveGen, gravMul:1,    vyCap:0,   climb:handleL5Climb, carry:carryL5, worldW:()=>curLV().worldW };
+LV[6].phys={ speed:4,   fric:0.8,  vclamp:5, dust:'dust', resolve:resolveGen, gravMul:0.42, vyCap:6.2, postResolve:_physPostL6,           worldW:()=>curLV().worldW };
 
 // Enemy roster per level: 5 archetypes (A patrol-1hit, B patrol-2hit, C hover,
 // D platform-locked shooter, plus pit hazard handled separately).
@@ -10214,7 +10273,9 @@ function buildGenBoss(n){
     alive:true, active:false, phase:0, hp:bc.hp, maxHp:bc.hp,
     vx:bc.vx1, facing:-1, hitFlash:0, spitTimer:bc.spit1, lungeTimer:140,
     dieTimer:0, phaseIndex:0, slamTimer:100, orbit:0,
-    fxCharge:0, fxDarken:0, fxViolet:0, fxEnrage:0, fxRed:0, fxDeathT:0, deathFlash:0, deathEyes:[]
+    fxCharge:0, fxDarken:0, fxViolet:0, fxEnrage:0, fxRed:0, fxDeathT:0, deathFlash:0, deathEyes:[],
+    shielded:false, overclock:false, drones:null, shieldVis:0,
+    beamState:'idle', beamCooldown:0, beamTimer:0, beamAng0:0, beamAng:0, beamHit:false
   };
 }
 function buildLevel4(){ buildSwimLevel(); buildSwimBoss(); }
@@ -10803,48 +10864,22 @@ function updateGen(){
     return;
   }
 
-  // Sawyer movement
-  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
-  applyDuckState(s, _sDuck);
-  if(s.ducking){ s.vx*=0.6; }
-  else if(keys['ArrowLeft']){s.vx=-4;s.facing=-1;}
-  else if(keys['ArrowRight']){s.vx=4;s.facing=1;}
-  else s.vx*=0.8;
-  s.vx=Math.max(-5,Math.min(5,s.vx));
-  let _l5climb=(currentLevel===5)?handleL5Climb(s):false;
-  if(_l5climb){ s.vx=0; }
-  else {
-  playerCoyoteJump(s, 'dust');
-  const shot = keys['Space'] && s.attackCooldown<=0;
-  if(shot){
-    s.attackTimer=10; s.attackCooldown=20; fireAttack(s);
-    if(o.attackCooldown<=0){
-      o.attackTimer=10; o.attackCooldown=34;
-      if(ottoPower===2){
-        for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
-        SFX.barf();
-      } else { fireAttack(o); }
-    }
-  }
-  if(s.attackTimer>0)s.attackTimer--;
-  if(s.attackCooldown>0)s.attackCooldown--;
-
-  playerVarJump(s);
-  s.vy+=GRAVITY*(currentLevel===6?0.42:1); s.x+=s.vx; s.y+=s.vy;
-  if(currentLevel===6&&s.vy>6.2)s.vy=6.2;
-  resolveGen(s);
-  if(currentLevel===6){
-    if(s.y<-360){ s.y=-360; if(s.vy<0)s.vy=0; }   // generous void ceiling (far above screen)
-    if(lv.boostPads) for(const bp of lv.boostPads){
-      if(s.x+s.w>bp.x && s.x<bp.x+bp.w && (s.y+s.h)>=bp.y-3 && (s.y+s.h)<=bp.y+16 && s.vy>-1){
-        s.vy=-12; s.onGround=false; sfx('jump');
-        for(let i=0;i<10;i++) particles.push({x:bp.x+bp.w/2+(Math.random()-.5)*22,y:bp.y,vx:(Math.random()-.5)*2,vy:-2-Math.random()*4,life:18,maxLife:18,type:'spark',color:'#7AF0FF'});
+  // Sawyer movement — unified player physics (Task 3b: shared stepPlayer).
+  // L5 climb-gate, L5 carry and L6 low-grav/cap/ceiling/boostpads all ride on
+  // LV[5].phys / LV[6].phys. Camera + void-death stay inline below.
+  stepPlayer(s, LV[currentLevel].phys, ()=>{
+    const shot = keys['Space'] && s.attackCooldown<=0;
+    if(shot){
+      s.attackTimer=10; s.attackCooldown=20; fireAttack(s);
+      if(o.attackCooldown<=0){
+        o.attackTimer=10; o.attackCooldown=34;
+        if(ottoPower===2){
+          for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
+          SFX.barf();
+        } else { fireAttack(o); }
       }
     }
-  }
-  } // end L5 climb wrap
-  if(currentLevel===5) carryL5(s);
-  if(s.x<0)s.x=0; if(s.x>lv.worldW-s.w)s.x=lv.worldW-s.w;
+  });
   const camTarget=Math.max(0,Math.min(s.x-100,lv.worldW-W));
   cameraX+=(camTarget-cameraX)*0.06;
   cameraX=Math.max(0,Math.min(cameraX,lv.worldW-W));
@@ -10976,11 +11011,36 @@ function updateGen(){
         pr.life=0;sfx('bossHit');break;
       }
     }
+    // ── L6 NEXUS drone shield: shoot the orbiting eye-nodes to drop the shield ──
+    if(pr.life>0 && currentLevel===6 && boss && boss.active && boss.alive && boss.shielded && boss.drones){
+      const ccx=boss.x+boss.w/2, ccy=boss.y+boss.h/2, dr=bc.drones;
+      for(const dn of boss.drones){
+        if(!dn.alive) continue;
+        const dx=ccx+Math.cos(dn.ang)*dr.orbitR, dy=ccy+Math.sin(dn.ang)*dr.orbitR;
+        if(Math.abs(pr.x-dx)<16 && Math.abs(pr.y-dy)<16){
+          dn.alive=false; dn.dieT=8; pr.life=0; score+=40; shakeIntensity=Math.max(shakeIntensity,6); SFX.bossHit();
+          for(let i=0;i<12;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.523)*3.2,vy:Math.sin(i*0.523)*3.2,life:22,maxLife:22,type:'spark',color:bc.proj});
+          if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; SFX.bossSpit&&SFX.bossSpit(); }
+          break;
+        }
+      }
+    }
     if(pr.life>0&&boss&&boss.active&&boss.alive){
       let tbX0,tbX1,tbY0,tbY1;
       if(currentLevel===5){ const cx=boss.x+boss.w/2; tbX0=cx-26; tbX1=cx+26; tbY0=boss.y+boss.h-132; tbY1=boss.y+boss.h; }
       else { tbX0=boss.x; tbX1=boss.x+boss.w; tbY0=boss.y; tbY1=boss.y+boss.h; }
       if(pr.x>tbX0&&pr.x<tbX1&&pr.y>tbY0&&pr.y<tbY1){
+        if(currentLevel===6 && boss.shielded){
+          // shield absorbs any shot that reaches the core — redirect to the nearest living node
+          pr.life=0; boss.hitFlash=4; SFX.bossHit();
+          if(boss.drones){ let best=null,bd=1e9; const ccx=boss.x+boss.w/2,ccy=boss.y+boss.h/2,dr=bc.drones;
+            for(const dn of boss.drones){ if(!dn.alive)continue; const ex=ccx+Math.cos(dn.ang)*dr.orbitR-pr.x, ey=ccy+Math.sin(dn.ang)*dr.orbitR-pr.y; const q=ex*ex+ey*ey; if(q<bd){bd=q;best=dn;} }
+            if(best){ best.alive=false; best.dieT=8; shakeIntensity=Math.max(shakeIntensity,6);
+              const dx=ccx+Math.cos(best.ang)*dr.orbitR,dy=ccy+Math.sin(best.ang)*dr.orbitR;
+              for(let i=0;i<12;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.523)*3.2,vy:Math.sin(i*0.523)*3.2,life:22,maxLife:22,type:'spark',color:bc.proj});
+              if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; SFX.bossSpit&&SFX.bossSpit(); } } }
+          continue;
+        }
         boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;
         SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         const half=Math.ceil(bc.hp/2);
@@ -10988,6 +11048,12 @@ function updateGen(){
           boss.phaseIndex=1;boss.vx=(boss.vx<0?-1:1)*bc.vx2;boss.spitTimer=bc.spit2;
           shakeIntensity=16;hurtFlashTimer=20;SFX.rattle();
           if(currentLevel===5){ boss.fxEnrage=42; boss.fxDarken=0.85; boss.fxViolet=0.9; boss.fxRed=1; SFX.bossSpit&&SFX.bossSpit(); }  // every eye snaps open
+          if(currentLevel===6){ // the accretion eye-nodes DETACH into an orbiting drone shield
+            boss.shielded=true; boss.overclock=false; boss.beamState='idle'; boss.beamCooldown=0; boss.beamHit=false;
+            boss.drones=[]; const dc=bc.drones;
+            for(let i=0;i<dc.count;i++) boss.drones.push({ang:boss.orbit + i*(6.283/dc.count), alive:true, dieT:0});
+            shakeIntensity=18; hurtFlashTimer=22; SFX.bossSpit&&SFX.bossSpit();
+          }
         }
         if(boss.hp<=0){ boss.alive=false;boss.dieTimer=(currentLevel===5?150:120);score+=1000;shakeIntensity=16;SFX.bossDie();
           venom=[]; projectiles=[];   // clear all in-flight bolts so nothing lingers over the death dissolve
@@ -10999,6 +11065,7 @@ function updateGen(){
               boss.deathEyes.push({x:ecx,y:ecy,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-1.2,life:60+Math.random()*40,max:100,r:5+Math.random()*4}); }
           }
           for(let i=0;i<18;i++) particles.push({x:boss.x+boss.w/2,y:boss.y+boss.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:40,maxLife:40,type:'spark',color:bc.body});
+          if(currentLevel===6){ boss.shielded=false; boss.overclock=false; boss.beamState='idle'; boss.drones=[]; }
           if(currentLevel===6 && lv.spires){ for(const sp of lv.spires){ for(let i=0;i<10;i++){ const a=Math.random()*7, vv=1+Math.random()*4; particles.push({x:sp.x,y:sp.baseY-sp.h*0.5*lv.spireRise,vx:Math.cos(a)*vv,vy:Math.sin(a)*vv-1,life:32,maxLife:32,type:'spark',color:i%2?'#7ABAFF':'#C9D4E8'}); } } } }
       }
     }
@@ -11082,12 +11149,44 @@ function updateGen(){
       boss.y=FLOOR-boss.h-6+Math.sin(boss.orbit)*14; // gentle undulation
       if(boss.hitFlash>0)boss.hitFlash--;
       const haus=currentLevel===5;
-      boss.lungeTimer--;
-      if(boss.lungeTimer<=0){ boss.vx=(boss.phaseIndex?bc.vx2:bc.vx1)*1.6*boss.facing; boss.lungeTimer=150+Math.random()*90; sfx('rattle');
-        if(haus && !boss.casting && boss.animName!=='magic' && boss.animName!=='sword'){ boss.animName='sword'; boss.animFrame=0; boss.animAcc=0; } }
-      else { const tgt=(boss.phaseIndex?bc.vx2:bc.vx1); if(Math.abs(boss.vx)>tgt+0.1)boss.vx*=0.96; }
-      boss.spitTimer--;
-      if(boss.spitTimer<=0){
+      // ── L5 SWORD: real close-range lunge-slash (own tell + hitbox). Magic stays the ranged option. ──
+      if(haus){
+        const M=bc.melee;
+        if(boss.meleeCooldown===undefined){ boss.meleeState='idle'; boss.meleeTimer=0; boss.meleeCooldown=80; boss.meleeHit=false; }
+        if(boss.meleeCooldown>0) boss.meleeCooldown--;
+        const distToPlayer=Math.abs((s.x+s.w/2)-(boss.x+boss.w/2));
+        // DECISION: close + ready + not mid-cast → choose the slash instead of a ranged beat (range governs choice)
+        if(boss.meleeState==='idle' && distToPlayer<M.range && boss.meleeCooldown<=0 && !boss.casting && boss.animName!=='magic'){
+          boss.meleeState='windup'; boss.meleeTimer=M.windup; boss.meleeHit=false;
+          boss.animName='sword'; boss.animFrame=0; boss.animAcc=0; boss.vx=0; boss.fxCharge=0; sfx('rattle');
+        }
+      }
+      const meleeBusy = haus && boss.meleeState && boss.meleeState!=='idle';
+      if(meleeBusy){
+        const M=bc.melee;
+        if(boss.meleeState==='windup'){            // rear-back tell — hold, track the player, then commit
+          boss.vx=0; boss.facing=(s.x+s.w/2)<(boss.x+boss.w/2)?-1:1;
+          boss.animFrame=Math.min(2,Math.floor((1-(boss.meleeTimer/M.windup))*3)); // frames 0..2 = wind back
+          boss.meleeTimer--;
+          if(boss.meleeTimer<=0){ boss.meleeState='slash'; boss.meleeTimer=M.dur; boss.meleeHit=false;
+            boss.facing=(s.x+s.w/2)<(boss.x+boss.w/2)?-1:1; sfx('rattle'); }
+        } else if(boss.meleeState==='slash'){      // commit: dash forward, blade out (frames 3..5)
+          boss.x+=M.dashV*boss.facing;
+          if(boss.x<lo)boss.x=lo; else if(boss.x>hi)boss.x=hi;
+          boss.animFrame=3+Math.min(2,Math.floor((1-(boss.meleeTimer/M.dur))*3));
+          boss.meleeTimer--;
+          if(boss.meleeTimer<=0){ boss.meleeState='recover'; boss.meleeTimer=14; }
+        } else {                                   // recover: hold the follow-through, then arm cooldown
+          boss.vx=0; boss.animFrame=5; boss.meleeTimer--;
+          if(boss.meleeTimer<=0){ boss.meleeState='idle'; boss.meleeCooldown=boss.phaseIndex?M.cooldown2:M.cooldown1;
+            boss.animName='walk'; boss.animFrame=0; boss.animAcc=0; }
+        }
+      }
+      if(!meleeBusy) boss.lungeTimer--;
+      if(!meleeBusy && boss.lungeTimer<=0){ boss.vx=(boss.phaseIndex?bc.vx2:bc.vx1)*1.6*boss.facing; boss.lungeTimer=150+Math.random()*90; sfx('rattle'); }
+      else if(!meleeBusy){ const tgt=(boss.phaseIndex?bc.vx2:bc.vx1); if(Math.abs(boss.vx)>tgt+0.1)boss.vx*=0.96; }
+      if(!meleeBusy) boss.spitTimer--;
+      if(!meleeBusy && boss.spitTimer<=0){
         boss.spitTimer=(boss.phaseIndex?bc.spit2:bc.spit1);
         if(haus){
           // begin a cast — but never interrupt an in-progress sword swing (let the melee play out)
@@ -11110,8 +11209,9 @@ function updateGen(){
       if(haus){
         if(boss.animName===undefined){ boss.animName='walk'; boss.animFrame=0; boss.animAcc=0; boss.casting=false; boss.castFired=false; }
         const aset=BARON_ANIM[boss.animName];
-        boss.animAcc += (aset.fps*(boss.phaseIndex?1.35:1))/60;  // frames to advance this tick (~60fps)
-        while(boss.animAcc>=1){
+        const meleeOwnsSprite = meleeBusy && boss.animName==='sword';  // melee drives sword frames directly
+        boss.animAcc += (meleeOwnsSprite?0:(aset.fps*(boss.phaseIndex?1.35:1))/60);
+        while(!meleeOwnsSprite && boss.animAcc>=1){
           boss.animAcc-=1; boss.animFrame++;
           if(boss.animFrame>=aset.frames.length){
             if(aset.loop){ boss.animFrame=0; }
@@ -11153,17 +11253,49 @@ function updateGen(){
           }
         }
       }
+      // ── L6 NEXUS NINE: drone-shield orbit + overclock sweep beam ──
+      if(currentLevel===6 && boss.phaseIndex===1){
+        const dr=bc.drones, bm=bc.beam, ccx=boss.x+boss.w/2, ccy=boss.y+boss.h/2;
+        if(boss.drones){ for(const dn of boss.drones){ if(dn.alive) dn.ang+=dr.orbitSpd; else if(dn.dieT>0) dn.dieT--; } }
+        boss.shieldVis=(boss.shieldVis||0)+((boss.shielded?1:0)-(boss.shieldVis||0))*0.12;
+        if(boss.overclock){
+          if(boss.beamState==='idle'){
+            if(boss.beamCooldown>0) boss.beamCooldown--;
+            else { boss.beamState='charge'; boss.beamTimer=bm.chargeWarn; boss.beamHit=false;
+              boss.beamAng0=Math.atan2((s.y+s.h/2)-ccy,(s.x+s.w/2)-ccx)-bm.sweepArc/2; sfx('rattle'); }
+          } else if(boss.beamState==='charge'){
+            boss.beamTimer--;
+            if(boss.beamTimer<=0){ boss.beamState='sweep'; boss.beamTimer=bm.sweepDur; boss.beamHit=false;
+              SFX.bossSpit&&SFX.bossSpit(); shakeIntensity=Math.max(shakeIntensity,8); }
+          } else if(boss.beamState==='sweep'){
+            const prog=1-(boss.beamTimer/bm.sweepDur), ang=boss.beamAng0+prog*bm.sweepArc;
+            boss.beamAng=ang;
+            if(bm.dmg && s.invincible===0 && !boss.beamHit){
+              const pdx=(s.x+s.w/2)-ccx, pdy=(s.y+s.h/2)-ccy;
+              const along=pdx*Math.cos(ang)+pdy*Math.sin(ang);
+              if(along>0){ const perp=Math.abs(-pdx*Math.sin(ang)+pdy*Math.cos(ang));
+                if(perp<bm.width){ hurt(s); boss.beamHit=true; } }
+            }
+            boss.beamTimer--;
+            if(boss.beamTimer<=0){ boss.beamState='idle'; boss.beamCooldown=bm.cooldown; }
+          }
+        }
+      }
       // contact hitbox: Baron's tall sprite needs a body-shaped box, not the 64px tile
       let hbX0,hbX1,hbY0,hbY1;
       if(currentLevel===5){ const cx=boss.x+boss.w/2;
-        // during a sword swing the blade extends his reach in the facing direction
-        const swinging = boss.animName==='sword' && boss.animFrame>=1 && boss.animFrame<=4;
-        const reach = swinging ? 64 : 0;
-        hbX0=cx-24+(boss.facing<0?-reach:0); hbX1=cx+24+(boss.facing>0?reach:0);
+        hbX0=cx-24; hbX1=cx+24;              // body-touch box only; the slash reach is its own one-hit arc below
         hbY0=boss.y+boss.h-130; hbY1=boss.y+boss.h;
       }
       else { hbX0=boss.x+10; hbX1=boss.x+boss.w-10; hbY0=boss.y+10; hbY1=boss.y+boss.h; }
       if(s.invincible===0 && s.x+s.w>hbX0 && s.x<hbX1 && s.y+s.h>hbY0 && s.y<hbY1) hurt(s);
+      // L5 SWORD slash arc: real melee reach in front of Baron during the active swing — one hit per swing (Otto unaffected)
+      if(currentLevel===5 && boss.meleeState==='slash' && !boss.meleeHit){
+        const M=bc.melee, cx=boss.x+boss.w/2;
+        const ax0=boss.facing>0?cx+18:cx-18-M.arc, ax1=boss.facing>0?cx+18+M.arc:cx-18;
+        const ay0=boss.y+boss.h-120, ay1=boss.y+boss.h-8;
+        if(s.invincible===0 && s.x+s.w>ax0 && s.x<ax1 && s.y+s.h>ay0 && s.y<ay1){ hurt(s); boss.meleeHit=true; }
+      }
     }
   } else if(boss&&!boss.alive&&boss.dieTimer>0){
     boss.dieTimer--;
@@ -11954,10 +12086,10 @@ function drawSwimEnemies(){
 }
 
 // RESERVED danger-ring tell — used ONLY for ink + current telegraphs, never decoration.
-function _dangerRing(cx,cy,mode,warn,warnMax,dir){
+function _dangerRing(cx,cy,mode,warn,warnMax,dir,scale=1){
   const tp=1-warn/warnMax;                       // 0 → 1 as the hit nears
   const pulse=0.5+0.5*Math.sin(performance.now()*0.02*(1+tp*2));
-  const R=(mode==='current'?28:20+tp*12);
+  const R=(mode==='current'?28:20+tp*12)*scale;
   ctx.save(); ctx.globalCompositeOperation='lighter';
   for(const pass of [[6,`rgba(255,40,90,${0.35+0.3*pulse})`],[2.2,`rgba(255,214,40,0.95)`]]){
     ctx.lineWidth=pass[0]; ctx.strokeStyle=pass[1];
@@ -13131,6 +13263,51 @@ function drawGenBoss(){
     else if(currentLevel===5) drawBossHaus(boss,bc,flash);
     else drawBossSpace(boss,bc,flash);
     ctx.restore();
+    // L5 SWORD tell: reserved hard-edged danger arc growing where the slash will land (windup frames only)
+    if(currentLevel===5 && boss.alive && boss.meleeState==='windup' && lv.boss.melee){
+      const M=lv.boss.melee, cx=bx+boss.w/2, cy=by+boss.h-66, dir=boss.facing;
+      const tell=1-(boss.meleeTimer/M.windup);            // 0→1 as the swing nears
+      const R=(18+M.arc)*(0.35+0.65*tell), a=dir>0?0:Math.PI, spread=0.85;
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.fillStyle='rgba(255,46,74,'+(0.16+0.30*tell).toFixed(3)+')';
+      ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,R,a-spread,a+spread); ctx.closePath(); ctx.fill();
+      ctx.globalCompositeOperation='source-over';
+      ctx.strokeStyle='rgba(255,210,80,'+(0.5+0.5*tell).toFixed(3)+')'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.arc(cx,cy,R,a-spread,a+spread); ctx.stroke();
+      ctx.restore();
+      // shared danger-tell ring at the slash hitbox center (consistent cross-boss read)
+      _dangerRing(cx+dir*(18+M.arc/2), by+boss.h-64, 'slash', boss.meleeTimer, M.windup, dir, 1.1);
+    }
+    // ── L6 NEXUS overclock beam: reserved telegraph + sweeping scream-of-light ──
+    if(currentLevel===6 && boss.alive && boss.active && boss.overclock){
+      const bm=lv.boss.beam, ccx=bx+boss.w/2, ccy=by+boss.h/2, LEN=760;
+      if(boss.beamState==='charge'){
+        const t=1-(boss.beamTimer/bm.chargeWarn), a=boss.beamAng0;
+        const pulse=0.4+0.6*Math.abs(Math.sin(performance.now()*0.02));
+        ctx.save();
+        ctx.strokeStyle='rgba(255,40,30,'+(0.35+0.5*t*pulse).toFixed(3)+')'; ctx.lineWidth=2;  // reserved danger line marks the START angle
+        ctx.beginPath(); ctx.moveTo(ccx,ccy); ctx.lineTo(ccx+Math.cos(a)*LEN, ccy+Math.sin(a)*LEN); ctx.stroke();
+        ctx.globalCompositeOperation='lighter'; ctx.strokeStyle='rgba(255,120,60,'+(0.5*pulse).toFixed(3)+')'; ctx.lineWidth=2; // tightening converging ring
+        ctx.beginPath(); ctx.arc(ccx,ccy,boss.w*0.5*(1.6-t*0.9),0,7); ctx.stroke();
+        ctx.restore();
+        // shared danger-tell ring at the beam pivot (consistent cross-boss read)
+        _dangerRing(ccx,ccy,'beam',boss.beamTimer,bm.chargeWarn,1,1.2);
+      } else if(boss.beamState==='sweep'){
+        const a=(boss.beamAng!==undefined?boss.beamAng:boss.beamAng0), hw=bm.width;
+        const nx=-Math.sin(a), ny=Math.cos(a), dxv=Math.cos(a), dyv=Math.sin(a);
+        ctx.save(); ctx.globalCompositeOperation='lighter';
+        const grad=ctx.createLinearGradient(ccx,ccy,ccx+dxv*LEN,ccy+dyv*LEN);   // bc.proj-colored falloff wedge
+        grad.addColorStop(0,'rgba(255,255,120,0.9)'); grad.addColorStop(1,'rgba(255,80,40,0.05)');
+        ctx.fillStyle=grad; ctx.beginPath();
+        ctx.moveTo(ccx+nx*hw,ccy+ny*hw); ctx.lineTo(ccx+dxv*LEN+nx*hw*2.4,ccy+dyv*LEN+ny*hw*2.4);
+        ctx.lineTo(ccx+dxv*LEN-nx*hw*2.4,ccy+dyv*LEN-ny*hw*2.4); ctx.lineTo(ccx-nx*hw,ccy-ny*hw); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle='rgba(255,255,255,0.95)'; ctx.lineWidth=3;   // hot white inner line
+        ctx.beginPath(); ctx.moveTo(ccx,ccy); ctx.lineTo(ccx+dxv*LEN,ccy+dyv*LEN); ctx.stroke();
+        _aGlow(ccx,ccy,boss.w*0.6,'#FFF080',0.7);
+        ctx.restore();
+      }
+    }
     ctx.restore();
   }
   // Health bar
@@ -13147,13 +13324,104 @@ function drawGenBoss(){
   }
 }
 function drawBossSea(boss,bc,flash){
-  const w=boss.w,h=boss.h;
-  ctx.fillStyle=flash?'#FFFFFF':bc.body;
-  ctx.beginPath();ctx.ellipse(w/2,h*0.38,w*0.36,h*0.34,0,0,7);ctx.fill(); // head
-  ctx.fillStyle=bc.limb;
-  for(let i=0;i<4;i++){const tx=w*0.24+i*(w*0.18);ctx.beginPath();ctx.moveTo(tx,h*0.6);ctx.quadraticCurveTo(tx+Math.sin(boss.phase+i)*8,h*0.85,tx+Math.sin(boss.phase+i)*4,h);ctx.lineTo(tx+6,h*0.6);ctx.closePath();ctx.fill();}
-  ctx.fillStyle=bc.eye;ctx.beginPath();ctx.arc(w/2,h*0.34,9,0,7);ctx.fill();
-  ctx.fillStyle='#1A1A1A';ctx.beginPath();ctx.arc(w/2,h*0.34,4,0,7);ctx.fill();
+  // Volumetric deep-sea leviathan — layered mantle + tapered tentacles, matching the
+  // sprite-boss craft tier (recipe lifted from drawBossSpace). Mechanics untouched:
+  // ink-cloud + phase-2 current behave identically; this is ART ONLY. The reserved
+  // ink/current danger-ring lives in drawSwimInk and is deliberately NOT drawn here.
+  const w=boss.w,h=boss.h, cx=w*0.5, ph=boss.phase, over=boss.phaseIndex===1;
+  // cosmetic-only ink-cast charge, read off the EXISTING inkWarn flag (no timing change)
+  const wmax=(bc.ink&&bc.ink.warn)||50;
+  const charge=(boss.inkWarn>0)?Math.min(1,1-boss.inkWarn/wmax):0;
+  const sway=Math.sin(ph*1.2)*w*0.03;
+  // palette: phase 1 deep teal/cyan bioluminescence → phase 2 colder/angrier violet bruise
+  const coreLit = over?'#5A1640':'#1C6E7C', coreMid = over?'#2A0A2E':'#0C3A48',
+        rimDk   = over?'#0E0418':'#04141E', glowCol = over?'rgba(190,40,255,1)':'rgba(0,255,255,1)',
+        tentUp  = over?'#3A0E36':'#0F4452', tentDn  = over?'#160418':'#05202A',
+        tipCol  = over?'#FF50D8':'#26D6E6', finCol  = over?'#280A28':'#0A3340',
+        eyeBase = over?'#FF3A6A':bc.eye;
+  // ── bioluminescent ambient halo (intensifies in phase 2 + while charging an ink cast) ──
+  _aGlow(cx,h*0.40,w*(0.78+(over?0.12:0)+charge*0.12),glowCol,(over?0.34:0.26)+charge*0.12);
+
+  // ── TENTACLES (drawn behind the mantle) — taper, darker underside, drifting sub-curl ──
+  const TN=5;
+  for(let i=0;i<TN;i++){
+    const f=(i/(TN-1))-0.5;                 // -0.5..0.5 spread
+    const rootX=cx+f*w*0.5, rootY=h*0.60;
+    const s1=Math.sin(ph*1.3+i*0.9), s2=Math.sin(ph*1.7+i*1.4);
+    const midX=rootX+s1*w*0.10+f*w*0.10, midY=h*0.82;
+    const tipX=rootX+s2*w*0.16+f*w*0.22,  tipY=h*0.99;
+    const baseW=w*0.085*(1-Math.abs(f)*0.25);
+    // underside (darker, offset) → reads as a 3D limb
+    ctx.fillStyle=flash?'#FFFFFF':tentDn;
+    ctx.beginPath();
+    ctx.moveTo(rootX-baseW*0.5,rootY);
+    ctx.quadraticCurveTo(midX-baseW*0.3+1.5,midY, tipX+1.5,tipY);
+    ctx.quadraticCurveTo(midX+baseW*0.3+1.5,midY, rootX+baseW*0.5,rootY);
+    ctx.closePath(); ctx.fill();
+    // lit topside
+    ctx.fillStyle=flash?'#FFFFFF':tentUp;
+    ctx.beginPath();
+    ctx.moveTo(rootX-baseW*0.5,rootY);
+    ctx.quadraticCurveTo(midX-baseW*0.3,midY, tipX,tipY);
+    ctx.quadraticCurveTo(midX+baseW*0.1,midY, rootX+baseW*0.2,rootY);
+    ctx.closePath(); ctx.fill();
+    if(!flash) _aGlow(tipX,tipY,baseW*1.1,glowCol,0.5);   // glowing sucker-tip
+  }
+
+  // ── MANTLE / HEAD — layered volumetric mass ──
+  const mcx=cx+sway, mcy=h*0.40, rx=w*0.36, ry=h*0.40;
+  // side fins
+  ctx.fillStyle=flash?'#FFFFFF':finCol;
+  for(const sgn of [-1,1]){
+    ctx.beginPath();
+    ctx.moveTo(mcx+sgn*rx*0.7,mcy-ry*0.1);
+    ctx.quadraticCurveTo(mcx+sgn*rx*1.5,mcy-ry*0.5+Math.sin(ph*1.5)*2, mcx+sgn*rx*1.2,mcy+ry*0.35);
+    ctx.quadraticCurveTo(mcx+sgn*rx*0.9,mcy+ry*0.1, mcx+sgn*rx*0.7,mcy-ry*0.1);
+    ctx.closePath(); ctx.fill();
+  }
+  // body — radial gradient core → rim (deep core color out to dark rim)
+  if(flash){ ctx.fillStyle='#FFFFFF'; }
+  else{
+    const bg=ctx.createRadialGradient(mcx-rx*0.3,mcy-ry*0.35,rx*0.1, mcx,mcy,rx*1.05);
+    bg.addColorStop(0,coreLit); bg.addColorStop(0.6,coreMid); bg.addColorStop(1,rimDk);
+    ctx.fillStyle=bg;
+  }
+  ctx.beginPath(); ctx.ellipse(mcx,mcy,rx,ry,0,0,7); ctx.fill();
+  // pointed siphon/crown at top → squid silhouette, not a plain ellipse
+  ctx.beginPath();
+  ctx.moveTo(mcx-rx*0.34,mcy-ry*0.72); ctx.quadraticCurveTo(mcx+sway*0.5,mcy-ry*1.18, mcx+rx*0.34,mcy-ry*0.72);
+  ctx.closePath(); ctx.fill();
+  // inner shadow ellipse for volume
+  if(!flash){ ctx.save(); ctx.globalAlpha=0.5; ctx.fillStyle=rimDk;
+    ctx.beginPath(); ctx.ellipse(mcx,mcy+ry*0.30,rx*0.84,ry*0.6,0,0,7); ctx.fill(); ctx.restore(); }
+  // rim + faint inner counter-rim → mass reads as a sphere
+  _aRim(mcx,mcy,rx,ry,over?'rgba(220,90,255,0.75)':'rgba(0,224,255,0.7)');
+  if(!flash){ ctx.save(); ctx.globalAlpha=0.4; ctx.strokeStyle=over?'#FF6AD8':'#7AF0FF'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.ellipse(mcx,mcy,rx*0.8,ry*0.8,0,Math.PI*0.15,Math.PI*0.95); ctx.stroke(); ctx.restore(); }
+  // facing-tracked specular highlight
+  if(!flash) _aGlow(mcx+boss.facing*rx*0.32,mcy-ry*0.36,rx*0.46,'rgba(220,255,255,0.9)',0.45);
+  // phase-2 ink-stained haze drifting off the mantle (cosmetic, mirrors space 'over' ramp)
+  if(over&&!flash){ ctx.save(); ctx.globalAlpha=0.18+0.1*Math.sin(ph*2);
+    ctx.fillStyle='#1A0420'; ctx.beginPath();
+    ctx.ellipse(mcx-w*0.18+Math.sin(ph)*4,mcy+ry*0.5,w*0.16,h*0.12,0,0,7); ctx.fill();
+    ctx.ellipse(mcx+w*0.16-Math.sin(ph*1.3)*4,mcy+ry*0.55,w*0.13,h*0.10,0,0,7); ctx.fill(); ctx.restore(); }
+
+  // ── EYE — _aEye motif, idle vs. about-to-cast-ink read (cosmetic, off inkWarn) ──
+  const ex=mcx, ey=mcy-ry*0.12;
+  const dilate=1+charge*0.5;                          // eye swells just before an ink cast
+  const er=(w*0.13+Math.sin(ph*1.6)*1.2)*dilate;
+  const eCol = charge>0 ? (over?'#FF7080':'#9AF0FF') : eyeBase;   // brightens while charging
+  _aGlow(ex,ey,er*(2.2+charge*1.0),eCol,(over?0.55:0.45)+charge*0.3);
+  _aEye(ex,ey,er,eCol,boss.facing*er*0.28);
+  // charging ink-spark crackle around the eye — purely decorative, no mechanic effect
+  if(charge>0.05&&!flash){ ctx.save(); ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle=over?'rgba(255,90,160,'+(0.5*charge)+')':'rgba(80,240,255,'+(0.5*charge)+')'; ctx.lineWidth=1;
+    for(let i=0;i<5;i++){ const a=i*1.256+ph*0.4; ctx.beginPath(); ctx.moveTo(ex+Math.cos(a)*er*1.1,ey+Math.sin(a)*er*1.1);
+      ctx.lineTo(ex+Math.cos(a)*er*(1.5+charge*0.4),ey+Math.sin(a)*er*(1.5+charge*0.4)); ctx.stroke(); } ctx.restore(); }
+
+  // ── beak / underside maw hint for menace ──
+  if(!flash){ ctx.fillStyle=rimDk; ctx.beginPath();
+    ctx.moveTo(mcx-w*0.05,mcy+ry*0.42); ctx.lineTo(mcx,mcy+ry*0.56); ctx.lineTo(mcx+w*0.05,mcy+ry*0.42); ctx.closePath(); ctx.fill(); }
 }
 function baronArt(w,h,flash,enraged,tt){
   tt=tt||(performance.now()*0.002);
@@ -13401,35 +13669,75 @@ function drawBossHaus(boss,bc,flash){
 }
 function drawBossSpace(boss,bc,flash){
   const w=boss.w,h=boss.h, cx=w/2, cy=h/2, over=boss.phaseIndex===1, ph=boss.phase;
-  const voidCol=over?'#1A0604':'#04101A';
+  const charging=boss.beamState==='charge', sweeping=boss.beamState==='sweep';
+  const vulnerable=boss.overclock && !sweeping;          // shield down, between beams = punish window
   const eyeCol=over?'#FF2020':'#00FFFF';
-  // reality-tear aura
-  _aGlow(cx,cy,w*0.85,over?'rgba(255,40,20,1)':'rgba(0,180,255,1)',over?0.32:0.24);
-  // accretion disk of eye-nodes
-  for(let ring=0;ring<2;ring++){ const rr=w*(0.44-ring*0.1), n=10+ring*2;
-    ctx.strokeStyle=over?'rgba(255,90,40,0.4)':'rgba(0,200,255,0.4)'; ctx.lineWidth=1;
-    ctx.save(); ctx.translate(cx,cy); ctx.rotate(boss.orbit*(ring?-1:1)*(over?1.6:1)); ctx.scale(1,0.4);
-    ctx.beginPath(); ctx.arc(0,0,rr,0,7); ctx.stroke();
-    for(let i=0;i<n;i++){ const a=i*(6.283/n); _aEye(Math.cos(a)*rr,Math.sin(a)*rr,1.8,over?'#FF5040':'#40D0FF',0); }
-    ctx.restore(); }
-  // the hole in reality
-  ctx.fillStyle=flash?'#FFFFFF':voidCol; ctx.beginPath(); ctx.arc(cx,cy,w*0.34,0,7); ctx.fill();
-  _aRim(cx,cy,w*0.34,h*0.34,over?'rgba(255,90,40,0.7)':'rgba(0,224,255,0.6)');
-  if(over){ // reality-cracks bleeding light
-    ctx.strokeStyle='rgba(255,120,40,0.8)'; ctx.lineWidth=1.4;
-    for(let i=0;i<7;i++){ const a=i*0.9+ph*0.15; let lx=cx,ly=cy; ctx.beginPath(); ctx.moveTo(cx,cy);
-      for(let s=1;s<=3;s++){ lx+=Math.cos(a+Math.sin(s*7)*0.5)*w*0.13; ly+=Math.sin(a+Math.sin(s*7)*0.5)*w*0.13; ctx.lineTo(lx,ly); } ctx.stroke();
-      _aGlow(lx,ly,3,'#FFAA40',0.5); }
+  // reality-tear aura — flares while a beam sweeps
+  _aGlow(cx,cy,w*(0.85+(sweeping?0.15:0)),over?'rgba(255,40,20,1)':'rgba(0,180,255,1)',over?(sweeping?0.40:0.30):0.24);
+  // accretion disk of eye-nodes — PHASE 1 only; in phase 2 the nodes have DETACHED into drones
+  if(!over){
+    for(let ring=0;ring<2;ring++){ const rr=w*(0.44-ring*0.1), n=10+ring*2;
+      ctx.strokeStyle='rgba(0,200,255,0.4)'; ctx.lineWidth=1;
+      ctx.save(); ctx.translate(cx,cy); ctx.rotate(boss.orbit*(ring?-1:1)); ctx.scale(1,0.4);
+      ctx.beginPath(); ctx.arc(0,0,rr,0,7); ctx.stroke();
+      for(let i=0;i<n;i++){ const a=i*(6.283/n); _aEye(Math.cos(a)*rr,Math.sin(a)*rr,1.8,'#40D0FF',0); }
+      ctx.restore(); }
+  } else { // faint residual orbit rings (nodes are gone — they're the drones now)
+    for(let ring=0;ring<2;ring++){ const rr=w*(0.44-ring*0.1);
+      ctx.save(); ctx.globalAlpha=0.18; ctx.strokeStyle='rgba(255,90,40,0.5)'; ctx.lineWidth=1;
+      ctx.translate(cx,cy); ctx.rotate(boss.orbit*(ring?-1:1)*1.6); ctx.scale(1,0.4);
+      ctx.beginPath(); ctx.arc(0,0,rr,0,7); ctx.stroke(); ctx.restore(); }
   }
-  // colossal central eye
-  const cr=w*0.18+Math.sin(ph*2)*2;
-  _aGlow(cx,cy,cr*2.4,eyeCol,over?0.7:0.5);
+  // ── LAYERED CORE (volumetric sphere, not a flat disk) ──
+  const R=w*0.34, deepC=over?'#2A0204':'#03101C', rimC=over?'#FF5A28':'#00C8FF';
+  const cg=ctx.createRadialGradient(cx-R*0.3,cy-R*0.3,R*0.1, cx,cy,R);
+  cg.addColorStop(0, over?'#5A0A0A':'#0B2E45'); cg.addColorStop(0.62, deepC); cg.addColorStop(1, '#01060B');
+  ctx.fillStyle=flash?'#FFFFFF':cg; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.fill();
+  ctx.save(); ctx.globalAlpha=0.5; ctx.fillStyle='#01060B';            // inner shadow for volume
+  ctx.beginPath(); ctx.ellipse(cx,cy+R*0.28,R*0.86,R*0.62,0,0,7); ctx.fill(); ctx.restore();
+  _aRim(cx,cy,R,R,over?'rgba(255,90,40,0.75)':'rgba(0,224,255,0.65)');
+  ctx.save(); ctx.globalAlpha=0.4; ctx.strokeStyle=rimC; ctx.lineWidth=1;  // faint inner counter-rim → sphere
+  ctx.beginPath(); ctx.ellipse(cx,cy,R*0.82,R*0.82,0,Math.PI*0.15,Math.PI*0.95); ctx.stroke(); ctx.restore();
+  _aGlow(cx+boss.facing*R*0.34,cy-R*0.34,R*0.5,'rgba(255,255,255,0.9)',0.5); // specular tracks facing
+  // reality-cracks (phase 2) — energy intensifies during a sweep, settles between
+  if(over){
+    const crk=sweeping?1:(charging?0.55:0.28);
+    ctx.strokeStyle='rgba(255,120,40,'+(0.45+0.45*crk).toFixed(2)+')'; ctx.lineWidth=1+crk*0.8;
+    for(let i=0;i<7;i++){ const a=i*0.9+ph*0.15; let lx=cx,ly=cy; ctx.beginPath(); ctx.moveTo(cx,cy);
+      for(let s=1;s<=3;s++){ const ext=w*0.13*(0.7+crk*0.5); lx+=Math.cos(a+Math.sin(s*7)*0.5)*ext; ly+=Math.sin(a+Math.sin(s*7)*0.5)*ext; ctx.lineTo(lx,ly); } ctx.stroke();
+      _aGlow(lx,ly,3*(0.6+crk),'#FFAA40',0.5*crk+0.2); }
+  }
+  // ── CENTRAL EYE — idle / charging / vulnerable states ──
+  const dilate=charging?1.35:(vulnerable?1.18:1);
+  const cr=(w*0.18+Math.sin(ph*2)*2)*dilate;
+  const eyeBright=charging?(over?'#FF5050':'#80F0FF'):(vulnerable?(over?'#FF6060':'#A0FFFF'):eyeCol);
+  _aGlow(cx,cy,cr*(charging?3.0:vulnerable?2.7:2.4),eyeBright,charging?0.85:vulnerable?0.7:(over?0.6:0.5));
   ctx.fillStyle=over?'#3A0008':'#0A1A24'; ctx.beginPath(); ctx.arc(cx,cy,cr*1.25,0,7); ctx.fill();
-  ctx.fillStyle=eyeCol; ctx.beginPath(); ctx.arc(cx,cy,cr,0,7); ctx.fill();
-  ctx.fillStyle='#05080A'; ctx.beginPath(); ctx.ellipse(cx+boss.facing*2,cy,cr*0.42,cr*0.92,0,0,7); ctx.fill();
+  ctx.fillStyle=eyeBright; ctx.beginPath(); ctx.arc(cx,cy,cr,0,7); ctx.fill();
+  const pupR=cr*(charging?0.30:0.42), drift=vulnerable?0:Math.sin(ph*1.3)*cr*0.12;  // dilates / drifts
+  ctx.fillStyle='#05080A'; ctx.beginPath(); ctx.ellipse(cx+boss.facing*2+drift,cy,pupR,cr*0.92,0,0,7); ctx.fill();
   if(over){ ctx.strokeStyle='rgba(255,30,30,0.85)'; ctx.lineWidth=1;
     for(let i=0;i<6;i++){ const a=i*1.05; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(a)*cr*0.95,cy+Math.sin(a)*cr*0.95); ctx.stroke(); }
   } else { ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(cx-cr*0.3,cy-cr*0.35,cr*0.22,0,7); ctx.fill(); }
+  // ── DRONE SHIELD (phase 2) — orbiting eye-nodes "of" Nexus + tethers + shield ring ──
+  if(over && boss.drones){
+    const dr=bc.drones, sv=boss.shieldVis||0;
+    if(sv>0.01){ ctx.save(); ctx.globalCompositeOperation='lighter';   // faint shield ring, fades as it drops
+      ctx.globalAlpha=0.10*sv; ctx.strokeStyle=eyeCol; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(cx,cy,dr.orbitR,0,7); ctx.stroke();
+      ctx.globalAlpha=0.06*sv; ctx.beginPath(); ctx.arc(cx,cy,dr.orbitR*0.92,0,7); ctx.stroke(); ctx.restore(); }
+    for(const dn of boss.drones){
+      const dx=cx+Math.cos(dn.ang)*dr.orbitR, dy=cy+Math.sin(dn.ang)*dr.orbitR;
+      if(dn.alive){
+        ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.22*(sv||1);  // tether → system, not loose dots
+        ctx.strokeStyle=eyeCol; ctx.lineWidth=1.2; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(dx,dy); ctx.stroke(); ctx.restore();
+        _aGlow(dx,dy,9,eyeCol,0.5);
+        _aEye(dx,dy,4.2,'#FF6040',Math.sin(ph+dn.ang)*1.0);
+      } else if(dn.dieT>0){ const t=dn.dieT/8;   // bright pop, collapse to nothing over ~8 frames
+        _aGlow(dx,dy,10*t+4,'#FFFFFF',0.6*t);
+        ctx.fillStyle='rgba(255,200,120,'+(0.6*t)+')'; ctx.beginPath(); ctx.arc(dx,dy,5*t,0,7); ctx.fill();
+      }
+    }
+  }
 }
 function drawGenFlag(){
   if(genPortalOpen<=0.01) return;   // vortex hidden until the boss is defeated
