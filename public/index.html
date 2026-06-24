@@ -505,6 +505,39 @@ window.addEventListener('orientationchange', ()=>setTimeout(setupHiDPI,200));
 const ottoConfidentImg = new Image(); ottoConfidentImg.src = 'assets/otto_confident.webp';
 const transponderImg = new Image(); transponderImg.src = 'assets/transponder.webp';
 const GRAVITY = 0.55, FLOOR = H - 56;
+// ---- Task 1: centralized physics tuning (single source of truth) ----
+const PHYS = {
+  jumpV: -11.5,            // player jump impulse (identical to legacy value)
+  coyoteFrames: 6,
+  jumpBufferFrames: 6,     // Task 2a
+  varJumpHoldFrames: 10,   // Task 2b
+  varJumpCutMul: 0.4,      // Task 2b: early-release velocity cut => short hop
+  varJumpLift: 0,          // Task 2b: sustained lift while held. 0 => full hold == legacy -11.5 arc (see report)
+  ottoAccel: 0.5, ottoMaxSpd: 3.6
+};
+let jumpBufferedAt = -1;   // Task 2a: simFrame of last ArrowUp press
+let simFrame = 0;          // Task 2a: monotonic fixed-step counter (incremented in loop())
+let runStartMs = Date.now(); // Task 4: wall-clock start of the current run
+
+// ---- Task 2/3: player jump (Sawyer) lives in ONE place, called by every engine ----
+function playerCoyoteJump(s, dustType){
+  if(s.onGround){ s.coyoteTimer=PHYS.coyoteFrames; s.wasOnGround=true; }
+  else s.coyoteTimer--;
+  const wantJump = keys['ArrowUp'] ||
+    (jumpBufferedAt>=0 && (simFrame-jumpBufferedAt)<=PHYS.jumpBufferFrames);
+  if(wantJump && s.coyoteTimer>0){
+    s.vy=PHYS.jumpV; s.coyoteTimer=0; jumpBufferedAt=-1; s.jumpHeldFrames=0; sfx('jump');
+    for(let i=0;i<4;i++) particles.push({x:s.x+s.w/2+Math.random()*8-4,y:s.y+s.h,vx:Math.random()*2-1,vy:1+Math.random()*2,life:12,maxLife:12,type:dustType});
+  }
+}
+// Task 2b: variable jump height (Sawyer only; NOT Otto, NOT swim).
+// Lift defaults to 0 so a full hold reproduces the legacy arc EXACTLY (gap calibration
+// preserved); an early release cuts upward velocity once for a noticeably shorter hop.
+function playerVarJump(s){
+  if(s.jumpHeldFrames>=PHYS.varJumpHoldFrames) return;
+  if(s.vy<0 && keys['ArrowUp']){ s.vy-=PHYS.varJumpLift; s.jumpHeldFrames++; }
+  else if(s.vy<0 && !keys['ArrowUp']){ s.vy*=PHYS.varJumpCutMul; s.jumpHeldFrames=PHYS.varJumpHoldFrames; }
+}
 // ---- Boss-stage geometry: a long empty no-enemy run leads into an isolated arena ----
 const ARENA_X0   = 3260;          // left edge of the isolated boss arena floor
 const ARENA_X1   = 3760;          // right edge (where the escape flag sits)
@@ -984,9 +1017,27 @@ function cleanName(raw){
   return n || sillyName();
 }
 async function submitScore(name){
+  // Task 4: the client is NOT trusted. We only attach run metadata; real validation
+  // happens server-side in /api/submit per the contract below. No secret ships here.
+  const payload = {
+    name: name,
+    score: score|0,
+    level: currentLevel|0,                          // highest level reached this run
+    runMs: Math.max(0, Date.now() - runStartMs)     // coarse wall-clock of the run
+  };
+  /* ===== SERVER CONTRACT — implement in Vercel /api/submit (DO NOT trust client) =====
+     1. Reject score > plausibleMax(level): server-computed carry-forward ceiling
+        (max obtainable across levels 1..level); 400/drop if exceeded.
+     2. Reject impossibly-fast runs: if runMs < minRunMs(level), flag as suspect.
+     3. Rate-limit by IP (token bucket, N submits/min) to stop flooding.
+     4. HMAC verification: /api/top issues a short-lived per-session token signed with a
+        secret env var (NEVER sent to the client beyond the opaque token). Client echoes
+        the token; server recomputes HMAC(token, name|score|level|runMs) and rejects on
+        mismatch or expiry. Secret key stays server-side only.
+     ================================================================================ */
   try{
     await fetch(LB_API+'/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name:name,score:score})});
+      body:JSON.stringify(payload)});
   }catch(e){ /* offline: silently skip, credits still play */ }
 }
 async function fetchLeaderboard(){
@@ -1171,6 +1222,7 @@ document.addEventListener('keydown', e => {
   // While the leaderboard name box is open, let the input handle typing.
   if (nameEntryActive || (e.target && e.target.id === 'ne-input')) return;
   keys[e.code] = true;
+  if (e.code === 'ArrowUp') jumpBufferedAt = simFrame;   // Task 2a jump buffer
   if (['Space','ArrowUp','ArrowLeft','ArrowRight','ArrowDown'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR' && (gameOver || won)) restartCurrentLevel();
 });
@@ -1498,12 +1550,13 @@ let sawyer = null, otto = null;
 // =========================================================================
 function buildPlayers(){
   cameraY = 0;
+  runStartMs = Date.now(); // Task 4
   sawyer = {
     id:'sawyer', x:50, y:FLOOR-40, w:26, h:40,
     skin:'#E3A777', hair:'#3D2817', shirt:'#2E2E2C', stripe:'#F4F1E8', label:'#185FA5',
     name:'Sawyer', baby:false, ai:false,
     vx:0, vy:0, onGround:false, attackTimer:0, attackCooldown:0, invincible:0, facing:1,
-    coyoteTimer:0, wasOnGround:false
+    coyoteTimer:0, wasOnGround:false, jumpHeldFrames:0
   };
   otto = {
     id:'otto', x:14, y:FLOOR-29, w:25, h:29,
@@ -1907,6 +1960,7 @@ function updateOtto(){
   const desiredX = s.x - s.facing*28;
   const dx = desiredX - o.x;
   const accel = 0.62, maxSpd = 4.2;   // a touch faster than Sawyer so he can close gaps on ascents
+  // NOTE (Task 1): intentionally NOT PHYS.ottoAccel/ottoMaxSpd — L1 Otto is tuned faster on purpose.
   if (Math.abs(dx) > 5){ o.vx += Math.sign(dx)*accel; }
   else o.vx *= 0.7;
   o.vx = Math.max(-maxSpd, Math.min(maxSpd, o.vx));
@@ -2057,19 +2111,8 @@ function update(){
   else if (keys['ArrowRight']) { s.vx=speed; s.facing=1; }
   else s.vx*=0.72;
   
-  // Coyote time: can jump for 6 frames after leaving ground
-  if (s.onGround) { s.coyoteTimer = 6; s.wasOnGround = true; }
-  else s.coyoteTimer--;
-  
-  if (keys['ArrowUp'] && s.coyoteTimer > 0){ 
-    s.vy=-11.5; s.coyoteTimer=0; SFX.jump();
-    // Dust puff on jump
-    for(let i=0;i<4;i++) particles.push({
-      x: s.x+s.w/2+Math.random()*8-4, y: s.y+s.h, 
-      vx: Math.random()*2-1, vy: 1+Math.random()*2,
-      life: 12, maxLife: 12, type: 'dust'
-    });
-  }
+  // Coyote + buffered jump unified (Task 2/3)
+  playerCoyoteJump(s, 'dust');
   
   const sawyerShot = keys['Space'] && s.attackCooldown<=0;
   if (sawyerShot){
@@ -2088,6 +2131,7 @@ function update(){
   }
   if (s.attackTimer>0) s.attackTimer--;
   if (s.attackCooldown>0) s.attackCooldown--;
+  playerVarJump(s);
   s.vy+=GRAVITY; s.x+=s.vx; s.y+=s.vy;
   resolve(s);
   if (s.x<0) s.x=0;
@@ -6307,6 +6351,7 @@ function loop(){
   // Drain whole steps; the sub-step remainder carries to next frame (no per-frame lurch)
   while(_stepAccum >= STEP_MS && _steps < MAX_STEPS){
     if(nameEntryActive) break;   // freeze sim while name box is open (stops victory re-trigger wiping input)
+    simFrame++;   // Task 2a
     // Entry portal dump: input lock while the riders are tossed out (only when live).
     let _dumpLock = portalDump.active ? _portalDumpInputLock : false;
     let _kL,_kR,_kU,_kD,_kSp;
@@ -6994,9 +7039,9 @@ let seaSwallow = 0;                 // 0 open beach → 1 fully closed-in storm 
 let l3Arena = [];
 function buildL3Arena(){
   l3Arena = [
-    { x:3300, baseX:3300, y:FLOOR-176, baseY:FLOOR-176, w:96, h:18, bob:14, bobSpeed:0.021, bobPhase:0.0, driftX:26, driftSpeed:0.012, driftPhase:0.4, dx:0, dy:0, hidden:true },
-    { x:3490, baseX:3490, y:FLOOR-214, baseY:FLOOR-214, w:78, h:18, bob:16, bobSpeed:0.026, bobPhase:1.9, driftX:20, driftSpeed:0.016, driftPhase:2.4, dx:0, dy:0, hidden:true },
-    { x:3650, baseX:3650, y:FLOOR-180, baseY:FLOOR-180, w:92, h:18, bob:14, bobSpeed:0.018, bobPhase:3.4, driftX:30, driftSpeed:0.010, driftPhase:4.1, dx:0, dy:0, hidden:true },
+    { x:3300, baseX:3300, y:FLOOR-108, baseY:FLOOR-108, w:96, h:18, bob:10, bobSpeed:0.021, bobPhase:0.0, driftX:26, driftSpeed:0.012, driftPhase:0.4, dx:0, dy:0, hidden:true },
+    { x:3490, baseX:3490, y:FLOOR-150, baseY:FLOOR-150, w:78, h:18, bob:12, bobSpeed:0.026, bobPhase:1.9, driftX:20, driftSpeed:0.016, driftPhase:2.4, dx:0, dy:0, hidden:true },
+    { x:3650, baseX:3650, y:FLOOR-185, baseY:FLOOR-185, w:92, h:18, bob:12, bobSpeed:0.018, bobPhase:3.4, driftX:30, driftSpeed:0.010, driftPhase:4.1, dx:0, dy:0, hidden:true },
   ];
   seaSwallow = 0;
   l3BossEnrage = 0;
@@ -7030,6 +7075,14 @@ const l3Platforms = [
   makePlatform(2230, FLOOR-200, 110),
   makePlatform(2420, FLOOR-178, 100),
   makePlatform(2650, FLOOR-205, 110),
+  // ── Low stepping-stones (validated vs ~120px jump arc): ground-reachable entry
+  //    rungs so the climb can be joined anywhere, not only at the x=180 rung.
+  //    Appended at the end so enemy/rock index ranges are unaffected. ──
+  makePlatform(1010, FLOOR-80, 80),
+  makePlatform(1300, FLOOR-80, 80),
+  makePlatform(1700, FLOOR-82, 80),
+  makePlatform(2090, FLOOR-80, 80),
+  makePlatform(2480, FLOOR-80, 80),
 ];
 
 let l3Enemies = [];
@@ -7272,11 +7325,7 @@ function updateLevel2(){
     particles.push({x:s.x+s.w/2-s.facing*4,y:s.y+s.h,vx:-s.facing*(0.5+Math.random()),vy:-0.3-Math.random()*0.9,life:14,maxLife:14,type:'snow',color:'#EAF6FF'});
   else s.vx*=0.72;
 
-  if(s.onGround){s.coyoteTimer=6;s.wasOnGround=true;}
-  else s.coyoteTimer--;
-  if(keys['ArrowUp']&&s.coyoteTimer>0){s.vy=-11.5;s.coyoteTimer=0;sfx('jump');
-    for(let i=0;i<4;i++) particles.push({x:s.x+s.w/2+Math.random()*8-4,y:s.y+s.h,vx:Math.random()*2-1,vy:1+Math.random()*2,life:12,maxLife:12,type:'snow'});
-  }
+  playerCoyoteJump(s, 'snow');
   const sawyerShot=keys['Space']&&s.attackCooldown<=0;
   if(sawyerShot){
     s.attackTimer=10;s.attackCooldown=20;fireAttack(s);
@@ -7291,6 +7340,7 @@ function updateLevel2(){
   }
   if(s.attackTimer>0)s.attackTimer--;
   if(s.attackCooldown>0)s.attackCooldown--;
+  playerVarJump(s);
   s.vy+=GRAVITY;s.x+=s.vx;s.y+=s.vy;
   resolveL2(s);
   if(s.x<0)s.x=0; if(s.x>L2_WORLD_W-s.w)s.x=L2_WORLD_W-s.w;
@@ -7677,7 +7727,7 @@ function updateOttoL2(){
   if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
   const desiredX=s.x-s.facing*40;
   const dx=desiredX-o.x;
-  const accel=0.5,maxSpd=3.6;
+  const accel=PHYS.ottoAccel,maxSpd=PHYS.ottoMaxSpd;
   if(Math.abs(dx)>6)o.vx+=Math.sign(dx)*accel; else o.vx*=0.7;
   o.vx=Math.max(-maxSpd,Math.min(maxSpd,o.vx));
   if(o.crossingPit&&!o.onGround)o.vx=o.crossingPit*maxSpd;
@@ -8189,11 +8239,7 @@ function updateLevel3(){
   s.vx=Math.max(-5,Math.min(5,s.vx));
 
   // Coyote time jump
-  if(s.onGround){s.coyoteTimer=6;} else s.coyoteTimer--;
-  if(keys['ArrowUp']&&s.coyoteTimer>0){
-    s.vy=-11.5; s.coyoteTimer=0; sfx('jump');
-    for(let i=0;i<4;i++) particles.push({x:s.x+s.w/2+Math.random()*8-4,y:s.y+s.h,vx:Math.random()*2-1,vy:1+Math.random()*2,life:12,maxLife:12,type:'dust'});
-  }
+  playerCoyoteJump(s, 'dust');
 
   // Shoot (Space only) — identical to L1/L2
   const sawyerShot3 = keys['Space'] && s.attackCooldown<=0;
@@ -8210,6 +8256,7 @@ function updateLevel3(){
   if(s.attackTimer>0)s.attackTimer--;
   if(s.attackCooldown>0)s.attackCooldown--;
 
+  playerVarJump(s);
   s.vy+=GRAVITY; s.x+=s.vx; s.y+=s.vy;
   resolveL3(s);
   if(s.x<0)s.x=0; if(s.x>L3_WORLD_W-s.w)s.x=L3_WORLD_W-s.w;
@@ -8503,7 +8550,7 @@ function updateOttoL3(){
   if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
   const desiredX=s.x-s.facing*40;
   const dx=desiredX-o.x;
-  const accel=0.5,maxSpd=3.6;
+  const accel=PHYS.ottoAccel,maxSpd=PHYS.ottoMaxSpd;
   if(Math.abs(dx)>6)o.vx+=Math.sign(dx)*accel; else o.vx*=0.7;
   o.vx=Math.max(-maxSpd,Math.min(maxSpd,o.vx));
   if(o.crossingPit&&!o.onGround)o.vx=o.crossingPit*maxSpd;
@@ -10059,6 +10106,15 @@ const GEN_PITS = [450, 960, 1505, 1995]; // pit-void centres (gaps between groun
 
 // Per-level configuration --------------------------------------------------
 const LV = {
+  // Task 3a: scaffolding for the planned L1-3 consolidation. These are INERT pointers
+  // (string builder names) — nothing reads LV[1..3] yet; L1-3 still run their bespoke
+  // update()/updateLevel2()/updateLevel3() paths. No art rewritten.
+  1: { worldW:WORLD_W, next:2, bespoke:true, engine:'update',
+       enemies:'buildEnemies', rocks:'buildRocks', bg:'drawBg', boss:'buildBoss' },
+  2: { worldW:null, next:3, bespoke:true, engine:'updateLevel2',
+       enemies:'buildLevel2Enemies', rocks:'buildLevel2Rocks', bg:'drawBg', boss:'buildYeti' },
+  3: { worldW:null, next:4, bespoke:true, engine:'updateLevel3',
+       enemies:'buildLevel3Enemies', rocks:'buildLevel3Rocks', bg:'drawBg', boss:'buildKingCrab' },
   4: {
     worldW:3400, bossGate:2600, next:5,
     pal:{ skyT:'#0A1428', skyM:'#1B3A5A', skyL:'#2E5A7A', ground:'#1A3A4A',
@@ -10629,7 +10685,7 @@ function updateOttoGen(){
   if(ottoPower===1 && giantOttoPhase!=='idle'){ o.vx=0; o.vy=Math.min(o.vy+GRAVITY,12); o.y+=o.vy; if(o.y+o.h>FLOOR){o.y=FLOOR-o.h;o.vy=0;o.onGround=true;} return; }
   const desiredX=s.x-s.facing*40;
   const dx=desiredX-o.x;
-  const accel=0.5,maxSpd=3.6;
+  const accel=PHYS.ottoAccel,maxSpd=PHYS.ottoMaxSpd;
   if(Math.abs(dx)>6)o.vx+=Math.sign(dx)*accel; else o.vx*=0.7;
   o.vx=Math.max(-maxSpd,Math.min(maxSpd,o.vx));
   if(o.crossingPit&&!o.onGround)o.vx=o.crossingPit*maxSpd;
@@ -10756,11 +10812,7 @@ function updateGen(){
   let _l5climb=(currentLevel===5)?handleL5Climb(s):false;
   if(_l5climb){ s.vx=0; }
   else {
-  if(s.onGround){s.coyoteTimer=6;} else s.coyoteTimer--;
-  if(keys['ArrowUp']&&s.coyoteTimer>0){
-    s.vy=-11.5; s.coyoteTimer=0; sfx('jump');
-    for(let i=0;i<4;i++) particles.push({x:s.x+s.w/2+Math.random()*8-4,y:s.y+s.h,vx:Math.random()*2-1,vy:1+Math.random()*2,life:12,maxLife:12,type:'dust'});
-  }
+  playerCoyoteJump(s, 'dust');
   const shot = keys['Space'] && s.attackCooldown<=0;
   if(shot){
     s.attackTimer=10; s.attackCooldown=20; fireAttack(s);
@@ -10775,6 +10827,7 @@ function updateGen(){
   if(s.attackTimer>0)s.attackTimer--;
   if(s.attackCooldown>0)s.attackCooldown--;
 
+  playerVarJump(s);
   s.vy+=GRAVITY*(currentLevel===6?0.42:1); s.x+=s.vx; s.y+=s.vy;
   if(currentLevel===6&&s.vy>6.2)s.vy=6.2;
   resolveGen(s);
