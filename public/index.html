@@ -365,6 +365,12 @@
     </video>
     <div id="intro-black" style="position:absolute;inset:0;background:#000;border-radius:10px;opacity:0;display:none;z-index:61;pointer-events:none;transition:opacity .5s ease;"></div>
     <div id="intro-skip" style="position:absolute;bottom:14px;right:16px;z-index:62;display:none;color:#FAEEDA;font:600 13px system-ui,sans-serif;background:rgba(0,0,0,0.45);border:1px solid rgba(250,238,218,0.35);border-radius:20px;padding:6px 14px;cursor:pointer;user-select:none;letter-spacing:.04em;">Skip &#9654;&#9654;</div>
+    <video id="return-cutscene" playsinline preload="auto" muted
+      style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:10px;display:none;z-index:60;background:#000;">
+      <source src="assets/returnhome.mp4" type="video/mp4">
+    </video>
+    <div id="return-black" style="position:absolute;inset:0;background:#000;border-radius:10px;opacity:0;display:none;z-index:61;pointer-events:none;transition:opacity .5s ease;"></div>
+    <div id="return-skip" style="position:absolute;bottom:14px;right:16px;z-index:62;display:none;color:#FAEEDA;font:600 13px system-ui,sans-serif;background:rgba(0,0,0,0.45);border:1px solid rgba(250,238,218,0.35);border-radius:20px;padding:6px 14px;cursor:pointer;user-select:none;letter-spacing:.04em;">Skip &#9654;&#9654;</div>
     <button id="fs-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
     <div id="touch-controls" aria-hidden="true">
       <div id="dpad">
@@ -6099,7 +6105,7 @@ function drawCreditsOverlay(){
 function restartCurrentLevel(){
   const lvl = currentLevel||1;
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
-  nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
+  nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0;
@@ -6136,7 +6142,7 @@ function restartCurrentLevel(){
 }
 function jumpToLevel(n){
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
-  nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
+  nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
@@ -6168,7 +6174,7 @@ function jumpToLevel(n){
 function restart(resetLevel){
   const lvl = resetLevel ? 1 : (currentLevel||1);
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
-  nameEntryActive=false; nameEntryDone=false; leaderboardData=null;
+  nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0;
@@ -6498,7 +6504,16 @@ function loop(){
   if (gameOver) drawOverlay('Game Over', 'Score: ' + score);
   if (won && currentLevel===1) drawOverlay('You Beat The Drifter! \u{1F3DC}\uFE0F', 'Final Score: ' + score);
   if (won && currentLevel===2) drawOverlay('You Beat the Yeti! \u2744\uFE0F', 'Final Score: ' + score);
-  if (won && currentLevel===6){ victoryActive=false; drawCreditsOverlay(); }
+  if (won && currentLevel===6){
+    victoryActive=false;
+    if(returnHomeDone){
+      drawCreditsOverlay();
+    } else {
+      if(!returnHomeStarted){ returnHomeStarted=true; playReturnHomeCutscene(()=>{ returnHomeDone=true; }); }
+      // Keep the canvas black under the video / its fades.
+      ctx.save(); ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); ctx.restore();
+    }
+  }
   if (finishCardActive) drawFinishCard();
   
   // Draw HUD (score, lives, and character info)
@@ -13322,6 +13337,61 @@ function playIntroCutscene(onDone){
     const p = vid.play();
     if(p && p.catch) p.catch(()=>{ /* autoplay blocked */ vid.muted=true; vid.play().catch(onErr); });
     // fade the black beat away to expose the video (Beat 2 transition done)
+    requestAnimationFrame(()=>{ black.style.opacity='0'; });
+  }, 1300);
+}
+
+// =========================================================================
+//  22c. RETURN-HOME CUTSCENE — plays after L6 escape, fades to black → credits
+// =========================================================================
+let returnHomeStarted = false, returnHomeDone = false;
+function playReturnHomeCutscene(onDone){
+  const vid   = document.getElementById('return-cutscene');
+  const black = document.getElementById('return-black');
+  const skip  = document.getElementById('return-skip');
+  if(!vid || !black){ onDone && onDone(); return; }
+  // Silence the level music so the video's own audio plays clean; credits
+  // music starts later when drawCreditsOverlay first runs.
+  try{ audioManager.stop(); }catch(e){}
+
+  let finished = false;
+  const cleanup = ()=>{
+    try{ vid.pause(); }catch(e){}
+    vid.removeEventListener('ended', onEnded);
+    vid.removeEventListener('error', onErr);
+    skip.removeEventListener('click', doSkip);
+    window.removeEventListener('keydown', onKey, true);
+    vid.style.display='none'; black.style.display='none'; skip.style.display='none';
+  };
+  const end = ()=>{ if(finished) return; finished=true;
+    // Fade to black, hold the beat, hand off to credits.
+    black.style.transition='opacity 1.2s ease';
+    black.style.display='block'; black.style.opacity='1';
+    setTimeout(()=>{ cleanup(); onDone && onDone(); }, 1300);
+  };
+  const onEnded = ()=> end();
+  const onErr   = ()=>{ cleanup(); onDone && onDone(); };
+  const doSkip  = ()=> end();
+  const onKey   = (e)=>{ if(e.key==='Escape'||e.key===' '||e.key==='Enter'){ e.preventDefault(); doSkip(); } };
+
+  // Beat 1: black in over the frozen arena
+  black.style.transition='opacity 1.2s ease';
+  black.style.display='block';
+  void black.offsetWidth;
+  black.style.opacity='1';
+
+  setTimeout(()=>{
+    // Beat 2: reveal & play the video under the black, then fade the black away
+    vid.style.display='block';
+    vid.muted = !( (typeof sfxOn!=='undefined' && sfxOn) || (typeof musicOn!=='undefined' && musicOn) );
+    vid.currentTime = 0;
+    skip.style.display='block';
+    vid.addEventListener('ended', onEnded);
+    vid.addEventListener('error', onErr);
+    skip.addEventListener('click', doSkip);
+    window.addEventListener('keydown', onKey, true);
+    const p = vid.play();
+    if(p && p.catch) p.catch(()=>{ vid.muted=true; vid.play().catch(onErr); });
     requestAnimationFrame(()=>{ black.style.opacity='0'; });
   }, 1300);
 }
