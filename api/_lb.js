@@ -2,17 +2,18 @@
 // does NOT expose it as a route). Imported by api/top.js and api/submit.js.
 //
 // Env vars (set in Vercel → Project → Settings → Environment Variables):
-//   UPSTASH_REDIS_REST_URL    e.g. https://eu1-xxxx.upstash.io
-//   UPSTASH_REDIS_REST_TOKEN  Upstash REST token (read+write)
-//   LEADERBOARD_SECRET        long random string — NEVER shipped to the client
+//   Redis access — uses whichever your project already has:
+//     KV_REST_API_URL / KV_REST_API_TOKEN        (Vercel KV / Upstash integration)
+//     or UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN  (raw Upstash)
+//   LEADERBOARD_SECRET — long random string, NEVER shipped to the client
 //
-// Zero npm dependencies: talks to Upstash over its REST API with fetch, signs
-// tokens with the built-in Node crypto module.
+// Zero npm dependencies: talks to the Redis REST API with fetch, signs tokens
+// with the built-in Node crypto module.
 
 import crypto from 'crypto';
 
-const RURL = process.env.UPSTASH_REDIS_REST_URL;
-const RTOK = process.env.UPSTASH_REDIS_REST_TOKEN;
+const RURL = process.env.KV_REST_API_URL   || process.env.UPSTASH_REDIS_REST_URL;
+const RTOK = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
 export const SECRET = process.env.LEADERBOARD_SECRET || '';
 
 export const BOARD_KEY = 'lb:board';     // sorted set: member=name, score=points
