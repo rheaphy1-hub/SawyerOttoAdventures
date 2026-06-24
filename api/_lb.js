@@ -476,6 +476,9 @@
 // =========================================================================
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+// Credits screen has no floating button (it blocked the credits); allow a tap to restart,
+// matching the R-key affordance. Guarded so it never fires during gameplay.
+canvas.addEventListener('pointerdown', ()=>{ if(won && currentLevel===6 && returnHomeDone){ restartCurrentLevel(); } });
 const W = canvas.width, H = canvas.height;
 let RENDER_SCALE = 2;
 function setupHiDPI(){
@@ -1102,7 +1105,7 @@ async function submitScore(name){
     let token=lbToken;
     if(!token){
       const tr=await fetch(LB_API+'/api/top');
-      if(tr.ok){ const td=await tr.json(); token=td&&td.token; if(td&&Array.isArray(td.top)) leaderboardData=td.top; }
+      if(tr.ok){ const td=await tr.json(); token=td&&td.token; if(td){ leaderboardData=normalizeBoard(td); } }
     }
     if(!token) return;   // board offline / legacy server: skip silently, credits still play
     lbToken=null;        // tokens are one-time-use; force a fresh mint next run
@@ -1111,6 +1114,25 @@ async function submitScore(name){
       body:JSON.stringify({name, score:score0, level:level0, runMs:runMs0, token, hmac})});
   }catch(e){ /* offline: silently skip, credits still play */ }
 }
+// Coerce whatever /api/top returns into a clean [{name, score}] list. Handles: array of
+// {name,score} or {member,score}; {top:[...]} wrapper; Upstash flat WITHSCORES arrays
+// ["Alice","1700",...]; [member,score] tuples; and JSON-string members.
+function normalizeBoard(raw){
+  let arr = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.top) ? raw.top : (raw && Array.isArray(raw.result) ? raw.result : []));
+  if(!arr.length) return [];
+  // Flat WITHSCORES: alternating member/score primitives → pair them up.
+  const allPrim = arr.every(v => typeof v==='string' || typeof v==='number');
+  if(allPrim && arr.length%2===0){
+    const out=[];
+    for(let i=0;i<arr.length;i+=2){ out.push({ name:String(arr[i]), score:Number(arr[i+1])||0 }); }
+    return out;
+  }
+  return arr.map(e=>{
+    if(typeof e==='string'){ try{ const o=JSON.parse(e); return { name:o.name||o.member||'???', score:Number(o.score)||0 }; }catch(_){ return { name:e, score:0 }; } }
+    if(Array.isArray(e)) return { name:String(e[0]), score:Number(e[1])||0 };
+    return { name:e.name||e.member||e.player||'???', score:Number(e.score!=null?e.score:e.value)||0 };
+  });
+}
 async function fetchLeaderboard(){
   if(leaderboardLoading) return;
   leaderboardLoading=true; leaderboardError=false;
@@ -1118,8 +1140,7 @@ async function fetchLeaderboard(){
     const r=await fetch(LB_API+'/api/top');
     if(!r.ok) throw new Error('bad');
     const data=await r.json();
-    // new shape {top, token}; tolerate a legacy bare-array response
-    leaderboardData = Array.isArray(data) ? data : (Array.isArray(data.top) ? data.top : []);
+    leaderboardData = normalizeBoard(data);
     if(data && data.token) lbToken=data.token;
   }catch(e){ leaderboardError=true; leaderboardData=[]; }
   leaderboardLoading=false;
@@ -1142,8 +1163,7 @@ function finishNameEntry(useName){
   const name=cleanName(useName?inp.value:'');
   const ov=document.getElementById('name-entry'); if(ov) ov.style.display='none';
   oskVisible=false; const osk=document.getElementById('osk'); if(osk) osk.style.display='none';
-  submitScore(name);
-  fetchLeaderboard();
+  submitScore(name).then(()=>fetchLeaderboard()).catch(()=>fetchLeaderboard());
   won=true;  // proceed to credits (board renders there once loaded)
 }
 
@@ -1179,7 +1199,11 @@ function drawTumbleweeds(){
 let artifact = null, artifactCollected = false, barrier = null;
 // When the player reaches game over AFTER taking the transponder, remember it so a level
 // restart drops them back past the acquisition point (no need to re-fetch the artifact).
-let transponderRespawn = null; // {level, x} or null
+let transponderRespawn = null; // {level, x, y} or null
+// Captured at the moment the transponder is collected: sawyer's exact (valid) foot position.
+// Used at game-over to resume past the acquisition point on any level. Keyed by level so a
+// stale anchor from a prior level never applies.
+let transponderAnchor = null;  // {level, x, y(foot)} or null
 function buildArtifactGate(){
   if(currentLevel===1){
     artifact = { x:2484, y:FLOOR-270-32, w:22, got:false, bobT:0 };   // centered on the plateau top (2410..2580)
@@ -1195,6 +1219,7 @@ function updateArtifact(s){
   for(const p of [s, otto]){
     if(p && p.x+p.w>artifact.x-6 && p.x<artifact.x+artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+40){
       artifact.got=true; artifactCollected=true;
+      transponderAnchor = { level:1, x:sawyer.x, y:sawyer.y+sawyer.h };
       if(barrier) barrier.sealed=false;
       acquireItem('transponder'); popPoints(artifact.x+artifact.w/2, ay-6, 500, '#9FD8FF'); score+=500;
       SFX.win(); shakeIntensity=10;
@@ -2654,11 +2679,12 @@ function hurt(p, reposition){
     // If a transponder was acquired this run (L1/L2/L3), remember its location so a level
     // restart resumes on the perch/plateau. This is GAME-OVER-only — per-hit deaths above
     // still respawn normally (near-camera ground); we do NOT touch `checkpoint` here.
-    let tSpot=null;
-    if(currentLevel===1 && artifactCollected && artifact){ tSpot={x:artifact.x, y:artifact.y+32}; }
-    else if(currentLevel===2 && l2ArtifactCollected){ const pe=l2Platforms.find(pl=>pl.artifactPerch); if(pe) tSpot={x:pe.x+pe.w/2, y:pe.y}; }
-    else if(currentLevel===3 && l3ArtifactCollected){ tSpot={x:(l3Barrel?l3Barrel.x+l3Barrel.w+16:(l3Artifact?l3Artifact.x:0)), y:FLOOR}; }
-    transponderRespawn = tSpot ? { level:currentLevel, x:tSpot.x, y:tSpot.y } : null;
+    // If the transponder was collected this run, resume past the acquisition point on
+    // restart. The anchor holds sawyer's exact valid position at pickup, keyed by level,
+    // so any level (1,2,3,5,6 — L4 has no transponder) resumes correctly.
+    transponderRespawn = (transponderAnchor && transponderAnchor.level===currentLevel)
+      ? { level:currentLevel, x:transponderAnchor.x, y:transponderAnchor.y }
+      : null;
     gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return;
   }
   if (reposition){
@@ -6259,7 +6285,7 @@ function drawCreditsOverlay(){
   const pulse=0.6+0.4*Math.sin(t*0.09);
   ctx.globalAlpha=pulse;
   ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle='#A8F0C6';
-  ctx.fillText('Press R to play again', W/2, H-8);
+  ctx.fillText('Press R or tap to play again', W/2, H-8);
   ctx.globalAlpha=1;
 
   ctx.restore();
@@ -6295,10 +6321,12 @@ function restartCurrentLevel(){
     if(currentLevel===1){ if(artifact){artifact.got=true;} artifactCollected=true; if(barrier) barrier.sealed=false; acquireItem('transponder'); }
     else if(currentLevel===2){ if(l2Artifact){l2Artifact.got=true; l2Artifact.freed=true;} l2ArtifactCollected=true; acquireItem('transponder'); }
     else if(currentLevel===3){ if(l3Artifact){l3Artifact.got=true;} l3ArtifactCollected=true; acquireItem('relic'); }
-    const wWorld = currentLevel===2 ? L2_WORLD_W : currentLevel===3 ? L3_WORLD_W : WORLD_W;
+    else if(currentLevel===5||currentLevel===6){ const lv=LV[currentLevel]; if(lv.transponder){lv.transponder.got=true; lv.transponder.locked=false;} lv.transponderTaken=true; acquireItem('transponder'); }
+    const wWorld = currentLevel===2 ? L2_WORLD_W : currentLevel===3 ? L3_WORLD_W : (currentLevel>=4&&LV[currentLevel]) ? LV[currentLevel].worldW : WORLD_W;
     sawyer.x=cp.x; sawyer.y=cp.y-sawyer.h; sawyer.vx=0; sawyer.vy=0; sawyer.invincible=90;
     otto.x=cp.x-26; otto.y=cp.y-otto.h; otto.vx=0; otto.vy=0;
     cameraX=Math.max(0, Math.min(cp.x - W/3, wWorld - W));
+    transponderAnchor={ level:currentLevel, x:cp.x, y:cp.y }; // re-arm for repeat deaths
   }
   transponderRespawn=null;
   audioManager.stop();
@@ -6673,8 +6701,9 @@ function loop(){
   }
   
   const _overlayUp = gameOver || won;
+  const _creditsSeq = (won && currentLevel===6); // return-home video + GAME COMPLETE credits
   const _rb = document.getElementById('restart-overlay-btn');
-  if (_rb) _rb.style.display = _overlayUp ? 'block' : 'none';
+  if (_rb) _rb.style.display = (_overlayUp && !_creditsSeq) ? 'block' : 'none';
   const _tcEl = document.getElementById('touch-controls');
   if (_tcEl) _tcEl.style.display = _overlayUp ? 'none' : '';
   if (gameOver) drawOverlay('Game Over', 'Score: ' + score);
@@ -6979,7 +7008,7 @@ function updateL2Artifact(){
   const ay = l2Artifact.y + Math.sin(l2Artifact.bobT)*4;
   for(const p of [sawyer,otto]){
     if(p && p.x+p.w>l2Artifact.x-6 && p.x<l2Artifact.x+l2Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+l2Artifact.h+8){
-      l2Artifact.got=true; l2ArtifactCollected=true; score+=400; acquireItem('transponder'); popPoints(l2Artifact.x+14, ay-4, 400, '#9FD8FF'); sfx('win'); shakeIntensity=Math.max(shakeIntensity,9);
+      l2Artifact.got=true; l2ArtifactCollected=true; transponderAnchor={ level:2, x:sawyer.x, y:sawyer.y+sawyer.h }; score+=400; acquireItem('transponder'); popPoints(l2Artifact.x+14, ay-4, 400, '#9FD8FF'); sfx('win'); shakeIntensity=Math.max(shakeIntensity,9);
       for(let i=0;i<32;i++) particles.push({x:l2Artifact.x+14, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
     }
   }
@@ -7241,6 +7270,7 @@ function updateL3Artifact(s){
   for(const p of [s, otto]){
     if(p && p.x+p.w>l3Artifact.x-6 && p.x<l3Artifact.x+l3Artifact.w+6 && p.y+p.h>ay-6 && p.y<ay+40){
       l3Artifact.got=true; l3ArtifactCollected=true;
+      transponderAnchor = { level:3, x:sawyer.x, y:sawyer.y+sawyer.h };
       sfx('ball'); shakeIntensity=Math.max(shakeIntensity,6);
       score+=250; acquireItem('relic'); popPoints(l3Artifact.x+l3Artifact.w/2, ay-6, 250, '#C9B6FF');
       for(let i=0;i<28;i++) particles.push({x:l3Artifact.x+l3Artifact.w/2, y:ay+16, vx:(Math.random()-.5)*7, vy:-2-Math.random()*5, life:34, maxLife:34, type:'spark', color:i%2?'#9FD8FF':'#C9B6FF'});
@@ -10465,7 +10495,7 @@ function updateBratwurst(){
     if(!tp.locked){
       const pcx=s.x+s.w/2, pcy=s.y+s.h/2;
       if(pcx>tp.x-16 && pcx<tp.x+tp.w+16 && pcy>tp.y-20 && pcy<tp.y+tp.h+14){
-        tp.got=true; lv.transponderTaken=true; acquireItem('transponder'); score+=500;
+        tp.got=true; lv.transponderTaken=true; transponderAnchor={ level:5, x:sawyer.x, y:sawyer.y+sawyer.h }; acquireItem('transponder'); score+=500;
         popPoints(tp.x+tp.w/2,tp.y-6,500,'#9FD8FF');
         if(typeof sfx==='function') sfx('win');
         shakeIntensity=Math.max(shakeIntensity,8);
@@ -10582,13 +10612,18 @@ function drawL5Transponder(){
   bg.addColorStop(0,'rgba(159,216,255,0.8)'); bg.addColorStop(0.5,'rgba(120,140,255,0.35)'); bg.addColorStop(1,'rgba(120,140,255,0)');
   ctx.fillStyle=bg; ctx.beginPath(); ctx.arc(cx,cy,18,0,7); ctx.fill();
   ctx.restore();
-  // device body
-  ctx.fillStyle='#1A2A3A'; ctx.beginPath(); ctx.roundRect(x+2,tp.y+2,tp.w-4,tp.h-4,3); ctx.fill();
-  ctx.fillStyle='#9FD8FF'; ctx.beginPath(); ctx.arc(cx,cy,4+Math.sin(t*4)*1,0,7); ctx.fill();
-  ctx.strokeStyle='#C9B6FF'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.roundRect(x+2,tp.y+2,tp.w-4,tp.h-4,3); ctx.stroke();
-  // antenna
-  ctx.strokeStyle='#9FD8FF'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx,tp.y+2); ctx.lineTo(cx,tp.y-8); ctx.stroke();
-  ctx.fillStyle='#FFE066'; ctx.beginPath(); ctx.arc(cx,tp.y-8,2,0,7); ctx.fill();
+  // device — shared transponder asset (matches L1/L3/L4/L6); procedural glyph fallback
+  if(transponderImg.complete && transponderImg.naturalWidth){
+    const ih=tp.h+8, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+    ctx.save(); ctx.shadowColor='rgba(150,200,255,0.8)'; ctx.shadowBlur=10;
+    ctx.drawImage(transponderImg, cx-iw/2, cy-ih/2, iw, ih); ctx.restore();
+  } else {
+    ctx.fillStyle='#1A2A3A'; ctx.beginPath(); ctx.roundRect(x+2,tp.y+2,tp.w-4,tp.h-4,3); ctx.fill();
+    ctx.fillStyle='#9FD8FF'; ctx.beginPath(); ctx.arc(cx,cy,4+Math.sin(t*4)*1,0,7); ctx.fill();
+    ctx.strokeStyle='#C9B6FF'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.roundRect(x+2,tp.y+2,tp.w-4,tp.h-4,3); ctx.stroke();
+    ctx.strokeStyle='#9FD8FF'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(cx,tp.y+2); ctx.lineTo(cx,tp.y-8); ctx.stroke();
+    ctx.fillStyle='#FFE066'; ctx.beginPath(); ctx.arc(cx,tp.y-8,2,0,7); ctx.fill();
+  }
   // ── ghostly casing (fades out as cased -> 0) ──
   if(tp.cased>0.01){
     const a=tp.cased;
@@ -11096,7 +11131,7 @@ function updateGen(){
     if(!tp.locked){
       const pcx=s.x+s.w/2, pcy=s.y+s.h/2;
       if(pcx>tp.x-16 && pcx<tp.x+tp.w+16 && pcy>tp.y-20 && pcy<tp.y+tp.h+12){
-        tp.got=true; lv.transponderTaken=true; acquireItem('transponder');
+        tp.got=true; lv.transponderTaken=true; transponderAnchor={ level:6, x:sawyer.x, y:sawyer.y+sawyer.h }; acquireItem('transponder');
         score+=500; popPoints(tp.x+tp.w/2, tp.y-6, 500, '#9FD8FF');
         for(let i=0;i<28;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*7,vy:-2-Math.random()*5,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#C9B6FF'});
       }
