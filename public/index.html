@@ -10123,7 +10123,9 @@ const LV = {
           r1:'#FFD700', r2:'#00FFFF', r3:'#FF00FF', pit:'#06101E' },
     boss:{ name:'Leviathan Lyra', tag:'🦑 LEVIATHAN LYRA', rage:'🦑 LEVIATHAN LYRA — ENRAGED',
            hp:18, vx1:1.8, vx2:2.6, spit1:60, spit2:40, n1:2, n2:3,
-           proj:'#00FF88', body:'#00FFFF', limb:'#FF00FF', eye:'#FFD700', aura:'rgba(0,255,255,0.30)' },
+           proj:'#00FF88', body:'#00FFFF', limb:'#FF00FF', eye:'#FFD700', aura:'rgba(0,255,255,0.30)',
+           ink:{ every1:240, every2:160, warn:50, life:150, band:120, coreR:34, dmg:true },
+           current:{ force:0.22, dur:120, warn:40 } },
     audio:'/audio/L4lookinatmyfish.mp3'
   },
   5: {
@@ -11328,7 +11330,9 @@ function buildSwimBoss(){
   buildGenBoss(4);
   const b = LV[4].bossObj;
   b.x = LV[4].bossGate+300; b.y = (SWIM.surfaceY+swimFloorY())/2 - b.h/2;
-  b.vx = 0; b.vy = 0; b.inkTimer = b.spitTimer;
+  b.vx = 0; b.vy = 0;
+  b.inkTimer = LV[4].boss.ink.every1; b.inkWarn = 0; b.inkX = 0;
+  b.curWarn = 0; b.curTimer = 0; b.curDir = 1; b.curBeat = LV[4].boss.current.dur*2;
 }
 
 // ---- solid collision: push player out of any overlapping solid ----
@@ -11515,7 +11519,7 @@ function updateSwim(){
         boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         const half=Math.ceil(bc.hp/2);
         if(boss.hp<=half&&boss.phaseIndex===0){ boss.phaseIndex=1;boss.spitTimer=bc.spit2;shakeIntensity=16;hurtFlashTimer=20;SFX.rattle(); }
-        if(boss.hp<=0){ boss.alive=false;boss.dieTimer=120;score+=1000;shakeIntensity=16;SFX.bossDie();
+        if(boss.hp<=0){ boss.alive=false;boss.dieTimer=120;score+=1000;shakeIntensity=16;SFX.bossDie();venom=[];
           for(let i=0;i<18;i++) particles.push({x:boss.x+boss.w/2,y:boss.y+boss.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:40,maxLife:40,type:'spark',color:bc.body}); }
       }
     }
@@ -11568,6 +11572,40 @@ function updateSwim(){
         }
         SFX.bossSpit();
       }
+      // ---- SIGNATURE: ink plume (both phases) — telegraph then dark column ----
+      if(boss.inkWarn>0){
+        boss.inkWarn--;
+        if(boss.inkWarn===0){
+          venom.push({ ink:true, x:boss.inkX, y:(SY+FY)/2, top:SY, bottom:FY,
+                       band:bc.ink.band, coreR:bc.ink.coreR, dmg:bc.ink.dmg,
+                       life:bc.ink.life, maxLife:bc.ink.life, rise:0.22, seed:Math.random()*99 });
+          SFX.bossSpit();
+        }
+      } else {
+        boss.inkTimer--;
+        if(boss.inkTimer<=0){
+          boss.inkTimer = (boss.phaseIndex?bc.ink.every2:bc.ink.every1);
+          boss.inkWarn = bc.ink.warn;
+          boss.inkX = Math.max(lv.bossGate+40, Math.min(lv.worldW-40, s.x+s.w/2));
+        }
+      }
+      // ---- PHASE 2: telegraphed current shoves Sawyer's aim ----
+      if(boss.phaseIndex===1){
+        if(boss.curTimer>0){
+          boss.curTimer--;
+          s.vx += boss.curDir*bc.current.force;     // nudge swim vx only (SWIM consts untouched)
+        } else if(boss.curWarn>0){
+          boss.curWarn--;
+          if(boss.curWarn===0){ boss.curTimer=bc.current.dur; SFX.bossSpit(); }
+        } else {
+          boss.curBeat--;
+          if(boss.curBeat<=0){
+            boss.curBeat = bc.current.dur*2 + 90;
+            boss.curWarn = bc.current.warn;
+            boss.curDir = ((s.x+s.w/2) < (boss.x+boss.w/2)) ? -1 : 1;   // away from Lyra
+          }
+        }
+      }
       // phase 2: ink murk ramps up
       swimMurk += ((boss.phaseIndex===1?0.55:0) - swimMurk)*0.03;
       if(s.invincible===0 && s.x+s.w>boss.x+8 && s.x<boss.x+boss.w-8 && s.y+s.h>boss.y+8 && s.y<boss.y+boss.h) hurt(s);
@@ -11580,6 +11618,16 @@ function updateSwim(){
 
   // ---- Ink (venom) travels straight underwater ----
   for(const v of venom){
+    if(v.ink){
+      // near-stationary vertical column: slow rise/drift, ignores v.vy gravity
+      v.life--;
+      v.y -= (v.rise||0.22);
+      v.x += Math.sin((v.seed||0)+v.life*0.03)*0.15;
+      // only the dense core damages Sawyer; Otto is never hurt
+      if(v.dmg && s.invincible===0 && Math.abs((s.x+s.w/2)-v.x) < (v.coreR + s.w*0.25)
+         && (s.y+s.h)>v.top && s.y<v.bottom){ hurt(s); }
+      continue;
+    }
     v.x+=v.vx; v.y+=v.vy; v.vx*=0.995; v.vy*=0.995; v.life--;
     if(s.invincible===0 && Math.abs((s.x+s.w/2)-v.x)<s.w/2+v.r && Math.abs((s.y+s.h/2)-v.y)<s.h/2+v.r){ hurt(s); v.life=0; }
   }
@@ -11905,10 +11953,51 @@ function drawSwimEnemies(){
   }
 }
 
+// RESERVED danger-ring tell — used ONLY for ink + current telegraphs, never decoration.
+function _dangerRing(cx,cy,mode,warn,warnMax,dir){
+  const tp=1-warn/warnMax;                       // 0 → 1 as the hit nears
+  const pulse=0.5+0.5*Math.sin(performance.now()*0.02*(1+tp*2));
+  const R=(mode==='current'?28:20+tp*12);
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(const pass of [[6,`rgba(255,40,90,${0.35+0.3*pulse})`],[2.2,`rgba(255,214,40,0.95)`]]){
+    ctx.lineWidth=pass[0]; ctx.strokeStyle=pass[1];
+    ctx.beginPath(); ctx.arc(cx,cy,R+pulse*4,0,7); ctx.stroke();   // hard-edged hollow ring
+  }
+  if(mode==='current'){                            // horizontal arrow-ring: chevrons along push axis
+    ctx.strokeStyle='rgba(255,214,40,0.95)'; ctx.lineWidth=2.4; ctx.lineJoin='round';
+    for(let i=-1;i<=1;i++){ const ax=cx+dir*(R*0.55+i*9);
+      ctx.beginPath(); ctx.moveTo(ax-dir*6,cy-7); ctx.lineTo(ax,cy); ctx.lineTo(ax-dir*6,cy+7); ctx.stroke(); }
+  }
+  ctx.restore();
+}
 function drawSwimInk(){
-  const lv=curLV();
+  const lv=curLV(), boss=lv.bossObj, bc=lv.boss;
+  const SY=SWIM.surfaceY, FY=swimFloorY();
+  // reserved tells (drawn while telegraphing, before the hazard exists)
+  if(boss&&boss.active){
+    if(boss.inkWarn>0) _dangerRing(boss.inkX-cameraX,(SY+FY)/2,'ink',boss.inkWarn,bc.ink.warn,1);
+    if(boss.curWarn>0){ const s=sawyer; _dangerRing(s.x-cameraX+s.w/2,s.y+s.h/2,'current',boss.curWarn,bc.current.warn,boss.curDir); }
+  }
   for(const v of venom){
-    const x=v.x-cameraX; if(x<-20||x>W+20)continue;
+    const x=v.x-cameraX;
+    if(v.ink){
+      if(x<-v.band||x>W+v.band)continue;
+      const a=Math.min(1, Math.min((v.maxLife-v.life)/20, v.life/30)); // fade in/out
+      const half=v.band/2, core=v.coreR, top=v.top, bot=v.bottom;
+      ctx.save();
+      const g=ctx.createLinearGradient(x-half,0,x+half,0);
+      g.addColorStop(0,'rgba(2,8,16,0)'); g.addColorStop(0.5,`rgba(2,8,16,${0.6*a})`); g.addColorStop(1,'rgba(2,8,16,0)');
+      ctx.fillStyle=g; ctx.fillRect(x-half,top,v.band,bot-top);                 // wide obscuring band
+      const cg=ctx.createLinearGradient(x-core,0,x+core,0);
+      cg.addColorStop(0,'rgba(0,0,0,0)'); cg.addColorStop(0.5,`rgba(0,0,0,${0.82*a})`); cg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=cg; ctx.fillRect(x-core,top,core*2,bot-top);                // dense damaging core
+      ctx.fillStyle=`rgba(8,18,28,${0.5*a})`;                                   // drifting blobs
+      for(let i=0;i<5;i++){ const by=top+((v.seed*37+i*73+v.life*1.6)%(bot-top)); const bx=x+Math.sin(v.seed+i*1.3+v.life*0.04)*core*0.6;
+        ctx.beginPath(); ctx.arc(bx,by,9+i*2,0,7); ctx.fill(); }
+      ctx.restore();
+      continue;
+    }
+    if(x<-20||x>W+20)continue;
     ctx.save(); ctx.globalAlpha=0.4; ctx.fillStyle=v.col||lv.pal.primary; ctx.beginPath(); ctx.arc(x,v.y,v.r+3,0,7); ctx.fill(); ctx.restore();
     ctx.fillStyle=v.col||lv.pal.primary; ctx.beginPath(); ctx.arc(x,v.y,v.r,0,7); ctx.fill();
     ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(x-v.r*0.3,v.y-v.r*0.3,v.r*0.4,0,7); ctx.fill();
