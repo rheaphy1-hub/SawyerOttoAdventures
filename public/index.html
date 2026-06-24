@@ -54,6 +54,7 @@
     display:flex; align-items:center; justify-content:center; backdrop-filter:blur(2px); }
   .tcbtn.pressed{ background:rgba(120,200,255,0.45); border-color:rgba(170,225,255,0.95); }
   #tc-left{ left:0; top:34px; }
+  #tc-up{ left:50px; top:0; font-size:17px; opacity:0.92; }
   #tc-right{ left:100px; top:34px; }
   #tc-down{ left:50px; top:68px; font-size:17px; opacity:0.92; }
   .tcbtn.act{ border-radius:50%; width:60px; height:60px; font-size:13px; font-weight:800;
@@ -378,6 +379,7 @@
     <button id="fs-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
     <div id="touch-controls" aria-hidden="true">
       <div id="dpad">
+        <button class="tcbtn" id="tc-up"    data-key="ArrowUp">&#9650;</button>
         <button class="tcbtn" id="tc-left"  data-key="ArrowLeft">&#9664;</button>
         <button class="tcbtn" id="tc-right" data-key="ArrowRight">&#9654;</button>
         <button class="tcbtn" id="tc-down"  data-key="ArrowDown">&#9660;</button>
@@ -1866,6 +1868,37 @@ function nearestThreat(fromX, fromY, range){
   return best;
 }
 
+// ── DUCK / DODGE — crouching shrinks the hitbox so high shots/enemies pass over;
+//    feet stay planted (resolve snaps y to p.h), and the sprite borrows the jump
+//    row's landing-crouch frame. Not used on the swim level (down = swim down). ──
+const DUCK_RATIO = 0.6;
+function applyDuckState(p, wantDuck){
+  if(!p) return;
+  if(p.standH==null) p.standH=p.h;
+  const duckH=Math.round(p.standH*DUCK_RATIO);
+  if(wantDuck && !p.ducking){ p.y += (p.standH-duckH); p.h=duckH; p.ducking=true; }
+  else if(!wantDuck && p.ducking){ p.y -= (p.standH-duckH); p.h=p.standH; p.ducking=false; }
+}
+// Otto is AI-driven: auto-duck briefly when a hostile projectile is incoming at the
+// head band a stand would catch but a crouch clears.
+function ottoAutoDuck(o){
+  if(!o) return false;
+  if(o.standH==null) o.standH=o.h;
+  o.duckHold = Math.max(0, (o.duckHold||0) - 1);
+  if(o.onGround){
+    const cx=o.x+o.w/2, feet=o.y+o.h, standTop=feet-o.standH, band=standTop+o.standH*0.45;
+    const lists=[ (typeof projectiles!=='undefined'?projectiles:null), (typeof venom!=='undefined'?venom:null) ];
+    for(const arr of lists){ if(!arr) continue;
+      for(const pr of arr){
+        const owner=pr.owner;
+        if(owner && (owner.id==='sawyer'||owner.id==='otto')) continue; // friendly fire ignored
+        const dx=pr.x-cx, toward=(pr.vx||0)*(dx>0?-1:1) > 0;
+        if(Math.abs(dx)<95 && toward && pr.y>standTop-25 && pr.y<band){ o.duckHold=18; break; }
+      }
+    }
+  }
+  return o.duckHold>0 && o.onGround;
+}
 function updateOtto(){
   const o = otto, s = sawyer;
   if(o.onGround) o.crossingPit=0;
@@ -2017,7 +2050,10 @@ function update(){
   }
 
   // Sawyer control
-  if (keys['ArrowLeft']) { s.vx=-speed; s.facing=-1; }
+  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
+  applyDuckState(s, _sDuck);
+  if (s.ducking) { s.vx*=0.6; }
+  else if (keys['ArrowLeft']) { s.vx=-speed; s.facing=-1; }
   else if (keys['ArrowRight']) { s.vx=speed; s.facing=1; }
   else s.vx*=0.72;
   
@@ -2060,6 +2096,7 @@ function update(){
   if (s.y>H+60) hurt(s, true);
 
   updateOtto();
+  applyDuckState(otto, ottoAutoDuck(otto));
   updateBottles(s); updateHearts(s); updateArtifact(s); enforceBarrier();
 
   // Power 1: giant otto kills enemies on contact (any direction)
@@ -2755,6 +2792,7 @@ function spriteAnim(p){
   if(p.id==='otto' && typeof ottoPower!=='undefined' && ottoPower===1 && typeof giantOttoPhase!=='undefined' && giantOttoPhase!=='idle') return 'giantCharge';
   if(p.climbing) return 'climb';
   if(currentLevel===4) return 'swim';
+  if(p.ducking) return 'duck';
   if(p.attackTimer>0) return 'attack';
   if(!p.onGround) return 'jump';
   if(Math.abs(p.vx)>0.5) return 'walk';
@@ -2792,8 +2830,13 @@ function drawCharSprite(p,drawY){
   if(!charAtlasReady) return false;
   const cost=charCostume();
   const meta=(CHAR_META[cost]||{})[p.id]; if(!meta) return false;
-  let anim=spriteAnim(p); if(!meta[anim]) anim='walk'; if(!meta[anim]) return false;
-  const arr=meta[anim]; let r=arr[spriteFrameIdx(p,anim,arr.length)]||arr[0]; if(!r) return false;
+  let anim=spriteAnim(p);
+  const ductMode = (anim==='duck');
+  if(ductMode) anim = meta['jump'] ? 'jump' : 'idle';   // borrow the landing-crouch pose
+  if(!meta[anim]) anim='walk'; if(!meta[anim]) return false;
+  const arr=meta[anim];
+  const _fi = ductMode ? (arr.length-1) : spriteFrameIdx(p,anim,arr.length);
+  let r=arr[_fi]||arr[0]; if(!r) return false;
   const sx=r[0],sy=r[1],sw=r[2],sh=r[3];
   const am=(SPRITE_ANIM_MULT[p.id]&&SPRITE_ANIM_MULT[p.id][anim])||1;
   let giantMul=1;
@@ -2814,7 +2857,9 @@ function drawCharSprite(p,drawY){
   }
   const dx=cx-dW/2;
   let dy;
-  if(anim==='jump'){
+  if(ductMode){
+    dy = drawY + p.h - dH;               // crouch: feet planted at the reduced height
+  } else if(anim==='jump'){
     // Normalize airborne frames to the standing height so heads/bodies never grow or shrink mid-jump
     const wm=meta.walk&&meta.walk[0]; const wScale=(SPRITE_SCALE[p.id]||1)*giantMul;
     const walkDH=(wm?wm[5]:dH)*wScale;
@@ -7217,7 +7262,10 @@ function updateLevel2(){
     return;
   }
 
-  if(keys['ArrowLeft']){s.vx=-speed;s.facing=-1;}
+  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
+  applyDuckState(s, _sDuck);
+  if(s.ducking){ s.vx*=0.6; }
+  else if(keys['ArrowLeft']){s.vx=-speed;s.facing=-1;}
   else if(keys['ArrowRight']){s.vx=speed;s.facing=1;}
   else if(s.onSlick) s.vx = s.vx*0.96 + s.facing*0.25;   // ice-slide chute: slick downhill glide (intentional reward ride)
   if(s.onSlick && Math.abs(s.vx)>1.2 && Math.random()<0.5)   // skid spray kicks up off slick ice — reinforces the hazard
@@ -7250,6 +7298,7 @@ function updateLevel2(){
   if(s.y>H+60) hurt(s, true);
 
   updateOttoL2();
+  applyDuckState(otto, ottoAutoDuck(otto));
   updateL2Platforms();
   updateEmberStone();
   updateL2Artifact();
@@ -8131,7 +8180,10 @@ function updateLevel3(){
   }
 
   // Sawyer movement
-  if(keys['ArrowLeft']){s.vx=-4;s.facing=-1;}
+  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
+  applyDuckState(s, _sDuck);
+  if(s.ducking){ s.vx*=0.6; }
+  else if(keys['ArrowLeft']){s.vx=-4;s.facing=-1;}
   else if(keys['ArrowRight']){s.vx=4;s.facing=1;}
   else s.vx*=0.8;
   s.vx=Math.max(-5,Math.min(5,s.vx));
@@ -8171,6 +8223,7 @@ function updateLevel3(){
   if(s.y>H+40){hurt(s, true);}
   if(s.invincible>0)s.invincible--;
   updateOttoL3();
+  applyDuckState(otto, ottoAutoDuck(otto));
 
   // Update wave hazard
   updateL3Waves(s);
@@ -10693,7 +10746,10 @@ function updateGen(){
   }
 
   // Sawyer movement
-  if(keys['ArrowLeft']){s.vx=-4;s.facing=-1;}
+  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
+  applyDuckState(s, _sDuck);
+  if(s.ducking){ s.vx*=0.6; }
+  else if(keys['ArrowLeft']){s.vx=-4;s.facing=-1;}
   else if(keys['ArrowRight']){s.vx=4;s.facing=1;}
   else s.vx*=0.8;
   s.vx=Math.max(-5,Math.min(5,s.vx));
@@ -10747,6 +10803,7 @@ function updateGen(){
   if(s.y>(currentLevel===6?cameraY:0)+H+40){hurt(s, true);}
   if(s.invincible>0)s.invincible--;
   updateOttoGen();
+  applyDuckState(otto, ottoAutoDuck(otto));
   updateBottles(s); updateHearts(s);
   updateGiantOttoCharge(lv.enemies);
   if(ottoPower===3){
