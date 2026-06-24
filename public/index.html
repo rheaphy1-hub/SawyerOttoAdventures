@@ -364,6 +364,9 @@
       <source src="assets/intro_cutscene.mp4" type="video/mp4">
     </video>
     <div id="intro-black" style="position:absolute;inset:0;background:#000;border-radius:10px;opacity:0;display:none;z-index:61;pointer-events:none;transition:opacity .5s ease;"></div>
+    <div id="intro-transit" style="position:absolute;inset:0;border-radius:10px;opacity:0;display:none;z-index:63;pointer-events:none;transition:opacity .9s ease;background:radial-gradient(ellipse at 50% 42%, #3a1c66 0%, #1d0f38 58%, #0b0518 100%);">
+      <div id="intro-transit-text" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 11%;text-align:center;color:#F3E9FF;font:500 18px/1.62 Georgia,'Times New Roman',serif;letter-spacing:.015em;text-shadow:0 0 20px rgba(160,110,255,0.55),0 2px 6px rgba(0,0,0,0.6);opacity:0;transition:opacity 1s ease .35s;">A portal appeared in their home, and two curious brothers leapt in. The adventure turned to peril &mdash; only the transponder in each world opens the way back.</div>
+    </div>
     <div id="intro-skip" style="position:absolute;bottom:14px;right:16px;z-index:62;display:none;color:#FAEEDA;font:600 13px system-ui,sans-serif;background:rgba(0,0,0,0.45);border:1px solid rgba(250,238,218,0.35);border-radius:20px;padding:6px 14px;cursor:pointer;user-select:none;letter-spacing:.04em;">Skip &#9654;&#9654;</div>
     <video id="return-cutscene" playsinline preload="auto" muted
       style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:10px;display:none;z-index:60;background:#000;">
@@ -1416,6 +1419,15 @@ const SFX2 = {
 };
 // Helper: use SFX2 in L2, SFX in L1
 function sfx(name){ (currentLevel===2 && SFX2[name] ? SFX2[name] : SFX[name])(); }
+// Rising portal-warp swell — used on the intro → Level 1 transit card.
+function introWhoosh(){
+  if(!sfxOn) return;
+  try{ if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }catch(e){}
+  noise(0.55, 0.05);
+  beep(110, 0.7, 'sawtooth', 0.06, 540);
+  beep(300, 0.6, 'sine', 0.035, 920);
+  setTimeout(()=>{ beep(680, 0.5, 'sine', 0.03, 1240); }, 180);
+}
 function toggleSound(){
   const on = !(musicOn && sfxOn);   // master: both on -> mute both; otherwise enable both
   musicOn = on; sfxOn = on;
@@ -6198,9 +6210,16 @@ function restart(resetLevel){
   
   console.log(`[GAME] Restart called, playing audio for level ${currentLevel}`);
   audioManager.play(currentLevel);
-  levelPaused = true;
-  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
-  showLevelPopup(popupTitles[currentLevel],'');
+  // Intro path: skip the level card so the entry portal yawns open the instant the
+  // purple transit clears — the boys are already tumbling in, no Play gate in between.
+  if(skipNextLevelPopup){
+    skipNextLevelPopup = false;
+    levelPaused = false;
+  } else {
+    levelPaused = true;
+    const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
+    showLevelPopup(popupTitles[currentLevel],'');
+  }
 }
 const STEP_MS=1000/60, MAX_STEPS=4, MAX_FRAME_MS=STEP_MS*MAX_STEPS;
 let _lastFrameT=0, _stepAccum=0;
@@ -13289,6 +13308,7 @@ function showLevelPopup(title, desc){
 //  22b. INTRO CUTSCENE — black → video → black, skippable, plays once on start
 // =========================================================================
 let introPlayed = false;
+let skipNextLevelPopup = false; // armed by the intro launch so L1 drops straight into the portal dump
 function playIntroCutscene(onDone){
   const vid   = document.getElementById('intro-cutscene');
   const black = document.getElementById('intro-black');
@@ -13307,10 +13327,43 @@ function playIntroCutscene(onDone){
     black.style.opacity='0';
   };
   const end = ()=>{ if(finished) return; finished=true;
-    // final black beat → fade out → done
-    black.style.transition='opacity 1.2s ease';
-    black.style.display='block'; black.style.opacity='1';
-    setTimeout(()=>{ cleanup(); onDone && onDone(); }, 1300);
+    const transit = document.getElementById('intro-transit');
+    const ttext   = document.getElementById('intro-transit-text');
+    // Fallback to the original black-out if the transit overlay is missing.
+    if(!transit){
+      black.style.transition='opacity 1.2s ease';
+      black.style.display='block'; black.style.opacity='1';
+      setTimeout(()=>{ cleanup(); onDone && onDone(); }, 1300);
+      return;
+    }
+    try{ skip.style.display='none'; }catch(e){}
+    // Match-cut: swell the purple portal wash up off the flash, fade the card in.
+    transit.style.display='block';
+    void transit.offsetWidth;
+    transit.style.opacity='1';
+    if(ttext) ttext.style.opacity='1';
+    try{ introWhoosh(); }catch(e){}
+    // Drop the video once the wash covers it.
+    setTimeout(()=>{ try{ vid.pause(); vid.style.display='none'; }catch(e){} }, 700);
+
+    let advanced=false;
+    const go = ()=>{ if(advanced) return; advanced=true;
+      transit.style.pointerEvents='none';
+      transit.removeEventListener('click', go);
+      window.removeEventListener('keydown', onAdvKey, true);
+      // Launch the level UNDER the purple, then fade the wash away to reveal the
+      // entry portal already yawning open — the boys are mid-tumble as it clears.
+      cleanup();
+      onDone && onDone();
+      transit.style.opacity='0';
+      setTimeout(()=>{ transit.style.display='none'; if(ttext) ttext.style.opacity='0'; }, 950);
+    };
+    const onAdvKey=(e)=>{ if(e.key==='Escape'||e.key===' '||e.key==='Enter'){ e.preventDefault(); go(); } };
+    // Let the line breathe; allow an early skip via click/key.
+    transit.style.pointerEvents='auto';
+    transit.addEventListener('click', go);
+    window.addEventListener('keydown', onAdvKey, true);
+    setTimeout(go, 4400);
   };
   const onEnded = ()=> end();
   const onErr   = ()=>{ cleanup(); onDone && onDone(); };
@@ -13720,6 +13773,7 @@ function playReturnHomeCutscene(onDone){
       mScreen.style.pointerEvents='none';
       setTimeout(()=>{ mScreen.style.display='none'; }, 1250);
       const launch=()=>{
+        skipNextLevelPopup=true;
         restart(true);
         setupHiDPI();
         if(!gameRunning){ gameRunning=true; loop(); }
