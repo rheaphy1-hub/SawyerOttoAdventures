@@ -400,7 +400,7 @@
       <div id="ne-total" class="ne-total">TOTAL SCORE: 0</div>
       <div class="ne-prompt">Add your name to the global leaderboard</div>
       <input id="ne-input" type="text" maxlength="20" placeholder="ENTER NAME" autocomplete="off"
-        onkeydown="if(event.key==='Enter'){finishNameEntry(true);}" />
+        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" />
       <div class="ne-hint">Leave blank for a fun random name</div>
       <div class="ne-row">
         <button class="ne-btn" onclick="finishNameEntry(true)">Submit</button>
@@ -479,6 +479,7 @@ const ctx = canvas.getContext('2d');
 // Credits screen has no floating button (it blocked the credits); allow a tap to restart,
 // matching the R-key affordance. Guarded so it never fires during gameplay.
 canvas.addEventListener('pointerdown', ()=>{ if(won && currentLevel===6 && returnHomeDone){ restartCurrentLevel(); } });
+canvas.addEventListener('pointerdown', ()=>{ if(victoryActive && victoryTimer<=0) vicContinue = true; }); // advance victory screen on tap/click
 const W = canvas.width, H = canvas.height;
 let RENDER_SCALE = 2;
 function setupHiDPI(){
@@ -1102,6 +1103,7 @@ function drawHearts(){
 
 // Victory animation
 let victoryActive = false, victoryTimer = 0;
+let vicContinue = false; // victory screen holds until player hits Continue
 // ---- Leaderboard state (final-level name entry + global board) ----
 let nameEntryActive = false;       // showing the name-entry overlay
 let nameEntryDone = false;         // submitted/skipped this run
@@ -1364,6 +1366,7 @@ document.addEventListener('keydown', e => {
   // While the leaderboard name box is open, let the input handle typing.
   if (nameEntryActive || (e.target && e.target.id === 'ne-input')) return;
   keys[e.code] = true;
+  if (victoryActive && victoryTimer<=0 && (e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')) vicContinue = true; // advance victory screen
   if (e.code === 'ArrowUp') jumpBufferedAt = simFrame;   // Task 2a jump buffer
   if (['Space','ArrowUp','ArrowLeft','ArrowRight','ArrowDown'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR' && (gameOver || won)) restartCurrentLevel();
@@ -1694,7 +1697,7 @@ let sawyer = null, otto = null;
 function buildPlayers(){
   cameraY = 0;
   runStartMs = Date.now(); // Task 4
-  _runTookDamage = false; _levelClearRecorded = false; // time-attack per-run reset
+  _runTookDamage = false; _levelClearRecorded = false; vicContinue = false; // time-attack per-run reset
   lives = 5;                              // hearts fully refill at every level start
   emberStone = null; emberCollected = false; // L2-only mechanic — never carry into other levels
   sawyer = {
@@ -2657,7 +2660,7 @@ function update(){
   // L1 Victory timer — transition to L2
   if (victoryActive){
     victoryTimer--;
-    if (victoryTimer <= 0){
+    if (victoryTimer <= 0 && vicContinue){
       victoryActive = false; won = false;
       fadeThenBuild(()=>{
         currentLevel = 2;
@@ -3664,6 +3667,7 @@ function drawVenom(){
 }
 
 function drawCheckpoint(){
+  return; // checkpoint flags removed — transponder respawn position still used silently
   if(!checkpoint) return;
   const levels = {1:WORLD_W, 2:0, 3:0}; // only draw in active level
   const cx = checkpoint.x - cameraX;
@@ -5964,21 +5968,29 @@ function drawVictoryAnimation(){
   }
   ctx.restore();
 
-  // Time-attack results strip (bottom) — run time + 3 labeled stars
+  // Time-attack results panel + Continue prompt (screen holds until the player continues)
   {
-    const sw=300, sh=54, sx=W/2-sw/2, sy2=H-sh-6;
+    const settled = victoryTimer<=0;
+    const pw=400, ph=78, px=(W-pw)/2, py=H-ph-30;
     ctx.save();
     ctx.globalAlpha=Math.min(1,prog*3);
-    ctx.fillStyle='rgba(8,6,18,0.66)'; ctx.beginPath(); ctx.roundRect(sx,sy2,sw,sh,9); ctx.fill();
-    ctx.strokeStyle='rgba(155,107,255,0.5)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.roundRect(sx,sy2,sw,sh,9); ctx.stroke();
-    ctx.textAlign='left'; ctx.font='700 12px system-ui,sans-serif';
+    ctx.fillStyle='rgba(8,6,18,0.78)'; ctx.beginPath(); ctx.roundRect(px,py,pw,ph,11); ctx.fill();
+    ctx.strokeStyle='rgba(155,107,255,0.55)'; ctx.lineWidth=1.4; ctx.beginPath(); ctx.roundRect(px,py,pw,ph,11); ctx.stroke();
+    ctx.textAlign='center'; ctx.font='700 14px system-ui,sans-serif';
     ctx.fillStyle=_newBestTime?'#FFD700':'#fff';
-    ctx.fillText('Time '+fmtTime(_lastClearMs), sx+12, sy2+20);
     const _bt=getBestTime(currentLevel);
-    ctx.font='600 10px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.72)';
-    ctx.fillText(_newBestTime ? '\u2605 NEW BEST!' : (_bt>0?'Best '+fmtTime(_bt):''), sx+12, sy2+38);
-    drawStarRow(ctx, sx+sw-78, sy2+18, 7, 46, currentLevel);
+    let _tl='Time '+fmtTime(_lastClearMs);
+    if(_newBestTime) _tl+='   \u2605 NEW BEST!'; else if(_bt>0) _tl+='    (Best '+fmtTime(_bt)+')';
+    ctx.fillText(_tl, W/2, py+22);
+    drawStarRow(ctx, W/2, py+46, 9, 120, currentLevel);
     ctx.restore();
+    if(settled){
+      const _bk=0.55+0.45*Math.sin(simFrame*0.12);
+      ctx.save(); ctx.globalAlpha=_bk; ctx.textAlign='center';
+      ctx.font='800 14px system-ui,sans-serif'; ctx.fillStyle='#9FE8FF';
+      ctx.fillText('\u25B6  Press Continue  \u25C0', W/2, py+ph+18);
+      ctx.restore();
+    }
   }
   // Celebratory sparkle burst (vector stars, no emojis)
   const sparkCols = ['#FFD700','#FF7AD9','#5FE6FF','#FFE066','#9B6BFF'];
@@ -7883,7 +7895,7 @@ function updateLevel2(){
   // L2 victory timer
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){
+    if(victoryTimer<=0 && vicContinue){
       victoryActive=false; won=false;
       currentLevel=3;
       cameraX=0; projectiles=[]; venom=[]; particles=[]; killCombo=0;
@@ -8389,7 +8401,7 @@ function updateLevel3(){
   // Victory countdown — L3 now transitions to L4 (UNDER THE SEA)
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){
+    if(victoryTimer<=0 && vicContinue){
       victoryActive=false; won=false;
       fadeToLevel(4);
     }
@@ -10982,7 +10994,7 @@ function updateGen(){
   }
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){
+    if(victoryTimer<=0 && vicContinue){
       victoryActive=false; won=false;
       if(lv.next){ fadeToLevel(lv.next); }
       else { finishCardActive=true; finishCardTimer=240; }
@@ -11667,7 +11679,7 @@ function updateSwim(){
   }
   if(victoryActive){
     victoryTimer--;
-    if(victoryTimer<=0){ victoryActive=false; won=false; if(lv.next){ fadeToLevel(lv.next); } else { finishCardActive=true; finishCardTimer=240; } }
+    if(victoryTimer<=0 && vicContinue){ victoryActive=false; won=false; if(lv.next){ fadeToLevel(lv.next); } else { finishCardActive=true; finishCardTimer=240; } }
     s.vx*=0.9; s.vy*=0.9; s.x+=s.vx; s.y+=s.vy;
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
     return;
