@@ -319,7 +319,7 @@
     <div class="popup-badge">🌊</div>
     <div class="popup-kicker">Level 4</div>
     <h2>THE ABYSS</h2>
-    <p>Dive into a glowing deep-sea reef. Swim past darting glowfish, grasping octopi and stinging anemones, dodge the pressure-pod mines, and descend to face Leviathan Lyra!</p>
+    <p>Dive into a glowing deep-sea reef. Swim past darting glowfish, grasping octopi and stinging anemones, dodge the pressure-pod mines, and descend to face The Leviathan!</p>
     <p class="popup-scoring">Collect pearls (75–250 pts), strike sea creatures (100–150 pts), beat the boss (+1 000)!</p>
     <p class="popup-par">🎯 Par time: <span data-par="4"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -668,7 +668,7 @@ const LEVEL_META = {
   1:{name:'Desert Dash',  boss:'The Drifter',       accent:'#E6A23C', deep:'#3A2A12'},
   2:{name:'Frozen Peaks', boss:'The Yeti',          accent:'#6FA8DC', deep:'#16314A'},
   3:{name:'Moonlight Bay',boss:'King Crab Krawley', accent:'#37B6A6', deep:'#0F3A38'},
-  4:{name:'The Abyss',    boss:'Leviathan Lyra',    accent:'#9B6BFF', deep:'#1A1040'},
+  4:{name:'The Abyss',    boss:'The Leviathan',    accent:'#9B6BFF', deep:'#1A1040'},
   5:{name:'Haunted Haus',  boss:'Baron Von Skream',   accent:'#D2456B', deep:'#3A0F1E'},
   6:{name:'Space Void',   boss:'Nexus Nine',        accent:'#FF6BD6', deep:'#2A0F2A'},
 };
@@ -3647,6 +3647,13 @@ function drawProjectiles(){
     }
   }
 }
+function bossDecide(b,list){
+  for(const e of list){ if(e.label===b.lastMove && b.lastMove===b.prevMove) e.w*=0.5; }  // anti-repeat
+  let t=0; for(const e of list)t+=e.w; let r=Math.random()*t;
+  for(const e of list){ if((r-=e.w)<0){ b.prevMove=b.lastMove; b.lastMove=e.label; e.do(); return e; } }
+  const e=list[list.length-1]; b.prevMove=b.lastMove; b.lastMove=e.label; e.do(); return e;
+}
+function _darkCol(c,f){ const n=parseInt(c.slice(1),16); return 'rgb('+((n>>16&255)*f|0)+','+((n>>8&255)*f|0)+','+((n&255)*f|0)+')'; }
 function drawVenom(){
   for (const v of venom){
     const x=v.x-cameraX, y=v.y;
@@ -3796,9 +3803,21 @@ function drawVenom(){
       ctx.fillStyle='rgba(255,245,180,0.7)'; ctx.beginPath(); ctx.arc(x-1.6,y-1.6,v.r*0.42,0,7); ctx.fill();
       ctx.restore(); continue;
     }
+    if(v.plasma){                                   // NEXUS: white-hot plasma capsule along velocity
+      const ang=Math.atan2(v.vy,v.vx), L=v.r*3;
+      ctx.save(); ctx.translate(x,y); ctx.rotate(ang); ctx.lineCap='round';
+      ctx.globalCompositeOperation='lighter';                      // glow pass only
+      ctx.strokeStyle=v.col||'#FFFF00'; ctx.globalAlpha=0.35; ctx.lineWidth=7;
+      ctx.beginPath(); ctx.moveTo(-L/2,0); ctx.lineTo(L/2,0); ctx.stroke();
+      ctx.globalCompositeOperation='source-over'; ctx.globalAlpha=1;
+      ctx.strokeStyle='#FFFFFF'; ctx.lineWidth=3;                  // white-hot core line
+      ctx.beginPath(); ctx.moveTo(-L/2,0); ctx.lineTo(L/2,0); ctx.stroke();
+      ctx.fillStyle='#00FFFF'; ctx.beginPath(); ctx.arc(L/2,0,2,0,7); ctx.fill();  // cyan tip
+      ctx.restore(); continue;
+    }
     ctx.beginPath(); ctx.arc(x,y,v.r,0,7);
-    ctx.fillStyle='#97C459'; ctx.fill();
-    ctx.strokeStyle='#3B6D11'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle=(v.col||'#97C459'); ctx.fill();
+    ctx.strokeStyle=(v.col?_darkCol(v.col,0.6):'#3B6D11'); ctx.lineWidth=1; ctx.stroke();
     ctx.fillStyle='rgba(255,255,255,0.4)';
     ctx.beginPath(); ctx.arc(x-1.5,y-1.5,1.5,0,7); ctx.fill();
   }
@@ -5902,7 +5921,7 @@ function drawCutscene(){
   ctx.fillStyle=vig; ctx.fillRect(0,0,W,H);
   ctx.restore();
   // Boss name
-  const NAMES = {1:'THE DRIFTER!',2:'THE YETI!',3:'KING CRAB KRAWLEY!',4:'LEVIATHAN LYRA!',5:'BARON VON SKREAM!',6:'NEXUS NINE!'};
+  const NAMES = {1:'THE DRIFTER!',2:'THE YETI!',3:'KING CRAB KRAWLEY!',4:'THE LEVIATHAN!',5:'BARON VON SKREAM!',6:'NEXUS NINE!'};
   const COLS  = {1:'#E2B04A',2:'#B0C4FF',3:'#8FD0A0',4:'#00FFFF',5:'#C9A0FF',6:'#7AF0FF'};
   const ta = Math.min(1, Math.max(0, (prog - 0.18) * 4)) * fadeOut;
   ctx.save();
@@ -6503,7 +6522,7 @@ function drawCreditsOverlay(){
     ['gap',''],
     ['label','BOSSES DEFEATED'],
     ['item','The Drifter  \u00b7  The Yeti'],
-    ['item','King Crab Krawley  \u00b7  Leviathan Lyra'],
+    ['item','King Crab Krawley  \u00b7  The Leviathan'],
     ['item','Baron Von Skream  \u00b7  Nexus Nine'],
     ['gap',''],
     ['gap',''],
@@ -10439,7 +10458,7 @@ const LV = {
           edge:'#2A5A6A', plat:'#4A7A8A', glow:'#6ABAAA',
           primary:'#00FF88', secondary:'#00FFFF', tertiary:'#FF00FF',
           r1:'#FFD700', r2:'#00FFFF', r3:'#FF00FF', pit:'#06101E' },
-    boss:{ name:'Leviathan Lyra', tag:'🦑 LEVIATHAN LYRA', rage:'🦑 LEVIATHAN LYRA — ENRAGED',
+    boss:{ name:'The Leviathan', tag:'🦑 THE LEVIATHAN', rage:'🦑 THE LEVIATHAN — ENRAGED',
            hp:18, vx1:1.8, vx2:2.6, spit1:60, spit2:40, n1:2, n2:3,
            proj:'#00FF88', body:'#00FFFF', limb:'#FF00FF', eye:'#FFD700', aura:'rgba(0,255,255,0.30)',
            ink:{ every1:240, every2:160, warn:50, life:150, band:120, coreR:34, dmg:true },
@@ -10542,7 +10561,7 @@ function buildGenBoss(n){
   lv.bossObj = {
     x:spawnX, y:FLOOR-64, w:64, h:64,
     alive:true, active:false, phase:0, hp:bc.hp, maxHp:bc.hp,
-    vx:bc.vx1, facing:-1, hitFlash:0, spitTimer:bc.spit1, lungeTimer:140,
+    vx:bc.vx1, facing:-1, hitFlash:0, spitTimer:bc.spit1, lungeTimer:140, actionTimer:60, lastMove:'', prevMove:'', approachT:0, retreatT:0,
     dieTimer:0, phaseIndex:0, slamTimer:100, orbit:0,
     fxCharge:0, fxDarken:0, fxViolet:0, fxEnrage:0, fxRed:0, fxDeathT:0, deathFlash:0, deathEyes:[],
     shielded:false, overclock:false, drones:null, shieldVis:0,
@@ -11077,6 +11096,7 @@ function updateGen(){
       thunderTimer = 600 + Math.random()*600;
       if(!thunderTrack) thunderTrack = new Audio('assets/thunder.mp3');
       thunderTrack.currentTime=0;
+      thunderTrack.volume=0.35;   // turned down — was full volume
       thunderTrack.play().catch(()=>{});
     }
     if(lightT>0) lightT--;
@@ -11397,6 +11417,7 @@ function updateGen(){
   if(currentLevel===5) updateBratwurst();
 
   // Boss (L1-style spit boss + phase2 slam, clone-tuned)
+  // Sprint F: weighted decision picker with anti-repeat (halve w of a move chosen twice in a row)
   if(boss&&boss.alive){
     // L5: the Baron only manifests once Sawyer has jumped up onto the floating feast table.
     // (other levels keep the gate-crossing trigger)
@@ -11465,28 +11486,59 @@ function updateGen(){
             boss.animName='walk'; boss.animFrame=0; boss.animAcc=0; }
         }
       }
-      if(!meleeBusy) boss.lungeTimer--;
-      if(!meleeBusy && boss.lungeTimer<=0){ boss.vx=(boss.phaseIndex?bc.vx2:bc.vx1)*1.6*boss.facing; boss.lungeTimer=150+Math.random()*90; sfx('charge'); }
-      else if(!meleeBusy){ const tgt=(boss.phaseIndex?bc.vx2:bc.vx1); if(Math.abs(boss.vx)>tgt+0.1)boss.vx*=0.96; }
-      if(!meleeBusy) boss.spitTimer--;
-      if(!meleeBusy && boss.spitTimer<=0){
-        boss.spitTimer=(boss.phaseIndex?bc.spit2:bc.spit1);
-        if(haus){
-          // begin a cast — but never interrupt an in-progress sword swing (let the melee play out)
-          if(!boss.casting && boss.animName!=='sword'){ boss.casting=true; boss.castFired=false; boss.animName='magic'; boss.animFrame=0; boss.animAcc=0; }
-          else if(boss.animName==='sword'){ boss.spitTimer=20; }  // retry shortly after the swing resolves
-        } else {
-          const cnt=(boss.phaseIndex?bc.n2:bc.n1);
-          const sx=boss.x+boss.w/2, sy=boss.y+boss.h*0.4;
-          const dx=(s.x+s.w/2)-sx, dy=(s.y+s.h/2)-sy; const d=Math.hypot(dx,dy)||1;
-          const baseA=Math.atan2(dy,dx);
-          for(let k=0;k<cnt;k++){
-            const spread=(cnt>1)?((k-(cnt-1)/2)*0.18):0;
-            const a=baseA+spread;
-            venom.push({x:sx,y:sy,vx:Math.cos(a)*5.4,vy:Math.sin(a)*5.4-1.0,life:120,r:6,col:bc.proj});
-          }
-          sfx('bossSpit');
+      if(!meleeBusy && boss.approachT<=0){ const tgt=(boss.phaseIndex?bc.vx2:bc.vx1); if(Math.abs(boss.vx)>tgt+0.1)boss.vx*=0.96; }
+      // ── SPRINT F REACTIVE NODE: one actionTimer owns lunge/cast/plasma/slam/beam cadence (King Crab pattern) ──
+      const doLunge=()=>{ boss.vx=(boss.phaseIndex?bc.vx2:bc.vx1)*1.6*boss.facing; sfx('charge'); };
+      const doCast=()=>{ // never interrupt an in-progress sword swing (existing guard preserved)
+        if(!boss.casting && boss.animName!=='sword'){ boss.casting=true; boss.castFired=false; boss.animName='magic'; boss.animFrame=0; boss.animAcc=0; }
+        else if(boss.animName==='sword'){ boss.actionTimer=20; } };  // retry shortly after the swing resolves
+      const doPlasma=()=>{
+        const l6=currentLevel===6, spd=l6?6.8:5.4;
+        const cnt=(boss.phaseIndex?bc.n2:bc.n1);
+        const sx=boss.x+boss.w/2, sy=boss.y+boss.h*0.4;
+        const baseA=Math.atan2((s.y+s.h/2)-sy,(s.x+s.w/2)-sx);
+        for(let k=0;k<cnt;k++){
+          const spread=(cnt>1)?((k-(cnt-1)/2)*(l6?0.10:0.18)):0;
+          const a=baseA+spread;
+          const b={x:sx,y:sy,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd+(l6?0:-1.0),life:l6?90:120,r:6,col:bc.proj};
+          if(l6){ b.plasma=true; if(boss.phaseIndex===1&&(k===0||k===cnt-1)) b.ricochet=true; }  // outer bolts ricochet in P2
+          venom.push(b);
         }
+        sfx('bossSpit');
+      };
+      const doSlam=()=>{
+        shockwaves.push({x:boss.x+boss.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:boss.facing,col:lv.pal.tertiary});
+        shakeIntensity=8; sfx('slam');
+        if(s.invincible===0 && s.onGround && Math.abs((s.x+s.w/2)-(boss.x+boss.w/2))<160){
+          s.vx=(s.x<boss.x?-1:1)*6; s.vy=-6;
+        } };
+      if(boss.actionTimer===undefined){ boss.actionTimer=60; boss.lastMove=''; boss.prevMove=''; boss.approachT=0; }
+      if(boss.approachT>0 && !meleeBusy){ boss.approachT--; boss.vx=bc.vx1*boss.facing;   // walk toward Sawyer, then re-decide
+        if(boss.approachT<=0) boss.actionTimer=1; }
+      if(!meleeBusy && !boss.casting && boss.approachT<=0) boss.actionTimer--;
+      if(!meleeBusy && !boss.casting && boss.approachT<=0 && boss.actionTimer<=0){
+        const adx=Math.abs((s.x+s.w/2)-(boss.x+boss.w/2));
+        let list;
+        if(haus){
+          if(adx<bc.melee.range){ list=[{label:'wait',w:1,do:()=>{}}]; boss.actionTimer=20; }  // let the melee distance-trigger fire
+          else {
+            if(adx<300) list=[{label:'volley',w:0.6,do:doCast},{label:'approach',w:0.4,do:()=>{boss.approachT=40;}}];
+            else list=[{label:'volley',w:0.75,do:doCast},{label:'lunge',w:0.25,do:doLunge}];
+            boss.actionTimer=boss.phaseIndex?45+Math.random()*25:60+Math.random()*35;
+          }
+        } else {
+          if(adx<140) list=[{label:'slam',w:0.7,do:doSlam},{label:'plasma',w:0.3,do:doPlasma}];
+          else if(adx<320) list=[{label:'plasma',w:0.7,do:doPlasma},{label:'lunge',w:0.3,do:doLunge}];
+          else {
+            const beamOK=boss.phaseIndex===1&&boss.overclock&&boss.beamState==='idle'&&(boss.beamCooldown||0)<=0;
+            list=[{label:'plasma',w:0.6,do:doPlasma},
+                  {label:'beam',w:0.4,do:beamOK?(()=>{ const bm=bc.beam, ccx=boss.x+boss.w/2, ccy=boss.y+boss.h/2;
+                    boss.beamState='charge'; boss.beamTimer=bm.chargeWarn; boss.beamHit=false;
+                    boss.beamAng0=Math.atan2((s.y+s.h/2)-ccy,(s.x+s.w/2)-ccx)-bm.sweepArc/2; sfx('beamCharge'); }):doPlasma}];  // beam busy → plasma
+          }
+          boss.actionTimer=boss.phaseIndex?40+Math.random()*25:55+Math.random()*35;
+        }
+        bossDecide(boss,list);
       }
       // --- Baron sprite animation state machine (game-tick timed; owns frame + bolt spawn) ---
       if(haus){
@@ -11509,7 +11561,9 @@ function updateGen(){
             const dx=(s.x+s.w/2)-mx, dy=(s.y+s.h/2)-my; const d=Math.hypot(dx,dy)||1;
             const baseA=Math.atan2(dy,dx);
             for(let k=0;k<cnt;k++){ const spread=(cnt>1)?((k-(cnt-1)/2)*0.16):0; const a=baseA+spread;
-              venom.push({x:mx,y:my,vx:Math.cos(a)*5.6,vy:Math.sin(a)*5.6-0.5,life:120,r:9,col:bc.proj,baron:true}); }
+              const b={x:mx,y:my,vx:Math.cos(a)*5.6,vy:Math.sin(a)*5.6-0.5,life:120,r:9,col:bc.proj,baron:true};
+              if(boss.phaseIndex===1){ b.holdT=k*12; b.hx=mx; b.hy=my; }   // P2: bolts stack at the hand, release one-by-one
+              venom.push(b); }
             sfx('bossSpit');
             boss.fxViolet=1; boss.fxCharge=0; shakeIntensity=Math.max(shakeIntensity,7);  // release flash + jolt
           }
@@ -11524,18 +11578,7 @@ function updateGen(){
         if(boss.fxEnrage>0) boss.fxEnrage--;
         if(boss.fxRed>0.01) boss.fxRed*=0.9; else boss.fxRed=0;
       }
-      // Phase-2 ground slam shockwave
-      if(boss.phaseIndex===1){
-        boss.slamTimer--;
-        if(boss.slamTimer<=0){
-          boss.slamTimer=110;
-          shockwaves.push({x:boss.x+boss.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:boss.facing,col:lv.pal.tertiary});
-          shakeIntensity=8; sfx('slam');
-          if(s.invincible===0 && s.onGround && Math.abs((s.x+s.w/2)-(boss.x+boss.w/2))<160){
-            s.vx=(s.x<boss.x?-1:1)*6; s.vy=-6;
-          }
-        }
-      }
+      // (Phase-2 ground slam is now node-driven and L6-only — Baron no longer slams)
       // ── L6 NEXUS NINE: drone-shield orbit + overclock sweep beam ──
       if(currentLevel===6 && boss.phaseIndex===1){
         const dr=bc.drones, bm=bc.beam, ccx=boss.x+boss.w/2, ccy=boss.y+boss.h/2;
@@ -11543,9 +11586,7 @@ function updateGen(){
         boss.shieldVis=(boss.shieldVis||0)+((boss.shielded?1:0)-(boss.shieldVis||0))*0.12;
         if(boss.overclock){
           if(boss.beamState==='idle'){
-            if(boss.beamCooldown>0) boss.beamCooldown--;
-            else { boss.beamState='charge'; boss.beamTimer=bm.chargeWarn; boss.beamHit=false;
-              boss.beamAng0=Math.atan2((s.y+s.h/2)-ccy,(s.x+s.w/2)-ccx)-bm.sweepArc/2; sfx('beamCharge'); }
+            if(boss.beamCooldown>0) boss.beamCooldown--;   // decision node triggers the charge now
           } else if(boss.beamState==='charge'){
             boss.beamTimer--;
             if(boss.beamTimer<=0){ boss.beamState='sweep'; boss.beamTimer=bm.sweepDur; boss.beamHit=false;
@@ -11597,11 +11638,17 @@ function updateGen(){
 
   // Venom (themed colour, clone of L1 venom)
   for(const v of venom){
-    v.vy+=0.12; v.x+=v.vx; v.y+=v.vy; v.life--;
+    if(v.holdT>0){ v.holdT--; v.x=v.hx; v.y=v.hy;               // Baron P2: bolt held at the hand
+      if(v.holdT===0){ const a=Math.atan2((s.y+s.h/2)-v.y,(s.x+s.w/2)-v.x);
+        v.vx=Math.cos(a)*5.6; v.vy=Math.sin(a)*5.6-0.5; sfx('bossSpit'); }  // re-aimed on release
+      continue; }
+    if(!v.plasma) v.vy+=0.12;                                   // plasma ignores gravity
+    v.x+=v.vx; v.y+=v.vy; v.life--;
     if(currentLevel===6 && lv.spires && lv.spireRise>0.3){
       for(const sp of lv.spires){ const top=sp.baseY-sp.h*lv.spireRise;
         if(v.x>sp.x-sp.w/2-2 && v.x<sp.x+sp.w/2+2 && v.y>top && v.y<sp.baseY){
-          v.life=0; sfx('ball'); shakeIntensity=Math.max(shakeIntensity,3);
+          if(v.plasma&&v.ricochet&&!v.bounced){ v.vx*=-1; v.bounced=true; sfx('ball'); }  // one ricochet off the spire
+          else { v.life=0; sfx('ball'); shakeIntensity=Math.max(shakeIntensity,3); }
           for(let i=0;i<8;i++) particles.push({x:v.x,y:v.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,life:18,maxLife:18,type:'spark',color:'#9FD8FF'});
           break; }
       }
@@ -11972,22 +12019,43 @@ function updateSwim(){
       boss.vx*=0.94; boss.vy*=0.94;
       const cap=spd*1.2;
       boss.vx=Math.max(-cap,Math.min(cap,boss.vx)); boss.vy=Math.max(-cap,Math.min(cap,boss.vy));
+      if(boss.retreatT>0){ boss.retreatT--; boss.vx=boss.rdx*cap*1.5; boss.vy=boss.rdy*cap*1.5; }  // retreatBurst overrides pursuit
       boss.x+=boss.vx + Math.sin(boss.phase)*0.4; boss.y+=boss.vy + Math.cos(boss.phase*0.8)*0.5;
       if(boss.x<lo){boss.x=lo;boss.vx*=-0.5;} if(boss.x>hi){boss.x=hi;boss.vx*=-0.5;}
       if(boss.y<SY){boss.y=SY;boss.vy*=-0.5;} if(boss.y>FY-boss.h){boss.y=FY-boss.h;boss.vy*=-0.5;}
       if(boss.hitFlash>0)boss.hitFlash--;
-      // omnidirectional ink bursts
-      boss.spitTimer--;
-      if(boss.spitTimer<=0){
-        boss.spitTimer=(boss.phaseIndex?bc.spit2:bc.spit1);
+      // ── SPRINT F REACTIVE NODE: one actionTimer owns fan/plume/current/retreat cadence ──
+      const doFan=()=>{
         const cnt=(boss.phaseIndex?bc.n2:bc.n1)+2;
         const sx=boss.x+boss.w/2, sy=boss.y+boss.h*0.5;
         const baseA=Math.atan2((s.y+s.h/2)-sy,(s.x+s.w/2)-sx);
         for(let k=0;k<cnt;k++){
           const a = (boss.phaseIndex? (baseA + (k-(cnt-1)/2)*0.5) : (k*Math.PI*2/cnt));
-          venom.push({x:sx,y:sy,vx:Math.cos(a)*3.6,vy:Math.sin(a)*3.6,life:130,r:6,col:bc.proj});
+          venom.push({x:sx,y:sy,vx:Math.cos(a)*3.6,vy:Math.sin(a)*3.6,life:130,r:6,col:bc.proj,wob:Math.random()*6.28,homing:boss.phaseIndex===1});
         }
         sfx('bossSpit');
+      };
+      const doPlume=()=>{ boss.inkWarn=bc.ink.warn;
+        boss.inkX=Math.max(lv.bossGate+40, Math.min(lv.worldW-40, s.x+s.w/2)); };
+      const doCurrent=()=>{ boss.curWarn=bc.current.warn;
+        boss.curDir=((s.x+s.w/2) < (boss.x+boss.w/2)) ? -1 : 1; };   // away from Lyra
+      const doRetreat=()=>{   // 30-frame swim-away + radial 6-pellet ring on departure
+        const rdx=(boss.x+boss.w/2)-(s.x+s.w/2), rdy=(boss.y+boss.h/2)-(s.y+s.h/2), rd=Math.hypot(rdx,rdy)||1;
+        boss.rdx=rdx/rd; boss.rdy=rdy/rd; boss.retreatT=30;
+        const sx=boss.x+boss.w/2, sy=boss.y+boss.h*0.5;
+        for(let k=0;k<6;k++){ const a=k*Math.PI/3;
+          venom.push({x:sx,y:sy,vx:Math.cos(a)*3.6,vy:Math.sin(a)*3.6,life:130,r:6,col:bc.proj,wob:Math.random()*6.28}); }
+        sfx('bossSpit'); };
+      if(boss.actionTimer===undefined){ boss.actionTimer=70; boss.lastMove=''; boss.prevMove=''; boss.retreatT=0; }
+      boss.actionTimer--;
+      if(boss.actionTimer<=0){
+        const adx=Math.abs((s.x+s.w/2)-(boss.x+boss.w/2));
+        let list;
+        if(adx<120) list=[{label:'retreat',w:1,do:doRetreat}];
+        else { list=[{label:'fan',w:0.65,do:doFan},{label:'plume',w:0.35,do:doPlume}];
+               if(boss.phaseIndex===1) list.push({label:'current',w:0.3,do:doCurrent}); }
+        boss.actionTimer=boss.phaseIndex?50+Math.random()*35:70+Math.random()*40;
+        bossDecide(boss,list);
       }
       // ---- SIGNATURE: ink plume (both phases) — telegraph then dark column ----
       if(boss.inkWarn>0){
@@ -11998,14 +12066,7 @@ function updateSwim(){
                        life:bc.ink.life, maxLife:bc.ink.life, rise:0.22, seed:Math.random()*99 });
           sfx('bossSpit');
         }
-      } else {
-        boss.inkTimer--;
-        if(boss.inkTimer<=0){
-          boss.inkTimer = (boss.phaseIndex?bc.ink.every2:bc.ink.every1);
-          boss.inkWarn = bc.ink.warn;
-          boss.inkX = Math.max(lv.bossGate+40, Math.min(lv.worldW-40, s.x+s.w/2));
-        }
-      }
+      }   // (ink cadence is node-driven; telegraph countdown/spawn above unchanged)
       // ---- PHASE 2: telegraphed current shoves Sawyer's aim ----
       if(boss.phaseIndex===1){
         if(boss.curTimer>0){
@@ -12014,14 +12075,7 @@ function updateSwim(){
         } else if(boss.curWarn>0){
           boss.curWarn--;
           if(boss.curWarn===0){ boss.curTimer=bc.current.dur; sfx('bossSpit'); }
-        } else {
-          boss.curBeat--;
-          if(boss.curBeat<=0){
-            boss.curBeat = bc.current.dur*2 + 90;
-            boss.curWarn = bc.current.warn;
-            boss.curDir = ((s.x+s.w/2) < (boss.x+boss.w/2)) ? -1 : 1;   // away from Lyra
-          }
-        }
+        }   // (current cadence is node-driven; warn/push execution above unchanged)
       }
       // phase 2: ink murk ramps up
       swimMurk += ((boss.phaseIndex===1?0.55:0) - swimMurk)*0.03;
@@ -12044,6 +12098,14 @@ function updateSwim(){
       if(v.dmg && s.invincible===0 && Math.abs((s.x+s.w/2)-v.x) < (v.coreR + s.w*0.25)
          && (s.y+s.h)>v.top && s.y<v.bottom){ hurt(s); }
       continue;
+    }
+    if(v.wob!==undefined){                                        // Lyra ink pellet only (enemy shots untouched)
+      v.x+=Math.sin(v.wob+v.life*0.15)*0.35;
+      if(v.homing && v.life>90){                                  // P2 fan homes for its first 40 frames
+        const a=Math.atan2((s.y+s.h/2)-v.y,(s.x+s.w/2)-v.x);
+        v.vx+=Math.cos(a)*0.04; v.vy+=Math.sin(a)*0.04;
+        const sp=Math.hypot(v.vx,v.vy); if(sp>4){v.vx*=4/sp;v.vy*=4/sp;}
+      }
     }
     v.x+=v.vx; v.y+=v.vy; v.vx*=0.995; v.vy*=0.995; v.life--;
     if(s.invincible===0 && Math.abs((s.x+s.w/2)-v.x)<s.w/2+v.r && Math.abs((s.y+s.h/2)-v.y)<s.h/2+v.r){ hurt(s); v.life=0; }
@@ -12415,6 +12477,16 @@ function drawSwimInk(){
       continue;
     }
     if(x<-20||x>W+20)continue;
+    if(v.wob!==undefined){                          // Lyra ink pellet: dark teardrop + rim glow + fading trail
+      ctx.save();
+      for(let i=3;i>=1;i--){ ctx.globalAlpha=0.35*(1-i*0.25); ctx.fillStyle='#1A1040';
+        ctx.beginPath(); ctx.arc(x-v.vx*i*1.5, v.y-v.vy*i*1.5, v.r*0.45*(1.1-i*0.2),0,7); ctx.fill(); }
+      ctx.globalAlpha=1; ctx.translate(x,v.y); ctx.rotate(Math.atan2(v.vy,v.vx));
+      ctx.beginPath(); ctx.ellipse(0,0,v.r*1.8,v.r*0.9,0,0,7);
+      ctx.fillStyle='#1A1040'; ctx.fill();          // ink core
+      ctx.strokeStyle=bc.proj||'#00FF88'; ctx.lineWidth=1.4; ctx.stroke();   // rim glow
+      ctx.restore(); continue;
+    }
     ctx.save(); ctx.globalAlpha=0.4; ctx.fillStyle=v.col||lv.pal.primary; ctx.beginPath(); ctx.arc(x,v.y,v.r+3,0,7); ctx.fill(); ctx.restore();
     ctx.fillStyle=v.col||lv.pal.primary; ctx.beginPath(); ctx.arc(x,v.y,v.r,0,7); ctx.fill();
     ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(x-v.r*0.3,v.y-v.r*0.3,v.r*0.4,0,7); ctx.fill();
