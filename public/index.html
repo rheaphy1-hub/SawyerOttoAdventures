@@ -172,6 +172,7 @@
     color: rgba(232,230,236,0.72);
   }
   .popup-scoring { font-size: 11px; color: rgba(232,230,236,0.55); }
+  .popup-par { font-size: 10.5px; color: rgba(232,230,236,0.38); margin-top: 2px; }
 
   .popup-content .play-btn {
     margin-top: 6px; padding: 8px 28px;
@@ -287,6 +288,7 @@
     <h2>DESERT DASH</h2>
     <p>Guide Sawyer across the Texas desert &mdash; baby brother Otto tags along and helps out.</p>
     <p class="popup-scoring">Grab cool rocks (75 pts), stomp enemies (100 pts), defeat The Drifter!</p>
+    <p class="popup-par">🎯 Par time: <span data-par="1"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
@@ -297,6 +299,7 @@
     <h2>FROZEN PEAKS</h2>
     <p>Climb the icy slopes with Otto as the blizzard howls and frozen creatures stalk the snow.</p>
     <p class="popup-scoring">Grab glowing ice crystals (75 pts), defeat frozen foes (100 pts), bring down the Yeti (+1 000)!</p>
+    <p class="popup-par">🎯 Par time: <span data-par="2"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
@@ -304,9 +307,10 @@
   <div class="popup-content theme-shore">
     <div class="popup-badge">🦀</div>
     <div class="popup-kicker">Level 3</div>
-    <h2>SANDY SHORES</h2>
+    <h2>MOONLIGHT BAY</h2>
     <p>Otto spotted a hermit crab and now they're sprinting down the beach. Dodge the surf, brave the pier, and defeat King Crab Krawley!</p>
     <p class="popup-scoring">Collect seashells (75 pts), pearl shells (150 pts), starfish (250 pts), defeat crabs & gulls (100–150 pts), beat the boss (+1 000)!</p>
+    <p class="popup-par">🎯 Par time: <span data-par="3"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
@@ -314,9 +318,10 @@
   <div class="popup-content theme-sea">
     <div class="popup-badge">🌊</div>
     <div class="popup-kicker">Level 4</div>
-    <h2>UNDER THE SEA</h2>
+    <h2>THE ABYSS</h2>
     <p>Dive into a glowing deep-sea reef. Swim past darting glowfish, grasping octopi and stinging anemones, dodge the pressure-pod mines, and descend to face Leviathan Lyra!</p>
     <p class="popup-scoring">Collect pearls (75–250 pts), strike sea creatures (100–150 pts), beat the boss (+1 000)!</p>
+    <p class="popup-par">🎯 Par time: <span data-par="4"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
@@ -324,9 +329,10 @@
   <div class="popup-content theme-haus">
     <div class="popup-badge">👻</div>
     <div class="popup-kicker">Level 5</div>
-    <h2>SPOOKY HAUS</h2>
+    <h2>HAUNTED HAUS</h2>
     <p>You've entered a haunted German manor where a rotten feast has come alive. Creaking floors, guttering candlelight, and grotesque banquet-horrors await — survive to meet Baron Von Skream!</p>
     <p class="popup-scoring">Grab coins & spell orbs (75–250 pts), put down the feast-horrors (100–150 pts), beat the boss (+1 000)!</p>
+    <p class="popup-par">🎯 Par time: <span data-par="5"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
@@ -334,9 +340,10 @@
   <div class="popup-content theme-space">
     <div class="popup-badge">🌌</div>
     <div class="popup-kicker">Final Level</div>
-    <h2>OUTER SPACE</h2>
+    <h2>SPACE VOID</h2>
     <p>Adrift in the void between stars. Slip past the things that watch and devour in the dark — then face the tear in reality, Nexus Nine!</p>
     <p class="popup-scoring">Collect cells (75–250 pts), banish void entities (100–150 pts), beat the final boss (+1 000)!</p>
+    <p class="popup-par">🎯 Par time: <span data-par="6"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
   </div>
 </div>
@@ -662,7 +669,7 @@ const LEVEL_META = {
   2:{name:'Frozen Peaks', boss:'The Yeti',          accent:'#6FA8DC', deep:'#16314A'},
   3:{name:'Moonlight Bay',boss:'King Crab Krawley', accent:'#37B6A6', deep:'#0F3A38'},
   4:{name:'The Abyss',    boss:'Leviathan Lyra',    accent:'#9B6BFF', deep:'#1A1040'},
-  5:{name:'Spooky Haus',  boss:'Baron Von Skream',   accent:'#D2456B', deep:'#3A0F1E'},
+  5:{name:'Haunted Haus',  boss:'Baron Von Skream',   accent:'#D2456B', deep:'#3A0F1E'},
   6:{name:'Space Void',   boss:'Nexus Nine',        accent:'#FF6BD6', deep:'#2A0F2A'},
 };
 // Victory surface runtime state: count-up gate + new-best flag.
@@ -701,6 +708,12 @@ function fmtTime(ms){
   ms=Math.max(0,ms|0); const cs=Math.floor(ms/10)%100, sec=Math.floor(ms/1000)%60, m=Math.floor(ms/60000);
   return m+':'+String(sec).padStart(2,'0')+'.'+String(cs).padStart(2,'0');
 }
+function fmtTimeShort(ms){ // m:ss — par display (no centiseconds)
+  ms=Math.max(0,ms|0); const sec=Math.floor(ms/1000)%60, m=Math.floor(ms/60000);
+  return m+':'+String(sec).padStart(2,'0');
+}
+// Task 2a: fill par times into every level popup
+try{ document.querySelectorAll('[data-par]').forEach(el=>{ const n=parseInt(el.getAttribute('data-par'),10); el.textContent=fmtTimeShort(PAR_TIME[n]||0); }); }catch(e){}
 function recordLevelClear(level){
   if(DEV && _devRunTainted) return;          // Task 3: QA-tool run — no stars, no best times
   if(_levelClearRecorded) return;            // idempotent — some levels clear via two paths
@@ -6031,7 +6044,7 @@ function drawVictoryAnimation(){
     ctx.textAlign='center'; ctx.font='700 14px system-ui,sans-serif';
     ctx.fillStyle=_newBestTime?'#FFD700':'#fff';
     const _bt=getBestTime(currentLevel);
-    let _tl='Time '+fmtTime(_lastClearMs);
+    let _tl='Time '+fmtTime(_lastClearMs)+'  \u00b7  PAR '+fmtTimeShort(PAR_TIME[currentLevel]||0);
     if(_newBestTime) _tl+='   \u2605 NEW BEST!'; else if(_bt>0) _tl+='    (Best '+fmtTime(_bt)+')';
     ctx.fillText(_tl, W/2, py+22);
     drawStarRow(ctx, W/2, py+46, 9, 120, currentLevel);
@@ -6138,9 +6151,20 @@ function drawHUD(){
   // Live time-attack timer — small/secondary, only while a level is actively running
   if(gameRunning && !levelPaused && !victoryActive && !cutsceneActive && !finishCardActive && !nameEntryActive){
     const _tms=Math.max(0,simFrame-levelStartFrame)/60*1000, _tt=fmtTime(_tms), _ty=sy+18;
-    c.shadowBlur=0; c.textAlign='right'; c.font='800 12px system-ui,-apple-system,sans-serif';
-    c.lineWidth=3; c.lineJoin='round'; c.strokeStyle='rgba(6,4,18,0.9)'; c.strokeText(_tt, rightX, _ty);
-    c.fillStyle='rgba(222,212,255,0.92)'; c.fillText(_tt, rightX, _ty);
+    c.shadowBlur=0; c.textAlign='right'; c.lineWidth=3; c.lineJoin='round'; c.strokeStyle='rgba(6,4,18,0.9)';
+    // Task 2b: PAR readout — subordinate to timer; level accent while under par, 45% gray once exceeded
+    const _par=PAR_TIME[currentLevel]||0; let _pw=0;
+    if(_par){
+      const _ps=' / PAR '+fmtTimeShort(_par);
+      c.font='800 10px system-ui,-apple-system,sans-serif';
+      _pw=c.measureText(_ps).width;
+      c.strokeText(_ps, rightX, _ty);
+      c.fillStyle=(_tms<=_par) ? ((LEVEL_META[currentLevel]||{}).accent||'#FFD700') : 'rgba(150,150,150,0.45)';
+      c.fillText(_ps, rightX, _ty);
+    }
+    c.font='800 12px system-ui,-apple-system,sans-serif';
+    c.strokeText(_tt, rightX-_pw, _ty);
+    c.fillStyle='rgba(222,212,255,0.92)'; c.fillText(_tt, rightX-_pw, _ty);
   }
   c.restore();
   drawAcquiredTray();
@@ -6278,7 +6302,7 @@ function drawFinishCard(){
   // Time-attack: run/best time + 3 labeled stars
   const _taY=cy2+186; ctx.textAlign='center';
   ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle=_newBestTime?'#FFD700':'#A8F0C6';
-  ctx.fillText('Time '+fmtTime(_lastClearMs)+(_newBestTime?'  \u2605 NEW BEST!':(getBestTime(currentLevel)>0?'   Best '+fmtTime(getBestTime(currentLevel)):'')), W/2, _taY);
+  ctx.fillText('Time '+fmtTime(_lastClearMs)+' \u00b7 PAR '+fmtTimeShort(PAR_TIME[currentLevel]||0)+(_newBestTime?'  \u2605 NEW BEST!':(getBestTime(currentLevel)>0?'   Best '+fmtTime(getBestTime(currentLevel)):'')), W/2, _taY);
   drawStarRow(ctx, W/2, _taY+22, 8, 92, currentLevel);
   ctx.restore();
 }
@@ -6403,7 +6427,7 @@ function drawCreditsOverlay(){
     ['label','WORLDS'],
     ['item','Desert Dash  \u00b7  Frozen Peaks'],
     ['item','Moonlight Bay  \u00b7  The Abyss'],
-    ['item','Spooky Haus  \u00b7  Space Void'],
+    ['item','Haunted Haus  \u00b7  Space Void'],
     ['gap',''],
     ['label','BOSSES DEFEATED'],
     ['item','The Drifter  \u00b7  The Yeti'],
@@ -6500,7 +6524,7 @@ function restartCurrentLevel(){
   resetRunState(currentLevel||1, {keepTransponderResume:true});
   audioManager.stop();
   audioManager.play(currentLevel);
-  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
+  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'HAUNTED HAUS',6:'SPACE VOID'};
   const popupDescs={1:'Guide Sawyer across the Texas desert!',2:'Brave the blizzard — defeat the Yeti!',3:'Otto spotted a hermit crab and now they\'re sprinting down the beach!'};
   levelPaused = true;
   showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
@@ -6537,7 +6561,7 @@ function restart(resetLevel){
     levelStartFrame = simFrame; // Task 5b: intro path never hits closeLevelPopup — start the run clock here
   } else {
     levelPaused = true;
-    const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
+    const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'HAUNTED HAUS',6:'SPACE VOID'};
     showLevelPopup(popupTitles[currentLevel],'');
   }
 }
@@ -14240,15 +14264,16 @@ function playReturnHomeCutscene(onDone){
   mCtx.setTransform(_mdpr,0,0,_mdpr,0,0);
   mCtx.imageSmoothingEnabled = true; mCtx.imageSmoothingQuality = 'high';
   let mT = 0, menuRunning = true;
+  let menuMode='title'; // Task 1: 'title' | 'levels'
 
   // Characters drawn at 5x scale, positioned in lower-center of canvas
   // At 5x: Sawyer (26x40) becomes ~130x200, Otto (22x26) becomes ~110x130
   const SCALE = 5;
   // Sawyer base coords at 1x — will be scaled around canvas center
   // Place them so they appear large and centered
-  const sBase = { x: -60, y: 60, w:26, h:40, facing:1,
+  const sBase = { x: -110, y: 60, w:26, h:40, facing:1,
     skin:'#E3A777', hair:'#3D2817', shirt:'#2E2E2C', stripe:'#F4F1E8' };
-  const oBase = { x: 50,  y: 80, w:22, h:26, facing:-1,
+  const oBase = { x: 90,  y: 80, w:22, h:26, facing:-1,
     skin:'#F2C9A3', hair:'#C9A878', onesie:'#B5D4F4' };
 
   let sawyerWave = 0, ottoWave = 0, ottoBounce = 0;
@@ -14264,7 +14289,18 @@ function playReturnHomeCutscene(onDone){
   const sparks = Array.from({length:26},()=>({x:Math.random()*MW,y:Math.random()*MH,r:Math.random()*1.8+0.5,s:Math.random()*0.4+0.15,p:Math.random()*6.28}));
 
   // Start button hit area (set after first draw)
-  const btn = { x: MW/2-90, y: MH-112, w:180, h:46 };
+  const btn = { x: MW/2-90, y: MH-134, w:180, h:46 };
+  // Task 1: LEVEL SELECT button + hub geometry
+  const lvlBtn = { x: MW/2-90, y: MH-78, w:180, h:32 };
+  let lvlBtnHover = false;
+  const TILE_W=190, TILE_H=120, TILE_G=16;
+  const gridX=(MW-(TILE_W*3+TILE_G*2))/2, gridY=64;
+  const tileRects={};
+  for(let n=1;n<=6;n++){ const i=n-1;
+    tileRects[n]={x:gridX+(i%3)*(TILE_W+TILE_G), y:gridY+Math.floor(i/3)*(TILE_H+TILE_G), w:TILE_W, h:TILE_H}; }
+  const backBtn = { x:14, y:12, w:86, h:34 };
+  let hoverTile=0, backHover=false;
+  function lvlUnlocked(n){ return n===1 || (getStars(n-1)&1)!==0 || DEV; }
   // Independent audio toggles (top-right)
   const musicBtn = { x: MW-112, y:10, w:48, h:42 };
   const sfxBtn   = { x: MW-56,  y:10, w:48, h:42 };
@@ -14389,6 +14425,79 @@ function playReturnHomeCutscene(onDone){
     c.restore();
   }
 
+  function drawLevelsMode(c){
+    // Header — title art style, smaller
+    c.save(); c.textAlign='center';
+    c.font='900 italic 26px Impact,"Arial Black",system-ui,sans-serif'; c.lineJoin='round';
+    c.shadowColor='rgba(255,120,40,0.5)'; c.shadowBlur=12;
+    c.lineWidth=6; c.strokeStyle='#150a04'; c.strokeText('SELECT WORLD', MW/2, 40);
+    c.shadowBlur=0;
+    const hg=c.createLinearGradient(0,16,0,44);
+    hg.addColorStop(0,'#FFE9A8'); hg.addColorStop(0.45,'#FFB13D'); hg.addColorStop(1,'#FF6B1E');
+    c.fillStyle=hg; c.fillText('SELECT WORLD', MW/2, 40);
+    c.restore();
+    // Total-star counter (top-right)
+    let tot=0; for(let n=1;n<=6;n++){ const st=getStars(n); tot+=(st&1?1:0)+(st&2?1:0)+(st&4?1:0); }
+    c.save(); c.textAlign='right'; c.font='800 15px system-ui,sans-serif';
+    c.fillStyle='#FFD700'; c.shadowColor='rgba(255,210,80,0.6)'; c.shadowBlur=6;
+    c.fillText('\u2605 '+tot+'/18', MW-16, 34); c.restore();
+    // BACK button (top-left)
+    c.save();
+    c.fillStyle = backHover ? 'rgba(255,138,43,0.16)' : 'rgba(8,7,12,0.50)';
+    c.beginPath(); c.roundRect(backBtn.x,backBtn.y,backBtn.w,backBtn.h,7); c.fill();
+    c.lineWidth=1.6; c.strokeStyle='#FF8A2B';
+    c.shadowColor='#FF8A2B'; c.shadowBlur=backHover?10:5;
+    c.beginPath(); c.roundRect(backBtn.x,backBtn.y,backBtn.w,backBtn.h,7); c.stroke(); c.shadowBlur=0;
+    c.fillStyle='#FF8A2B'; c.font='700 13px system-ui,sans-serif'; c.textAlign='center';
+    c.fillText('\u2190 BACK', backBtn.x+backBtn.w/2, backBtn.y+backBtn.h/2+4.5);
+    c.restore();
+    // 3×2 level tile grid
+    for(let n=1;n<=6;n++){
+      const t=tileRects[n], meta=LEVEL_META[n]||{name:'',accent:'#4CBA7A',deep:'#1B3A28'};
+      const unlocked=lvlUnlocked(n), hov=unlocked && hoverTile===n;
+      c.save();
+      if(!unlocked) c.globalAlpha=0.45;
+      c.beginPath(); c.roundRect(t.x,t.y,t.w,t.h,10);
+      c.fillStyle=meta.deep; c.fill();
+      c.lineWidth=2; c.strokeStyle=meta.accent;
+      if(hov){ c.shadowColor=meta.accent; c.shadowBlur=14; }
+      c.stroke(); c.shadowBlur=0;
+      c.textAlign='left';
+      c.font='800 10px system-ui,sans-serif'; c.fillStyle='rgba(255,255,255,0.55)';
+      c.fillText('LEVEL '+n, t.x+12, t.y+20);
+      c.font='900 15px system-ui,sans-serif'; c.fillStyle=meta.accent;
+      c.fillText(meta.name, t.x+12, t.y+38);
+      if(unlocked){
+        // three star slots: Cleared / Under Par / No Damage
+        const stars=getStars(n), bits=[1,2,4], labels=['Cleared','Under Par','No Damage'];
+        const slotW=56, x0=t.x+t.w/2-slotW, sy2=t.y+62;
+        c.textAlign='center';
+        for(let i=0;i<3;i++){
+          const on=(stars&bits[i])!==0, sx=x0+i*slotW;
+          starPath(c,sx,sy2,8);
+          if(on){ c.fillStyle='#FFD700'; c.shadowColor='rgba(255,210,80,0.7)'; c.shadowBlur=5; c.fill(); c.shadowBlur=0;
+                  c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.6)'; c.stroke(); }
+          else { c.fillStyle='rgba(255,255,255,0.10)'; c.fill(); c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.30)'; c.stroke(); }
+          c.font='700 7px system-ui,sans-serif';
+          c.fillStyle = on ? '#FFE9A8' : 'rgba(255,255,255,0.45)';
+          c.fillText(labels[i], sx, sy2+16);
+        }
+        const bt=getBestTime(n);
+        c.font='700 11px system-ui,sans-serif'; c.fillStyle='rgba(255,255,255,0.78)';
+        c.fillText(bt>0 ? ('BEST '+fmtTime(bt)) : ('PAR '+fmtTime(PAR_TIME[n]||0)), t.x+t.w/2, t.y+t.h-12);
+      } else {
+        // vector padlock
+        const lx=t.x+t.w/2, ly=t.y+74;
+        c.strokeStyle='rgba(255,255,255,0.75)'; c.lineWidth=3; c.lineCap='round';
+        c.beginPath(); c.arc(lx, ly-8, 8, Math.PI, 0); c.stroke();
+        c.fillStyle='rgba(255,255,255,0.55)';
+        c.beginPath(); c.roundRect(lx-12, ly-8, 24, 18, 4); c.fill();
+        c.fillStyle=meta.deep; c.beginPath(); c.arc(lx, ly+1, 2.6, 0, 7); c.fill();
+      }
+      c.restore();
+    }
+  }
+
   function drawMenu(){
     const c = mCtx;
     c.setTransform(_mdpr,0,0,_mdpr,0,0);
@@ -14413,6 +14522,9 @@ function playReturnHomeCutscene(onDone){
       c.beginPath(); c.arc(s.x, s.y, s.r, 0, 7); c.fill();
       s.y -= s.s*0.5; if(s.y< -4){ s.y=MH+4; s.x=Math.random()*MW; }
     }
+
+    // Task 1b: levels hub renders on the same canvas over the shared bg/sparkles
+    if(menuMode==='levels'){ drawLevelsMode(c); return; }
 
     // ── Ground band ──
     c.fillStyle='#0a0612'; c.fillRect(0,MH-44,MW,44);
@@ -14494,6 +14606,23 @@ function playReturnHomeCutscene(onDone){
     if('letterSpacing' in c) c.letterSpacing='0px';
     c.restore();
 
+    // ── LEVEL SELECT button (Task 1a) — same rect/hover/draw pattern as btn ──
+    c.save(); c.textAlign='center';
+    const lneon='#5FE6FF';
+    c.fillStyle = lvlBtnHover ? 'rgba(95,230,255,0.14)' : 'rgba(8,7,12,0.50)';
+    c.beginPath(); c.roundRect(lvlBtn.x,lvlBtn.y,lvlBtn.w,lvlBtn.h,7); c.fill();
+    c.shadowColor=lneon; c.shadowBlur=(lvlBtnHover?14:8)+6*pulse;
+    c.lineWidth=2; c.strokeStyle=lneon;
+    c.beginPath(); c.roundRect(lvlBtn.x,lvlBtn.y,lvlBtn.w,lvlBtn.h,7); c.stroke();
+    c.stroke();
+    c.shadowBlur=0;
+    c.shadowColor=lneon; c.shadowBlur=6; c.fillStyle=lneon;
+    c.font='700 13px system-ui,sans-serif';
+    if('letterSpacing' in c) c.letterSpacing='2px';
+    c.fillText('LEVEL SELECT', lvlBtn.x+lvlBtn.w/2, lvlBtn.y+lvlBtn.h/2+5);
+    if('letterSpacing' in c) c.letterSpacing='0px';
+    c.restore();
+
     // ── Footer credit (neon sign, subtle flicker) ──
     c.save(); c.textAlign='center';
     const nbase = 0.7 + 0.18*Math.sin(mT*0.05);
@@ -14502,7 +14631,7 @@ function playReturnHomeCutscene(onDone){
     c.font='italic 700 13px "Courier New",ui-monospace,monospace';
     c.shadowColor='#FF5BA6'; c.shadowBlur=9 + 4*Math.sin(mT*0.12);
     c.fillStyle='#FFC2EC';
-    c.fillText('Music by Activities with Ryan', MW/2, MH-15);
+    c.fillText('Game & Music by Activities with Ryan', MW/2, MH-15);
     c.shadowBlur=0; c.globalAlpha=1;
     c.restore();
 
@@ -14528,10 +14657,20 @@ function playReturnHomeCutscene(onDone){
     const scaleX=MW/r.width, scaleY=MH/r.height;
     const mx=(e.clientX-r.left)*scaleX, my=(e.clientY-r.top)*scaleY;
     const inR=(b)=> mx>b.x && mx<b.x+b.w && my>b.y && my<b.y+b.h;
+    if(menuMode==='levels'){ // Task 1e: hover-test tiles + BACK only in levels mode
+      btnHover=false; lvlBtnHover=false; musicHover=false; sfxHover=false;
+      backHover=inR(backBtn);
+      hoverTile=0;
+      for(let n=1;n<=6;n++){ if(lvlUnlocked(n) && inR(tileRects[n])){ hoverTile=n; break; } }
+      mCanvas.style.cursor=(backHover||hoverTile)?'pointer':'default';
+      return;
+    }
+    backHover=false; hoverTile=0;
     const hit = inR(btn);
+    lvlBtnHover = inR(lvlBtn);
     musicHover = inR(musicBtn); sfxHover = inR(sfxBtn);
     if(hit!==btnHover){ btnHover=hit; }
-    mCanvas.style.cursor = (hit||musicHover||sfxHover) ? 'pointer' : 'default';
+    mCanvas.style.cursor = (hit||lvlBtnHover||musicHover||sfxHover) ? 'pointer' : 'default';
   });
 
   mCanvas.addEventListener('click', function(e){
@@ -14540,9 +14679,29 @@ function playReturnHomeCutscene(onDone){
     const mx=(e.clientX-r.left)*scaleX, my=(e.clientY-r.top)*scaleY;
     const inR=(b)=> mx>b.x && mx<b.x+b.w && my>b.y && my<b.y+b.h;
     const _snd=()=>{ const sb=document.getElementById('snd'); if(sb) sb.innerHTML='&#128266; Sound: '+((musicOn||sfxOn)?'on':'off'); };
+    if(menuMode==='levels'){ // Task 1d: hub interactions
+      if(inR(backBtn)){ menuMode='title'; if(sfxOn) beep(520,0.05,'square',0.06); return; }
+      for(let n=1;n<=6;n++){
+        if(inR(tileRects[n])){
+          if(!lvlUnlocked(n)){ if(sfxOn) beep(180,0.08,'square',0.05); return; } // locked: no-op
+          // Replicate PLAY teardown, then jump straight in (no intro cutscene)
+          menuRunning=false;
+          audioManager.stopTitle();
+          mScreen.style.transition='opacity 1.2s ease';
+          mScreen.style.opacity='0';
+          mScreen.style.pointerEvents='none';
+          setTimeout(()=>{ mScreen.style.display='none'; }, 1250);
+          jumpToLevel(n);
+          setupHiDPI();
+          return;
+        }
+      }
+      return;
+    }
     // Audio toggles take priority and do NOT start the game
     if(inR(musicBtn)){ musicOn=!musicOn; audioManager.syncVolume(); _snd(); return; }
     if(inR(sfxBtn)){ sfxOn=!sfxOn; _snd(); if(sfxOn) beep(680,0.07,'square',0.08); return; }
+    if(inR(lvlBtn)){ menuMode='levels'; if(sfxOn) beep(620,0.05,'square',0.06); return; } // Task 1a
     if(inR(btn)){
       menuRunning=false;
       audioManager.stopTitle();
