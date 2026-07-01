@@ -59,6 +59,8 @@
   #tc-down{ left:50px; top:68px; font-size:17px; opacity:0.92; }
   .tcbtn.act{ border-radius:50%; width:60px; height:60px; font-size:13px; font-weight:800;
     letter-spacing:0.03em; }
+  #tc-god{ right:10px; bottom:178px; width:48px; height:48px; font-size:11px; opacity:0.8;
+    border-color:rgba(255,215,0,0.6); }
   #tc-jump{ right:4px; bottom:4px; width:74px; height:74px; font-size:14px;
     background:rgba(120,255,180,0.18); border-color:rgba(150,255,200,0.55); }
   #tc-throw{ right:86px; bottom:30px; background:rgba(255,200,120,0.18);
@@ -348,13 +350,13 @@
       <button class="tb" id="restart" onclick="restart()">&#8635; New game</button>
       <button class="tb" id="pause-btn" onclick="togglePause()">&#9646;&#9646; Pause</button>
       <button class="tb" id="snd" onclick="toggleSound()">&#128266; Sound: on</button>
-      <span style="color:#5F5E5A;font-size:12px;padding:0 2px">|</span>
-      <button class="tb" onclick="jumpToLevel(1)" title="Jump to Level 1" style="font-size:11px;padding:5px 10px;opacity:0.75">L1</button>
-      <button class="tb" onclick="jumpToLevel(2)" title="Jump to Level 2" style="font-size:11px;padding:5px 10px;opacity:0.75">L2</button>
-      <button class="tb" onclick="jumpToLevel(3)" title="Jump to Level 3" style="font-size:11px;padding:5px 10px;opacity:0.75">L3</button>
-      <button class="tb" onclick="jumpToLevel(4)" title="Jump to Level 4" style="font-size:11px;padding:5px 10px;opacity:0.75">L4</button>
-      <button class="tb" onclick="jumpToLevel(5)" title="Jump to Level 5" style="font-size:11px;padding:5px 10px;opacity:0.75">L5</button>
-      <button class="tb" onclick="jumpToLevel(6)" title="Jump to Level 6" style="font-size:11px;padding:5px 10px;opacity:0.75">L6</button>
+      <span class="dev-only" style="display:none;color:#5F5E5A;font-size:12px;padding:0 2px">|</span>
+      <button class="tb dev-only" onclick="jumpToLevel(1)" title="Jump to Level 1" style="display:none;font-size:11px;padding:5px 10px;opacity:0.75">L1</button>
+      <button class="tb dev-only" onclick="jumpToLevel(2)" title="Jump to Level 2" style="display:none;font-size:11px;padding:5px 10px;opacity:0.75">L2</button>
+      <button class="tb dev-only" onclick="jumpToLevel(3)" title="Jump to Level 3" style="display:none;font-size:11px;padding:5px 10px;opacity:0.75">L3</button>
+      <button class="tb dev-only" onclick="jumpToLevel(4)" title="Jump to Level 4" style="display:none;font-size:11px;padding:5px 10px;opacity:0.75">L4</button>
+      <button class="tb dev-only" onclick="jumpToLevel(5)" title="Jump to Level 5" style="display:none;font-size:11px;padding:5px 10px;opacity:0.75">L5</button>
+      <button class="tb dev-only" onclick="jumpToLevel(6)" title="Jump to Level 6" style="display:none;font-size:11px;padding:5px 10px;opacity:0.75">L6</button>
     </div>
   </div>
 
@@ -385,6 +387,7 @@
         <button class="tcbtn" id="tc-down"  data-key="ArrowDown">&#9660;</button>
       </div>
       <div id="actions">
+        <button class="tcbtn act dev-only" id="tc-god" style="display:none">GOD</button>
         <button class="tcbtn act" id="tc-throw" data-key="Space">THROW</button>
         <button class="tcbtn act" id="tc-jump"  data-key="ArrowUp">JUMP</button>
       </div>
@@ -400,7 +403,7 @@
       <div id="ne-total" class="ne-total">TOTAL SCORE: 0</div>
       <div class="ne-prompt">Add your name to the global leaderboard</div>
       <input id="ne-input" type="text" maxlength="20" placeholder="ENTER NAME" autocomplete="off"
-        onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" />
+        onkeydown="if(event.key==='Enter'){finishNameEntry(true);}" />
       <div class="ne-hint">Leave blank for a fun random name</div>
       <div class="ne-row">
         <button class="ne-btn" onclick="finishNameEntry(true)">Submit</button>
@@ -526,6 +529,34 @@ const PAR_SCORE = {1:8000,2:9000,3:9000,4:9000,5:10000,6:12000};          // pts
 let jumpBufferedAt = -1;   // Task 2a: simFrame of last ArrowUp press
 let simFrame = 0;          // Task 2a: monotonic fixed-step counter (incremented in loop())
 let runStartMs = Date.now(); // Task 4: wall-clock start of the current run
+// ── Dev/QA mode ── enabled via ?dev=1 (persists in localStorage), cleared via ?dev=0
+const DEV = (()=>{ try{
+  const q=new URLSearchParams(location.search).get('dev');
+  if(q==='1') localStorage.setItem('sawyer_dev','1');
+  if(q==='0') localStorage.removeItem('sawyer_dev');
+  return localStorage.getItem('sawyer_dev')==='1';
+}catch(e){ return false; } })();
+let _devGod=false, _devSpeed=false, _devRunTainted=false; // QA fly-through state (Task 3)
+if(DEV){ document.querySelectorAll('.dev-only').forEach(el=>{ el.style.display=''; }); }
+function devBossSkip(){ // Task 3c — kill the active boss so post-boss sequences can be QA'd fast
+  let b=null, dt=120;
+  if(currentLevel===2){ b=yeti; }
+  else if(currentLevel===3){ b=kingCrab; }
+  else { b=boss; if(currentLevel===5) dt=150; }
+  if(!b || !b.alive) return;
+  _devRunTainted=true;
+  b.hp=0; b.alive=false; b.dieTimer=dt;
+  if(currentLevel===2 && b.cryTimer!==undefined) b.cryTimer=120;
+}
+window.addEventListener('keydown', function(e){
+  if(!DEV) return;
+  const t=e.target; if(t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA')) return;
+  if(typeof nameEntryActive!=='undefined' && nameEntryActive) return;
+  const k=(e.key||'').toLowerCase();
+  if(k==='g'){ _devGod=!_devGod; if(_devGod)_devRunTainted=true; }
+  else if(k==='h'){ _devSpeed=!_devSpeed; if(_devSpeed)_devRunTainted=true; }
+  else if(k==='k'){ devBossSkip(); }
+});
 // ---- Time-attack + star-rating (client-only) ----
 let levelStartFrame = 0;         // simFrame at PLAY-click; pause-proof time-attack clock origin
 let _runTookDamage = false;      // player (not AI) took a hit this run -> blocks No-Damage star
@@ -564,9 +595,10 @@ function stepPlayer(s, P, shoot){
   applyDuckState(s, _sDuck);
   if(P.horiz){ P.horiz(s); }
   else {
+    const _spd = (DEV && _devSpeed) ? P.speed*2 : P.speed; // Task 3b: multiplied at point of use, constant untouched
     if(s.ducking){ s.vx*=0.6; }
-    else if(keys['ArrowLeft']){ s.vx=-P.speed; s.facing=-1; }
-    else if(keys['ArrowRight']){ s.vx=P.speed; s.facing=1; }
+    else if(keys['ArrowLeft']){ s.vx=-_spd; s.facing=-1; }
+    else if(keys['ArrowRight']){ s.vx=_spd; s.facing=1; }
     else s.vx*=P.fric;
     if(P.vclamp) s.vx=Math.max(-P.vclamp,Math.min(P.vclamp,s.vx));
   }
@@ -589,9 +621,10 @@ function stepPlayer(s, P, shoot){
 }
 // L2 horizontal override — preserves the ice-slide chute + skid-spray else-binding verbatim.
 function _physHorizL2(s){
+  const _spd2 = (DEV && _devSpeed) ? 6.2 : 3.1; // Task 3b
   if(s.ducking){ s.vx*=0.6; }
-  else if(keys['ArrowLeft']){s.vx=-3.1;s.facing=-1;}
-  else if(keys['ArrowRight']){s.vx=3.1;s.facing=1;}
+  else if(keys['ArrowLeft']){s.vx=-_spd2;s.facing=-1;}
+  else if(keys['ArrowRight']){s.vx=_spd2;s.facing=1;}
   else if(s.onSlick) s.vx = s.vx*0.96 + s.facing*0.25;   // ice-slide chute
   if(s.onSlick && Math.abs(s.vx)>1.2 && Math.random()<0.5)   // skid spray
     particles.push({x:s.x+s.w/2-s.facing*4,y:s.y+s.h,vx:-s.facing*(0.5+Math.random()),vy:-0.3-Math.random()*0.9,life:14,maxLife:14,type:'snow',color:'#EAF6FF'});
@@ -644,6 +677,7 @@ function getBestScore(level){
   try{ return parseInt(localStorage.getItem('sawyer_best_'+level)||'0',10); }catch(e){ return 0; }
 }
 function saveBestScore(level, s){
+  if(DEV && _devRunTainted) return; // Task 3: QA-tool run — no best-score writes
   try{
     const best=getBestScore(level);
     vicNewBest = (best>0 && s>best); // capture BEFORE overwrite; first-ever completion isn't a "new best"
@@ -668,6 +702,7 @@ function fmtTime(ms){
   return m+':'+String(sec).padStart(2,'0')+'.'+String(cs).padStart(2,'0');
 }
 function recordLevelClear(level){
+  if(DEV && _devRunTainted) return;          // Task 3: QA-tool run — no stars, no best times
   if(_levelClearRecorded) return;            // idempotent — some levels clear via two paths
   _levelClearRecorded = true;
   const frames = Math.max(0, simFrame - levelStartFrame);
@@ -1135,7 +1170,8 @@ async function submitScore(name){
   // Task 4 (server-enforced): the client is NOT trusted. We attach run metadata and a
   // token-bound HMAC; /api/submit does the real validation (see contract below). The
   // signing secret never ships — the token is opaque and one-time-use.
-  const score0=score|0, level0=currentLevel|0, runMs0=Math.max(0, Date.now()-runStartMs);
+  if(DEV && _devRunTainted) return; // Task 3: QA-tool run — no leaderboard submission
+  const score0=score|0, level0=currentLevel|0, runMs0=Math.max(0, Math.round((simFrame-levelStartFrame)/60*1000)); // Task 5a: sim-frame clock, pause-proof
   /* ===== SERVER CONTRACT — implemented in Vercel /api/top + /api/submit (DO NOT trust client) =====
      1. Reject score > plausibleMax(level): cumulative carry-forward ceiling 1..level.
      2. Reject impossibly-fast runs: runMs < minRunMs(level).
@@ -1523,6 +1559,7 @@ function oskSync(){
   if(!tc) return;
   tc.querySelectorAll('.tcbtn').forEach(btn=>{
     const code = btn.dataset.key;
+    if(!code) return; // dev-only GOD toggle wires its own handler below
     const press = e=>{ if(e.cancelable)e.preventDefault();
       try{ btn.setPointerCapture && e.pointerId!=null && btn.setPointerCapture(e.pointerId); }catch(_){}
       keys[code]=true; btn.classList.add('pressed'); };
@@ -1539,6 +1576,17 @@ function oskSync(){
     }
     btn.addEventListener('contextmenu',e=>e.preventDefault());
   });
+  // Task 3d: dev-only GOD toggle (mobile QA access to god mode)
+  const god = document.getElementById('tc-god');
+  if(god){
+    const tog = e=>{ if(e.cancelable)e.preventDefault();
+      if(!DEV) return;
+      _devGod=!_devGod; if(_devGod)_devRunTainted=true;
+      god.classList.toggle('pressed', _devGod); };
+    if(window.PointerEvent){ god.addEventListener('pointerdown',tog); }
+    else { god.addEventListener('touchstart',tog,{passive:false}); }
+    god.addEventListener('contextmenu',e=>e.preventDefault());
+  }
   // safety: if the page loses focus, clear any held touch keys
   window.addEventListener('blur',()=>{ ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space'].forEach(k=>keys[k]=false);
     tc.querySelectorAll('.tcbtn.pressed').forEach(b=>b.classList.remove('pressed')); });
@@ -1697,7 +1745,7 @@ let sawyer = null, otto = null;
 function buildPlayers(){
   cameraY = 0;
   runStartMs = Date.now(); // Task 4
-  _runTookDamage = false; _levelClearRecorded = false; vicContinue = false; // time-attack per-run reset
+  _runTookDamage = false; _levelClearRecorded = false; vicContinue = false; _devRunTainted = false; // time-attack per-run reset (Task 3: taint clears too)
   lives = 5;                              // hearts fully refill at every level start
   emberStone = null; emberCollected = false; // L2-only mechanic — never carry into other levels
   sawyer = {
@@ -3192,6 +3240,7 @@ function tunerLoop(t){
   c.fillText(tnChar+' · '+tnAnim+'  '+r[4]+'×'+r[5]+'src → '+Math.round(dW/TN_ZOOM)+'×'+Math.round(dH/TN_ZOOM),6,12);
 }
 window.addEventListener('keydown',function(e){
+  if(!DEV) return;
   if(e.key==='`'||e.key==='~'){ e.preventDefault();
     if(!tunerEl) buildTuner();
     tunerEl.style.display = (tunerEl.style.display==='none'||!tunerEl.style.display)?'block':'none';
@@ -3211,7 +3260,11 @@ function drawPlayer(p){
     ctx.globalAlpha = Math.max(0.3, 1 - (120 - otto.cower) / 120);
   }
   
-  const blink = !cutsceneActive && p.invincible>0 && Math.floor(p.invincible/5)%2===0;
+  const blink = !cutsceneActive && p.invincible>0 && Math.floor(p.invincible/5)%2===0 && !(DEV && _devGod && !p.baby);
+  if(DEV && _devGod && !p.baby){ // Task 3a: faint gold outline so QA can see god mode is on
+    ctx.save(); ctx.strokeStyle='rgba(255,215,0,0.55)'; ctx.lineWidth=2;
+    ctx.strokeRect(px-3, py-3, p.w+6, p.h+6); ctx.restore();
+  }
   if (!blink){ 
     let drawY = py;
     const t = Date.now();
@@ -3667,7 +3720,6 @@ function drawVenom(){
 }
 
 function drawCheckpoint(){
-  return; // checkpoint flags removed — transponder respawn position still used silently
   if(!checkpoint) return;
   const levels = {1:WORLD_W, 2:0, 3:0}; // only draw in active level
   const cx = checkpoint.x - cameraX;
@@ -6092,6 +6144,10 @@ function drawHUD(){
   }
   c.restore();
   drawAcquiredTray();
+  if(DEV){ // QA screenshots identifiable — no background box per spec
+    c.save(); c.shadowBlur=0; c.font='10px monospace'; c.textAlign='right'; c.textBaseline='top';
+    c.fillStyle='rgba(255,80,80,0.8)'; c.fillText('DEV', W-6, 4); c.restore();
+  }
 }
 // ── Acquired-items tray: small glyph chips, top-left, resets per level ──
 function drawAcquiredIcon(c, type, cx, cy, r, color){
@@ -6406,8 +6462,12 @@ function drawCreditsOverlay(){
 //  15. GAME FLOW & MAIN LOOP
 //      restart, jumpToLevel, loop()
 // =========================================================================
-function restartCurrentLevel(){
-  const lvl = currentLevel||1;
+// ── Task 4: ONE reset for restartCurrentLevel / jumpToLevel / restart ──
+// Clears every global the (previously triplicated) inline resets touched, then
+// rebuilds via buildPlayers() + buildLevelContent(). Callers keep their own
+// audio / popup / menu / loop logic unchanged.
+function resetRunState(lvl, opts){
+  opts = opts||{};
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
@@ -6418,14 +6478,10 @@ function restartCurrentLevel(){
   currentLevel=lvl;
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   buildPlayers();
-  if(currentLevel===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
-  else if(currentLevel===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); buildL3Artifact(); }
-  else if(currentLevel>=4&&currentLevel<=6){ buildLevelContent(currentLevel); }
-  else { buildEnemies(); buildRocks(); buildBoss(); }
-  buildBottles();
+  buildLevelContent(currentLevel); // dispatches all levels 1–6 and calls buildBottles()
   // Resume on the transponder checkpoint if it was held at game over: restore the per-level
   // artifact-collected state, re-arm the checkpoint, and drop the heroes there (skip the re-fetch).
-  if(transponderRespawn && transponderRespawn.level===currentLevel){
+  if(opts.keepTransponderResume && transponderRespawn && transponderRespawn.level===currentLevel){
     const cp={x:transponderRespawn.x, y:transponderRespawn.y};
     checkpoint=cp;
     if(currentLevel===1){ if(artifact){artifact.got=true;} artifactCollected=true; if(barrier) barrier.sealed=false; acquireItem('transponder'); }
@@ -6439,6 +6495,9 @@ function restartCurrentLevel(){
     transponderAnchor={ level:currentLevel, x:cp.x, y:cp.y }; // re-arm for repeat deaths
   }
   transponderRespawn=null;
+}
+function restartCurrentLevel(){
+  resetRunState(currentLevel||1, {keepTransponderResume:true});
   audioManager.stop();
   audioManager.play(currentLevel);
   const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
@@ -6447,13 +6506,7 @@ function restartCurrentLevel(){
   showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
 }
 function jumpToLevel(n){
-  score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
-  nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
-  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; acquiredItems=[];
-  cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
-  ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
-  currentLevel=n;
-  bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0};
+  resetRunState(n, {});
   // Hide any open popups and menu
   ['level-popup','level2-popup','level3-popup','level4-popup','level5-popup','level6-popup'].forEach(id=>{
     const el=document.getElementById(id); if(el) el.style.display='none';
@@ -6461,12 +6514,6 @@ function jumpToLevel(n){
   const menu=document.getElementById('menuScreen');
   if(menu){menu.style.opacity='0';menu.style.pointerEvents='none';menu.style.display='none';}
   audioManager.stop();
-  buildPlayers();
-  if(n===2){ buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}} }
-  else if(n===3){ buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); buildL3Artifact(); }
-  else if(n>=4&&n<=6){ buildLevel4to6Jump(n); }
-  else { buildEnemies(); buildRocks(); buildBoss(); }
-  buildBottles();
   audioManager.play(n);
   levelPaused = true;
   showLevelPopup('', ''); // routes to correct popup by currentLevel
@@ -6478,30 +6525,8 @@ function jumpToLevel(n){
   if(!gameRunning){ gameRunning=true; loop(); }
 }
 function restart(resetLevel){
-  const lvl = resetLevel ? 1 : (currentLevel||1);
-  score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
-  nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
-  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
-  cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
-  ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0;
-  checkpoint=null; transponderRespawn=null;
-  currentLevel=lvl;
-  bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
-  
+  resetRunState(resetLevel ? 1 : (currentLevel||1), {});
   audioManager.stop();
-  
-  buildPlayers();
-  if(currentLevel===2){
-    buildLevel2Enemies(); buildLevel2Rocks(); buildYeti(); buildIcicles(); buildEmberStone(); snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0}; for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}}
-  } else if(currentLevel===3){
-    buildLevel3Enemies(); buildLevel3Rocks(); buildKingCrab(); buildL3Waves(); buildL3Arena(); buildL3Artifact();
-  } else if(currentLevel>=4&&currentLevel<=6){
-    buildLevel4to6Jump(currentLevel);
-  } else {
-    buildEnemies(); buildRocks(); buildBoss();
-  }
-  buildBottles();
-  
   console.log(`[GAME] Restart called, playing audio for level ${currentLevel}`);
   audioManager.play(currentLevel);
   // Intro path: skip the level card so the entry portal yawns open the instant the
@@ -6509,6 +6534,7 @@ function restart(resetLevel){
   if(skipNextLevelPopup){
     skipNextLevelPopup = false;
     levelPaused = false;
+    levelStartFrame = simFrame; // Task 5b: intro path never hits closeLevelPopup — start the run clock here
   } else {
     levelPaused = true;
     const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'SPOOKY HAUS',6:'SPACE VOID'};
@@ -6556,6 +6582,7 @@ function loop(){
   while(_stepAccum >= STEP_MS && _steps < MAX_STEPS){
     if(nameEntryActive) break;   // freeze sim while name box is open (stops victory re-trigger wiping input)
     simFrame++;   // Task 2a
+    if(DEV && _devGod && sawyer && !gameOver){ if(sawyer.invincible<2) sawyer.invincible=2; } // Task 3a: hurt() never fires
     // Entry portal dump: input lock while the riders are tossed out (only when live).
     let _dumpLock = portalDump.active ? _portalDumpInputLock : false;
     let _kL,_kR,_kU,_kD,_kSp;
