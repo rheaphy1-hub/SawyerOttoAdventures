@@ -1606,34 +1606,49 @@ function oskSync(){
 })();
 
 let audioCtx = null;
+let sfxBus=null;
+function getBus(){
+  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended'){ try{audioCtx.resume();}catch(e){} }
+  if(!sfxBus){
+    const comp=audioCtx.createDynamicsCompressor();
+    comp.threshold.value=-18; comp.knee.value=24; comp.ratio.value=6; comp.attack.value=0.003; comp.release.value=0.25;
+    const g=audioCtx.createGain(); g.gain.value=0.9;
+    g.connect(comp); comp.connect(audioCtx.destination);
+    sfxBus={in:g};
+  }
+  return sfxBus.in;
+}
 
 // =========================================================================
 //  05. SOUND-FX SYNTH & UI TOGGLES
 //      beep/noise, sfx(), sound/pause/fullscreen, level popup
 // =========================================================================
-function beep(freq, dur, type='square', vol=0.08, slideTo=null) {
+function beep(freq, dur, type='square', vol=0.08, slideTo=null, at=0) {
   if (!sfxOn) return;
   try {
-    if (!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const bus = getBus();
+    const t0 = audioCtx.currentTime + at;
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = type; o.frequency.value = freq;
-    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, audioCtx.currentTime + dur);
-    g.gain.setValueAtTime(vol, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-    o.connect(g); g.connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + dur);
+    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+    g.gain.setValueAtTime(vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g); g.connect(bus);
+    o.start(t0); o.stop(t0 + dur);
   } catch(e){}
 }
-function noise(dur, vol=0.06){
+function noise(dur, vol=0.06, at=0){
   if(!sfxOn) return;
   try{
-    if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const bus=getBus();
+    const t0=audioCtx.currentTime+at;
     const b=audioCtx.createBuffer(1,audioCtx.sampleRate*dur,audioCtx.sampleRate);
     const d=b.getChannelData(0);
     for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
     const s=audioCtx.createBufferSource(); s.buffer=b;
-    const g=audioCtx.createGain(); g.gain.value=vol;
-    s.connect(g); g.connect(audioCtx.destination); s.start();
+    const g=audioCtx.createGain(); g.gain.setValueAtTime(vol,t0);
+    s.connect(g); g.connect(bus); s.start(t0);
   }catch(e){}
 }
 const SFX = {
@@ -1649,9 +1664,17 @@ const SFX = {
   sandstorm:() => { noise(0.6, 0.08); beep(70, 0.7, 'sawtooth', 0.07, 40); beep(260, 0.4, 'sine', 0.03, 120); },
   rattle: () => { noise(0.2, 0.06); beep(200, 0.1, 'square', 0.03); },
   creak: () => { beep(140, 0.18, 'sawtooth', 0.05, 90); beep(210, 0.10, 'sine', 0.02, 150); noise(0.06, 0.015); },
-  bossDie: () => { [400,330,260,200,140,100].forEach((f,i)=>setTimeout(()=>{ beep(f,0.4,'sine',0.08); noise(0.1,0.04); },i*100)); },
-  win: () => { [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,0.25,'sine',0.1),i*150)); },
-  over: () => { [350,280,200,100].forEach((f,i)=>setTimeout(()=>beep(f,0.3,'sawtooth',0.09),i*180)); }
+  bossDie: () => { [400,330,260,200,140,100].forEach((f,i)=>{ beep(f,0.4,'sine',0.08,null,i*0.1); noise(0.1,0.04,i*0.1); }); },
+  win: () => { [523,659,784,1047].forEach((f,i)=>beep(f,0.25,'sine',0.1,null,i*0.15)); },
+  over: () => { [350,280,200,100].forEach((f,i)=>beep(f,0.3,'sawtooth',0.09,null,i*0.18)); },
+  windup:    () => { beep(180,0.28,'sawtooth',0.05,420); beep(90,0.28,'sine',0.04,200); },
+  slam:      () => { beep(70,0.22,'sine',0.14,40); noise(0.12,0.07); beep(160,0.06,'square',0.04); },
+  charge:    () => { beep(340,0.30,'sawtooth',0.07,110); noise(0.18,0.03); },
+  beamCharge:() => { beep(220,0.9,'sine',0.05,1400); beep(440,0.9,'sine',0.03,2100); },
+  thunder:   () => { noise(0.5,0.10); beep(55,0.9,'sawtooth',0.09,30); },
+  pickup:    () => { beep(880,0.07,'sine',0.06,1320); beep(1320,0.05,'sine',0.03); },
+  portalOpen: () => { beep(80,1.1,'sine',0.10,320); beep(160,1.0,'sine',0.06,640); beep(240,0.9,'sine',0.04,960); noise(0.4,0.03); },
+  portalEnter:() => { beep(520,0.5,'sawtooth',0.07,90); beep(1040,0.35,'sine',0.04,180); noise(0.35,0.05); }
 };
 // Level 2 icy sound effects
 const SFX2 = {
@@ -1672,26 +1695,73 @@ const SFX2 = {
   bossSpit: ()=>{ beep(300,0.15,'sawtooth',0.06,80); noise(0.12,0.04); },
   // Yeti roar/charge
   rattle:   ()=>{ beep(80,0.3,'sawtooth',0.1,40); noise(0.2,0.06); },
-  bossDie:  ()=>{ [200,160,120,90,60,40].forEach((f,i)=>setTimeout(()=>{ beep(f,0.5,'sine',0.09); noise(0.15,0.05); },i*120)); },
-  win:      ()=>{ [440,554,659,880].forEach((f,i)=>setTimeout(()=>beep(f,0.3,'sine',0.09),i*160)); },
-  over:     ()=>{ [250,200,140,80].forEach((f,i)=>setTimeout(()=>beep(f,0.3,'sawtooth',0.08),i*200)); },
+  bossDie:  ()=>{ [200,160,120,90,60,40].forEach((f,i)=>{ beep(f,0.5,'sine',0.09,null,i*0.12); noise(0.15,0.05,i*0.12); }); },
+  win:      ()=>{ [440,554,659,880].forEach((f,i)=>beep(f,0.3,'sine',0.09,null,i*0.16)); },
+  over:     ()=>{ [250,200,140,80].forEach((f,i)=>beep(f,0.3,'sawtooth',0.08,null,i*0.2)); },
   // Icicle creak before falling
   icecreak: ()=>{ beep(900,0.08,'sine',0.04,400); beep(1200,0.05,'square',0.02); },
 };
-// Helper: use SFX2 in L2, SFX in L1
-function sfx(name){ (currentLevel===2 && SFX2[name] ? SFX2[name] : SFX[name])(); }
+// Per-world SFX banks (partial overrides; base SFX covers the rest)
+const SFX3 = { // tidal reef, King Crab: wet + clacky
+  squash:  ()=>{ beep(260,0.14,'sine',0.09,90); noise(0.08,0.05); },
+  bossHit: ()=>{ beep(950,0.04,'square',0.05); beep(140,0.1,'sine',0.08); },
+  slam:    ()=>{ beep(70,0.22,'sine',0.14,40); noise(0.2,0.09); beep(160,0.06,'square',0.04); },
+  barf:    ()=>{ beep(500,0.09,'sine',0.07,260); noise(0.07,0.05); },
+  win:     ()=>{ [587,740,880,1175].forEach((f,i)=>beep(f,0.25,'sine',0.1,null,i*0.15)); },
+};
+const SFX4 = { // underwater, Lyra: muffled + bubbly
+  jump:    ()=>{ beep(300,0.05,'sine',0.05,700); noise(0.03,0.02); },
+  ball:    ()=>{ beep(380,0.07,'sine',0.06,160); noise(0.04,0.02); },
+  barf:    ()=>{ beep(520,0.08,'sine',0.05,300); noise(0.06,0.03); },
+  bossHit: ()=>{ beep(75,0.2,'sine',0.13,45); },
+  bossSpit:()=>{ noise(0.25,0.06); beep(180,0.18,'sine',0.06,70); },
+  hurt:    ()=>{ beep(200,0.25,'sine',0.09,70); noise(0.08,0.03); },
+  slam:    ()=>{ beep(60,0.24,'sine',0.12,38); noise(0.14,0.05); },
+  charge:  ()=>{ noise(0.3,0.05); beep(200,0.28,'sine',0.06,90); },
+  win:     ()=>{ [523,659,784,1047].forEach((f,i)=>beep(f,0.3,'sine',0.07,null,i*0.17)); },
+};
+const SFX5 = { // haunted manor, Baron: hollow + dissonant
+  bossHit: ()=>{ beep(180,0.08,'square',0.09,120); beep(240,0.06,'sine',0.04); },
+  bossSpit:()=>{ beep(900,0.14,'sawtooth',0.06,300); noise(0.08,0.03); },
+  windup:  ()=>{ beep(200,0.3,'sawtooth',0.04,190); beep(211,0.3,'sine',0.03,199); },
+  hurt:    ()=>{ beep(230,0.26,'sawtooth',0.09,75); beep(244,0.18,'sine',0.04,80); },
+  slam:    ()=>{ beep(65,0.24,'sine',0.13,38); noise(0.14,0.07); beep(180,0.07,'square',0.03); },
+  win:     ()=>{ [523,622,784,1047].forEach((f,i)=>beep(f,0.25,'sine',0.1,null,i*0.15)); },
+};
+const SFX6 = { // space void, Nexus: synthetic
+  bossHit: ()=>{ beep(1200,0.05,'square',0.05,600); beep(300,0.1,'sine',0.07); },
+  bossSpit:()=>{ beep(1400,0.05,'square',0.06,400); },
+  beamCharge:()=>{ beep(300,0.9,'sine',0.05,1800); beep(600,0.9,'sine',0.03,2600); },
+  slam:    ()=>{ beep(90,0.15,'sine',0.13,35); noise(0.15,0.06); },
+  charge:  ()=>{ beep(420,0.28,'square',0.05,140); noise(0.16,0.03); },
+  win:     ()=>{ [523,659,784,1047].forEach((f,i)=>beep(f,0.22,'square',0.06,null,i*0.14)); },
+  droneDie:()=>{ beep(1600,0.06,'square',0.05,500); noise(0.05,0.03); },
+  shieldDown:()=>{ beep(500,0.4,'sawtooth',0.07,120); noise(0.3,0.06); },
+};
+// Router: per-level bank with base-SFX fallback
+const SFXBANKS={2:SFX2,3:SFX3,4:SFX4,5:SFX5,6:SFX6};
+function sfx(name){ const b=SFXBANKS[currentLevel]; ((b&&b[name])||SFX[name]||(()=>{}))(); }
 // Rising portal-warp swell — used on the intro → Level 1 transit card.
+let portalHum=null;
+function setPortalHum(level){ // level 0..1, call every frame while a portal exists
+  if(!sfxOn||!audioCtx){ if(portalHum){try{portalHum.o1.stop();portalHum.o2.stop();}catch(e){} portalHum=null;} return; }
+  if(level<=0.02){ if(portalHum){ portalHum.g.gain.setTargetAtTime(0.0001,audioCtx.currentTime,0.1); try{portalHum.o1.stop(audioCtx.currentTime+0.4);portalHum.o2.stop(audioCtx.currentTime+0.4);}catch(e){} portalHum=null; } return; }
+  if(!portalHum){ const o1=audioCtx.createOscillator(),o2=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o1.type='sine';o1.frequency.value=62; o2.type='sine';o2.frequency.value=93.5; g.gain.value=0.0001;
+    o1.connect(g);o2.connect(g);g.connect(getBus()); o1.start();o2.start(); portalHum={o1,o2,g}; }
+  portalHum.g.gain.setTargetAtTime(0.035*level,audioCtx.currentTime,0.15);
+}
 function introWhoosh(){
   if(!sfxOn) return;
-  try{ if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }catch(e){}
   noise(0.55, 0.05);
   beep(110, 0.7, 'sawtooth', 0.06, 540);
   beep(300, 0.6, 'sine', 0.035, 920);
-  setTimeout(()=>{ beep(680, 0.5, 'sine', 0.03, 1240); }, 180);
+  beep(680, 0.5, 'sine', 0.03, 1240, 0.18);
 }
 function toggleSound(){
   const on = !(musicOn && sfxOn);   // master: both on -> mute both; otherwise enable both
   musicOn = on; sfxOn = on;
+  if(!on) setPortalHum(0);
   document.getElementById('snd').innerHTML = '&#128266; Sound: ' + (on ? 'on' : 'off');
   audioManager.syncVolume();
 }
@@ -2096,7 +2166,7 @@ function groundAhead(p, dir){
 
 function fireAttack(p){
   if (p.baby){
-    SFX.barf();
+    sfx('barf');
     projectiles.push({
       type:'milk', owner:p,
       x: p.x + (p.facing>0?p.w:0),
@@ -2106,7 +2176,7 @@ function fireAttack(p){
       life: 42, r: 5
     });
   } else {
-    SFX.ball();
+    sfx('ball');
     projectiles.push({
       type:'ball', owner:p,
       x: p.x + (p.facing>0?p.w:-12),
@@ -2527,7 +2597,7 @@ function update(){
               particles.push({x:pl.x+Math.random()*pl.w, y:pl.y+Math.random()*pl.h, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp-1, life:34, maxLife:34, type:'dust'}); }
             for(let i=0;i<8;i++) particles.push({x:pl.x+pl.w/2, y:pl.y+pl.h/2, vx:(Math.random()-.5)*6, vy:-1-Math.random()*4, life:26, maxLife:26, type:'spark', color:'#C98A52'});
           }}
-          if(portal.state==='closed'){ portal.state='opening'; SFX.win();
+          if(portal.state==='closed'){ portal.state='opening'; sfx('portalOpen');
             // portal-open burst: ring of inward-pulled motes at the flag
             const pcx=FLAG.x+24, pcy=FLOOR-50;
             for(let i=0;i<26;i++){ const a=(i/26)*Math.PI*2, d=46+Math.random()*16;
@@ -2691,6 +2761,7 @@ function update(){
 
   // --- Portal lifecycle: opens after boss death, closes once entered ---
   portal.t += 0.05;
+  setPortalHum(portal.open);
   if (portal.state==='opening'){
     portal.open = Math.min(1, portal.open + 0.022);
     if (portal.open>=1) portal.state='open';
@@ -2709,7 +2780,7 @@ function update(){
       recordLevelClear(currentLevel);
       s.vx = 0; s.vy = 0; s.facing = 1;
       otto.vx = 0; otto.vy = 0; otto.facing = 1;
-      SFX.win();
+      sfx('portalEnter'); SFX.win();
       // portal CLOSE: implosion burst as the riders are pulled through
       portal.state='closing'; shakeIntensity=Math.max(shakeIntensity,8);
       const pcx=FLAG.x+24, pcy=FLOOR-50;
@@ -2782,7 +2853,7 @@ function hurt(p, reposition){
   if (p.ai) return;
   _runTookDamage = true; // Otto/AI hits already returned above; only player damage breaks a no-damage run
   if (p.invincible>0) return;
-  lives--; SFX.hurt();
+  lives--; sfx('hurt');
   shakeIntensity = 10;
   hurtFlashTimer = 12; // red screen flash
   // Knockback burst particles
@@ -7603,6 +7674,7 @@ function updateLevel2(){
   { const et = (yeti && yeti.alive && yeti.active && yeti.currentPhase===2) ? 1 : 0;
     l2BossEnrage += (et - l2BossEnrage) * 0.05; }
   // Escape portal animates open only after the Yeti is defeated
+  setPortalHum(l2Portal.open);
   if(l2Portal.state==='opening'){ l2Portal.open=Math.min(1,l2Portal.open+0.022); if(l2Portal.open>=1)l2Portal.state='open'; }
   // Boss-zone warning if approaching without the Ember Stone
   if(!l2ArtifactCollected && l2BossWarnT<=0 && s.x>L2_GAP_START-40 && s.x<L2_GAP_START+30){ l2BossWarnT=100; }
@@ -7749,7 +7821,7 @@ function updateLevel2(){
           for(let i=0;i<6;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*3,vy:-1-Math.random()*2,life:18,maxLife:18,type:'spark',color:i%2?'#FF8A2A':'#FFD27A'});
           if(yeti.hp===9&&yeti.currentPhase===1){yeti.currentPhase=2;shakeIntensity=12;SFX.rattle();}
           if(yeti.hp<=0){yeti.alive=false;yeti.dieTimer=120;yeti.cryTimer=120;score+=750;shakeIntensity=16;SFX.bossDie();yetiSetAnim(yeti,'death');
-            if(l2Portal.state==='closed'){ l2Portal.state='opening'; SFX.win(); }
+            if(l2Portal.state==='closed'){ l2Portal.state='opening'; sfx('portalOpen'); }
             // arena shatters: glacier ledges burst and vanish as the Yeti falls
             l2Arena.active=false; l2Arena.deathBurst=24;
             for(const pl of l2Platforms){ if(pl.bossPlatform && !pl.hidden){ pl.hidden=true;
@@ -7939,7 +8011,7 @@ function updateLevel2(){
       victoryActive = true; victoryTimer = 360;
       s.vx=0; s.vy=0; s.facing=1;
       otto.vx=0; otto.vy=0; otto.facing=1;
-      sfx('win');
+      sfx('portalEnter'); sfx('win');
     }
   }
 
@@ -8414,7 +8486,7 @@ function updateLevel3(){
   if(cutsceneActive){
     cutsceneTimer--;
     if(cutsceneTimer<=0){
-      cutsceneActive=false; kingCrab.active=true; otto.cower=120; SFX.rattle();
+      cutsceneActive=false; kingCrab.active=true; otto.cower=120; sfx('rattle');
       // arena rafts surge up out of the surf as the fight begins (spawn-pop + spray)
       for(const r of l3Arena){
         r.hidden=false; r.x=r.baseX; r.y=r.baseY; r.dx=0; r.dy=0; r.spawnT=0;
@@ -8483,7 +8555,7 @@ function updateLevel3(){
         o.attackTimer=10; o.attackCooldown=34;
         if(ottoPower===2){
           for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
-          SFX.barf();
+          sfx('barf');
         } else { fireAttack(o); }
       }
     }
@@ -8526,7 +8598,7 @@ function updateLevel3(){
         e.cutenessTimer--;
         if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
         if(e.cutenessTimer<=0){
-          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();
+          e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');sfx('squash');
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'});
         }
       }
@@ -8586,14 +8658,14 @@ function updateLevel3(){
     if(pr.life>0&&kingCrab&&kingCrab.active&&kingCrab.alive){
       if(pr.x>kingCrab.x&&pr.x<kingCrab.x+kingCrab.w&&pr.y>kingCrab.y&&pr.y<kingCrab.y+kingCrab.h){
         kingCrab.hp--;kingCrab.hitFlash=8;shakeIntensity=5;score+=40;
-        SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
+        sfx('bossHit');pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         if(kingCrab.hp<=9&&kingCrab.phaseIndex===0){
           kingCrab.phaseIndex=1;kingCrab.vx*=1.5;
-          shakeIntensity=16;hurtFlashTimer=20;SFX.rattle();
+          shakeIntensity=16;hurtFlashTimer=20;sfx('rattle');
           summonCrab(); summonCrab();
         }
         if(kingCrab.hp<=0){
-          kingCrab.alive=false;kingCrab.dieTimer=120;score+=1000;shakeIntensity=16;SFX.bossDie();
+          kingCrab.alive=false;kingCrab.dieTimer=120;score+=1000;shakeIntensity=16;sfx('bossDie');
           crabSetAnim(kingCrab,'death');
           // arena collapses: rafts splinter into the surf with a spray burst
           for(const r of l3Arena){
@@ -8666,7 +8738,7 @@ function updateLevel3(){
             shockwaves.push({x:kc.x+kc.w/2,y:FLOOR,w:0,life:46,maxLife:46,dir:1,dmg:true});
             shockwaves.push({x:kc.x+kc.w/2,y:FLOOR,w:0,life:46,maxLife:46,dir:-1,dmg:true});
             if(s.invincible===0&&Math.abs((s.x+s.w/2)-(kc.x+kc.w/2))<72&&s.onGround) hurt(s);
-            shakeIntensity=14; sfx('rattle'); kc.mound=null;
+            shakeIntensity=14; sfx('slam'); kc.mound=null;
             for(let i=0;i<12;i++) particles.push({x:kc.x+kc.w/2,y:FLOOR,vx:(Math.random()-.5)*6,vy:-2-Math.random()*4,life:20,maxLife:20,type:'dust'});
           }
           kc.submerge=Math.max(0,1-(kc.burrowT-54)/16);
@@ -8684,9 +8756,9 @@ function updateLevel3(){
             crabSetAnim(kc,'slam');
             shockwaves.push({x:kc.x+kc.w/2,y:FLOOR,w:0,life:46,maxLife:46,dir:1,dmg:true});
             shockwaves.push({x:kc.x+kc.w/2,y:FLOOR,w:0,life:46,maxLife:46,dir:-1,dmg:true});
-            shakeIntensity=12; sfx('rattle');
+            shakeIntensity=12; sfx('slam');
           } else if(kc.pending==='charge'){
-            kc.vx=kc.facing*(p2?9.5:7.2); sfx('rattle'); shakeIntensity=6; crabSetAnim(kc,'charge');
+            kc.vx=kc.facing*(p2?9.5:7.2); sfx('charge'); shakeIntensity=6; crabSetAnim(kc,'charge');
           } else if(kc.pending==='spit'){
             const ex=kc.x+kc.w/2, ey=kc.y+30;
             const lob=(off)=>{ const sp=4.2; venom.push({x:ex,y:ey,vx:kc.facing*sp+off,vy:-3.6,life:160,r:7,brine:true,grav:0.16}); };
@@ -8740,7 +8812,8 @@ function updateLevel3(){
     kingCrab.dieTimer--;
   }
   // escape portal opens only after Krawley is defeated (eased)
-  if(kingCrab && !kingCrab.alive){ l3Portal.open += (1 - l3Portal.open)*0.05; }
+  if(kingCrab && !kingCrab.alive){ if(!l3Portal.sfxOpened){ l3Portal.sfxOpened=true; sfx('portalOpen'); } l3Portal.open += (1 - l3Portal.open)*0.05; }
+  setPortalHum(l3Portal.open);
 
   // Brine globs (boss ranged)
   for(const v of venom){
@@ -8765,7 +8838,7 @@ function updateLevel3(){
       victoryActive=true; victoryTimer=360;
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
-      SFX.win();
+      sfx('portalEnter'); sfx('win');
     }
   }
 
@@ -8805,7 +8878,7 @@ function updateOttoL3(){
   if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
     let nearestE=null, nearestD=180;
     for(const e of l3Enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
-    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); SFX.barf(); }
+    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); sfx('barf'); }
   }
 }
 
@@ -10628,7 +10701,7 @@ function updateBratwurst(){
       const sx=mb.x+mb.w/2, sy=mb.y+mb.h*0.62;
       const dx=(s.x+s.w/2)-sx, dy=(s.y+s.h/2)-sy, d=Math.hypot(dx,dy)||1;
       venom.push({x:sx,y:sy,vx:dx/d*3.2,vy:dy/d*3.2-0.6,life:120,r:6,col:'#E8C000',mustard:true});
-      if(typeof SFX!=='undefined' && SFX.barf) SFX.barf();
+      sfx('barf');
     }
     // contact damage
     if(s.invincible===0 && s.x+s.w>mb.x && s.x<mb.x+mb.w && s.y+s.h>mb.y && s.y<mb.y+mb.h) hurt(s);
@@ -10638,11 +10711,11 @@ function updateBratwurst(){
       if(pr.x>mb.x && pr.x<mb.x+mb.w && pr.y>mb.y && pr.y<mb.y+mb.h){
         mb.hp--; mb.hitFlash=8; pr.life=(pr.type==='milk')?Math.min(pr.life,2):0;
         shakeIntensity=Math.max(shakeIntensity,4); score+=30;
-        if(typeof SFX!=='undefined' && SFX.bossHit) SFX.bossHit();
+        sfx('bossHit');
         for(let i=0;i<8;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,life:16,maxLife:16,type:'spark',color:'#E8C000'});
         if(mb.hp<=0){
           mb.alive=false; mb.defeated=true; score+=400; shakeIntensity=12;
-          if(typeof SFX!=='undefined' && SFX.bossDie) SFX.bossDie();
+          sfx('bossDie');
           for(let i=0;i<24;i++) particles.push({x:mb.x+mb.w/2,y:mb.y+mb.h/2,vx:(Math.random()-.5)*6,vy:-2-Math.random()*4,life:36,maxLife:36,type:'spark',color:i%2?'#E8C000':'#9D4EDD'});
           if(tp){ tp.locked=false;
             for(let i=0;i<26;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#C9B6FF'});
@@ -10985,7 +11058,7 @@ function updateOttoGen(){
   if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
     let nearestE=null, nearestD=180;
     for(const e of lv.enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
-    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); SFX.barf(); }
+    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); sfx('barf'); }
   }
 }
 
@@ -10999,7 +11072,7 @@ function updateGen(){
 
   if(currentLevel===5){
     if(lightT>0) lightT--;
-    if(lightT<=0){ lightStrike=18; lightT=180+(Math.random()*240|0); SFX.thunder&&SFX.thunder(); }
+    if(lightT<=0){ lightStrike=18; lightT=180+(Math.random()*240|0); sfx('thunder'); }
     if(lightStrike>0){ lightStrike--; const k=lightStrike; lightFlash=(k>14)?1:(k>11)?0.4:(k>7)?0.9:(k*0.12); } else lightFlash=0;
   } else lightFlash=0;
   if(currentLevel===5) updateL5Slides();
@@ -11007,7 +11080,7 @@ function updateGen(){
   if(cutsceneActive){
     cutsceneTimer--;
     if(currentLevel===5 && boss && boss.manifestT!==undefined && boss.manifestT<boss.manifestMax) boss.manifestT++;
-    if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; otto.cower=120; SFX.rattle(); }
+    if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; otto.cower=120; sfx('rattle'); }
     s.vx=0; s.vy=Math.min(s.vy+GRAVITY,12); resolveGen(s);
     if(s.y+s.h>FLOOR){s.y=FLOOR-s.h;s.vy=0;}
     return;
@@ -11077,7 +11150,7 @@ function updateGen(){
         o.attackTimer=10; o.attackCooldown=34;
         if(ottoPower===2){
           for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
-          SFX.barf();
+          sfx('barf');
         } else { fireAttack(o); }
       }
     }
@@ -11106,7 +11179,7 @@ function updateGen(){
         if(!e.cutenessTimer)e.cutenessTimer=70;
         e.cutenessTimer--;
         if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
-        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();
+        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');sfx('squash');
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'}); }
       }
     }
@@ -11220,9 +11293,9 @@ function updateGen(){
         if(!dn.alive) continue;
         const dx=ccx+Math.cos(dn.ang)*dr.orbitR, dy=ccy+Math.sin(dn.ang)*dr.orbitR;
         if(Math.abs(pr.x-dx)<16 && Math.abs(pr.y-dy)<16){
-          dn.alive=false; dn.dieT=8; pr.life=0; score+=40; shakeIntensity=Math.max(shakeIntensity,6); SFX.bossHit();
+          dn.alive=false; dn.dieT=8; pr.life=0; score+=40; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie');
           for(let i=0;i<12;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.523)*3.2,vy:Math.sin(i*0.523)*3.2,life:22,maxLife:22,type:'spark',color:bc.proj});
-          if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; SFX.bossSpit&&SFX.bossSpit(); }
+          if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; sfx('shieldDown'); }
           break;
         }
       }
@@ -11234,30 +11307,30 @@ function updateGen(){
       if(pr.x>tbX0&&pr.x<tbX1&&pr.y>tbY0&&pr.y<tbY1){
         if(currentLevel===6 && boss.shielded){
           // shield absorbs any shot that reaches the core — redirect to the nearest living node
-          pr.life=0; boss.hitFlash=4; SFX.bossHit();
+          pr.life=0; boss.hitFlash=4; sfx('bossHit');
           if(boss.drones){ let best=null,bd=1e9; const ccx=boss.x+boss.w/2,ccy=boss.y+boss.h/2,dr=bc.drones;
             for(const dn of boss.drones){ if(!dn.alive)continue; const ex=ccx+Math.cos(dn.ang)*dr.orbitR-pr.x, ey=ccy+Math.sin(dn.ang)*dr.orbitR-pr.y; const q=ex*ex+ey*ey; if(q<bd){bd=q;best=dn;} }
-            if(best){ best.alive=false; best.dieT=8; shakeIntensity=Math.max(shakeIntensity,6);
+            if(best){ best.alive=false; best.dieT=8; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie');
               const dx=ccx+Math.cos(best.ang)*dr.orbitR,dy=ccy+Math.sin(best.ang)*dr.orbitR;
               for(let i=0;i<12;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.523)*3.2,vy:Math.sin(i*0.523)*3.2,life:22,maxLife:22,type:'spark',color:bc.proj});
-              if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; SFX.bossSpit&&SFX.bossSpit(); } } }
+              if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; sfx('shieldDown'); } } }
           continue;
         }
         boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;
-        SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
+        sfx('bossHit');pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         const half=Math.ceil(bc.hp/2);
         if(boss.hp<=half&&boss.phaseIndex===0){
           boss.phaseIndex=1;boss.vx=(boss.vx<0?-1:1)*bc.vx2;boss.spitTimer=bc.spit2;
-          shakeIntensity=16;hurtFlashTimer=20;SFX.rattle();
-          if(currentLevel===5){ boss.fxEnrage=42; boss.fxDarken=0.85; boss.fxViolet=0.9; boss.fxRed=1; SFX.bossSpit&&SFX.bossSpit(); }  // every eye snaps open
+          shakeIntensity=16;hurtFlashTimer=20;sfx('rattle');
+          if(currentLevel===5){ boss.fxEnrage=42; boss.fxDarken=0.85; boss.fxViolet=0.9; boss.fxRed=1; sfx('bossSpit'); }  // every eye snaps open
           if(currentLevel===6){ // the accretion eye-nodes DETACH into an orbiting drone shield
             boss.shielded=true; boss.overclock=false; boss.beamState='idle'; boss.beamCooldown=0; boss.beamHit=false;
             boss.drones=[]; const dc=bc.drones;
             for(let i=0;i<dc.count;i++) boss.drones.push({ang:boss.orbit + i*(6.283/dc.count), alive:true, dieT:0});
-            shakeIntensity=18; hurtFlashTimer=22; SFX.bossSpit&&SFX.bossSpit();
+            shakeIntensity=18; hurtFlashTimer=22; sfx('bossSpit');
           }
         }
-        if(boss.hp<=0){ boss.alive=false;boss.dieTimer=(currentLevel===5?150:120);score+=1000;shakeIntensity=16;SFX.bossDie();
+        if(boss.hp<=0){ boss.alive=false;boss.dieTimer=(currentLevel===5?150:120);score+=1000;shakeIntensity=16;sfx('bossDie');
           venom=[]; projectiles=[];   // clear all in-flight bolts so nothing lingers over the death dissolve
           if(currentLevel===5){ // play the sprite-sheet death dissolve, then scatter a swarm of spectral eyes
             boss.animName='death'; boss.animFrame=0; boss.animAcc=0; boss.casting=false;
@@ -11287,7 +11360,7 @@ function updateGen(){
   if(currentLevel===6 && lv.transponder && !lv.transponder.got){
     const tp=lv.transponder;
     if(tp.locked && lv.rings && lv.rings.length && lv.rings.every(rg=>rg.hit)){
-      tp.locked=false; shakeIntensity=Math.max(shakeIntensity,6); SFX.bossHit&&SFX.bossHit();
+      tp.locked=false; shakeIntensity=Math.max(shakeIntensity,6); sfx('bossHit');
       for(let i=0;i<26;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#C9B6FF'});
     }
     tp.field += ((tp.locked?1:0)-tp.field)*0.08; if(tp.field<0.01)tp.field=0;
@@ -11305,7 +11378,7 @@ function updateGen(){
     if(r.got)continue;
     for(const p of [s,o]){
       if(p.x+p.w>r.x&&p.x<r.x+18&&p.y+p.h>r.y&&p.y<r.y+18){
-        r.got=true;score+=r.points;popPoints(r.x+9, r.y-4, r.points, lv.pal.r1||'#FFE08A');sfx('ball');
+        r.got=true;score+=r.points;popPoints(r.x+9, r.y-4, r.points, lv.pal.r1||'#FFE08A');sfx('pickup');
         const col=r.rarity===3?lv.pal.r3:r.rarity===2?lv.pal.r2:lv.pal.r1;
         const pc=r.rarity===3?12:r.rarity===2?10:8;
         for(let i=0;i<pc;i++) particles.push({x:r.x+9,y:r.y+9,vx:Math.cos(i*Math.PI*2/pc)*3,vy:Math.sin(i*Math.PI*2/pc)*3,life:16,maxLife:16,type:'spark',color:col});
@@ -11334,7 +11407,7 @@ function updateGen(){
       if(trigger){
         cutsceneActive=true;cutsceneTimer=240;
         s.invincible=240; s.vx=0; s.vy=0; venom=[]; projectiles=[];
-        if(currentLevel===5){ boss.manifestT=0; boss.manifestMax=150; SFX.bossSpit&&SFX.bossSpit(); }
+        if(currentLevel===5){ boss.manifestT=0; boss.manifestMax=150; sfx('bossSpit'); }
       }
     }
     if(boss.active){
@@ -11360,7 +11433,7 @@ function updateGen(){
         // DECISION: close + ready + not mid-cast → choose the slash instead of a ranged beat (range governs choice)
         if(boss.meleeState==='idle' && distToPlayer<M.range && boss.meleeCooldown<=0 && !boss.casting && boss.animName!=='magic'){
           boss.meleeState='windup'; boss.meleeTimer=M.windup; boss.meleeHit=false;
-          boss.animName='sword'; boss.animFrame=0; boss.animAcc=0; boss.vx=0; boss.fxCharge=0; sfx('rattle');
+          boss.animName='sword'; boss.animFrame=0; boss.animAcc=0; boss.vx=0; boss.fxCharge=0; sfx('windup');
         }
       }
       const meleeBusy = haus && boss.meleeState && boss.meleeState!=='idle';
@@ -11371,7 +11444,7 @@ function updateGen(){
           boss.animFrame=Math.min(2,Math.floor((1-(boss.meleeTimer/M.windup))*3)); // frames 0..2 = wind back
           boss.meleeTimer--;
           if(boss.meleeTimer<=0){ boss.meleeState='slash'; boss.meleeTimer=M.dur; boss.meleeHit=false;
-            boss.facing=(s.x+s.w/2)<(boss.x+boss.w/2)?-1:1; sfx('rattle'); }
+            boss.facing=(s.x+s.w/2)<(boss.x+boss.w/2)?-1:1; sfx('charge'); }
         } else if(boss.meleeState==='slash'){      // commit: dash forward, blade out (frames 3..5)
           boss.x+=M.dashV*boss.facing;
           if(boss.x<lo)boss.x=lo; else if(boss.x>hi)boss.x=hi;
@@ -11385,7 +11458,7 @@ function updateGen(){
         }
       }
       if(!meleeBusy) boss.lungeTimer--;
-      if(!meleeBusy && boss.lungeTimer<=0){ boss.vx=(boss.phaseIndex?bc.vx2:bc.vx1)*1.6*boss.facing; boss.lungeTimer=150+Math.random()*90; sfx('rattle'); }
+      if(!meleeBusy && boss.lungeTimer<=0){ boss.vx=(boss.phaseIndex?bc.vx2:bc.vx1)*1.6*boss.facing; boss.lungeTimer=150+Math.random()*90; sfx('charge'); }
       else if(!meleeBusy){ const tgt=(boss.phaseIndex?bc.vx2:bc.vx1); if(Math.abs(boss.vx)>tgt+0.1)boss.vx*=0.96; }
       if(!meleeBusy) boss.spitTimer--;
       if(!meleeBusy && boss.spitTimer<=0){
@@ -11404,7 +11477,7 @@ function updateGen(){
             const a=baseA+spread;
             venom.push({x:sx,y:sy,vx:Math.cos(a)*5.4,vy:Math.sin(a)*5.4-1.0,life:120,r:6,col:bc.proj});
           }
-          SFX.bossSpit();
+          sfx('bossSpit');
         }
       }
       // --- Baron sprite animation state machine (game-tick timed; owns frame + bolt spawn) ---
@@ -11429,7 +11502,7 @@ function updateGen(){
             const baseA=Math.atan2(dy,dx);
             for(let k=0;k<cnt;k++){ const spread=(cnt>1)?((k-(cnt-1)/2)*0.16):0; const a=baseA+spread;
               venom.push({x:mx,y:my,vx:Math.cos(a)*5.6,vy:Math.sin(a)*5.6-0.5,life:120,r:9,col:bc.proj,baron:true}); }
-            SFX.bossSpit();
+            sfx('bossSpit');
             boss.fxViolet=1; boss.fxCharge=0; shakeIntensity=Math.max(shakeIntensity,7);  // release flash + jolt
           }
         }
@@ -11449,7 +11522,7 @@ function updateGen(){
         if(boss.slamTimer<=0){
           boss.slamTimer=110;
           shockwaves.push({x:boss.x+boss.w/2,y:FLOOR,w:0,life:40,maxLife:40,dir:boss.facing,col:lv.pal.tertiary});
-          shakeIntensity=8; sfx('rattle');
+          shakeIntensity=8; sfx('slam');
           if(s.invincible===0 && s.onGround && Math.abs((s.x+s.w/2)-(boss.x+boss.w/2))<160){
             s.vx=(s.x<boss.x?-1:1)*6; s.vy=-6;
           }
@@ -11464,11 +11537,11 @@ function updateGen(){
           if(boss.beamState==='idle'){
             if(boss.beamCooldown>0) boss.beamCooldown--;
             else { boss.beamState='charge'; boss.beamTimer=bm.chargeWarn; boss.beamHit=false;
-              boss.beamAng0=Math.atan2((s.y+s.h/2)-ccy,(s.x+s.w/2)-ccx)-bm.sweepArc/2; sfx('rattle'); }
+              boss.beamAng0=Math.atan2((s.y+s.h/2)-ccy,(s.x+s.w/2)-ccx)-bm.sweepArc/2; sfx('beamCharge'); }
           } else if(boss.beamState==='charge'){
             boss.beamTimer--;
             if(boss.beamTimer<=0){ boss.beamState='sweep'; boss.beamTimer=bm.sweepDur; boss.beamHit=false;
-              SFX.bossSpit&&SFX.bossSpit(); shakeIntensity=Math.max(shakeIntensity,8); }
+              sfx('bossSpit'); shakeIntensity=Math.max(shakeIntensity,8); }
           } else if(boss.beamState==='sweep'){
             const prog=1-(boss.beamTimer/bm.sweepDur), ang=boss.beamAng0+prog*bm.sweepArc;
             boss.beamAng=ang;
@@ -11571,8 +11644,10 @@ function updateGen(){
   }
   // Escape vortex only forms once the boss is down (was previously always-open → spawned pre-defeat)
   const _bossDown = !boss || (!boss.alive && (boss.dieTimer===undefined || boss.dieTimer<=110));
+  if(_bossDown && !window._genPortalSfx){ window._genPortalSfx=true; sfx('portalOpen'); }
   genPortalOpen += ((_bossDown?1:0) - genPortalOpen) * 0.06;
   if(genPortalOpen<0.001) genPortalOpen=0;
+  setPortalHum(genPortalOpen);
 
   // Flag / win — portal warp replaces bike
   const flagX=lv.worldW-140;
@@ -11582,7 +11657,7 @@ function updateGen(){
       victoryActive=true; victoryTimer=360;
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
-      SFX.win();
+      sfx('portalEnter'); sfx('win');
     }
   }
   document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -11724,7 +11799,7 @@ function updateSwim(){
 
   if(cutsceneActive){
     cutsceneTimer--;
-    if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; otto.cower=120; SFX.rattle(); }
+    if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; otto.cower=120; sfx('rattle'); }
     s.vx*=0.8; s.vy*=0.8; s.x+=s.vx; s.y+=s.vy; resolveSwim(s);
     return;
   }
@@ -11768,7 +11843,7 @@ function updateSwim(){
     if(o.attackCooldown<=0){ o.attackTimer=10; o.attackCooldown=34;
       if(ottoPower===2){
         for(let k=-2;k<=2;k++) projectiles.push({type:'milk',owner:otto,x:otto.x+(otto.facing>0?otto.w:0),y:otto.y+8,vx:otto.facing*9.5,vy:k*0.7,life:42,r:5});
-        SFX.barf();
+        sfx('barf');
       } else { fireAttack(o); }
     }
   }
@@ -11792,7 +11867,7 @@ function updateSwim(){
         if(!e.cutenessTimer)e.cutenessTimer=70;
         e.cutenessTimer--;
         if(e.cutenessTimer%10===0) particles.push({x:e.x+e.w/2,y:e.y,vx:(Math.random()-.5)*1.5,vy:-1.5,life:28,maxLife:28,type:'heart'});
-        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');SFX.squash();
+        if(e.cutenessTimer<=0){ e.alive=false;e.deathTime=12; maybeDropHeart(e.x+e.w/2,e.y);score+=100;popPoints(e.x+e.w/2,e.y-6,100,'#FFB0B0');sfx('squash');
           for(let i=0;i<8;i++) particles.push({x:e.x+e.w/2,y:e.y+e.h/2,vx:(Math.random()-.5)*5,vy:-2-Math.random()*2,life:24,maxLife:24,type:'heart'}); }
       }
     }
@@ -11850,10 +11925,10 @@ function updateSwim(){
     }
     if(pr.life>0&&boss&&boss.active&&boss.alive){
       if(pr.x>boss.x&&pr.x<boss.x+boss.w&&pr.y>boss.y&&pr.y<boss.y+boss.h){
-        boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;SFX.bossHit();pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
+        boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;sfx('bossHit');pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         const half=Math.ceil(bc.hp/2);
-        if(boss.hp<=half&&boss.phaseIndex===0){ boss.phaseIndex=1;boss.spitTimer=bc.spit2;shakeIntensity=16;hurtFlashTimer=20;SFX.rattle(); }
-        if(boss.hp<=0){ boss.alive=false;boss.dieTimer=120;score+=1000;shakeIntensity=16;SFX.bossDie();venom=[];
+        if(boss.hp<=half&&boss.phaseIndex===0){ boss.phaseIndex=1;boss.spitTimer=bc.spit2;shakeIntensity=16;hurtFlashTimer=20;sfx('rattle'); }
+        if(boss.hp<=0){ boss.alive=false;boss.dieTimer=120;score+=1000;shakeIntensity=16;sfx('bossDie');venom=[];
           for(let i=0;i<18;i++) particles.push({x:boss.x+boss.w/2,y:boss.y+boss.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:40,maxLife:40,type:'spark',color:bc.body}); }
       }
     }
@@ -11865,7 +11940,7 @@ function updateSwim(){
     if(r.got)continue; r.phase=(r.phase||0)+0.05;
     for(const p of [s,o]){
       if(p.x+p.w>r.x&&p.x<r.x+18&&p.y+p.h>r.y&&p.y<r.y+18){
-        r.got=true;score+=r.points;popPoints(r.x+9, r.y-4, r.points, lv.pal.r1||'#FFE08A');sfx('ball');
+        r.got=true;score+=r.points;popPoints(r.x+9, r.y-4, r.points, lv.pal.r1||'#FFE08A');sfx('pickup');
         const col=r.rarity===3?lv.pal.r3:r.rarity===2?lv.pal.r2:lv.pal.r1;
         const pc=r.rarity===3?12:r.rarity===2?10:8;
         for(let i=0;i<pc;i++) particles.push({x:r.x+9,y:r.y+9,vx:Math.cos(i*Math.PI*2/pc)*3,vy:Math.sin(i*Math.PI*2/pc)*3,life:16,maxLife:16,type:'spark',color:col});
@@ -11904,7 +11979,7 @@ function updateSwim(){
           const a = (boss.phaseIndex? (baseA + (k-(cnt-1)/2)*0.5) : (k*Math.PI*2/cnt));
           venom.push({x:sx,y:sy,vx:Math.cos(a)*3.6,vy:Math.sin(a)*3.6,life:130,r:6,col:bc.proj});
         }
-        SFX.bossSpit();
+        sfx('bossSpit');
       }
       // ---- SIGNATURE: ink plume (both phases) — telegraph then dark column ----
       if(boss.inkWarn>0){
@@ -11913,7 +11988,7 @@ function updateSwim(){
           venom.push({ ink:true, x:boss.inkX, y:(SY+FY)/2, top:SY, bottom:FY,
                        band:bc.ink.band, coreR:bc.ink.coreR, dmg:bc.ink.dmg,
                        life:bc.ink.life, maxLife:bc.ink.life, rise:0.22, seed:Math.random()*99 });
-          SFX.bossSpit();
+          sfx('bossSpit');
         }
       } else {
         boss.inkTimer--;
@@ -11930,7 +12005,7 @@ function updateSwim(){
           s.vx += boss.curDir*bc.current.force;     // nudge swim vx only (SWIM consts untouched)
         } else if(boss.curWarn>0){
           boss.curWarn--;
-          if(boss.curWarn===0){ boss.curTimer=bc.current.dur; SFX.bossSpit(); }
+          if(boss.curWarn===0){ boss.curTimer=bc.current.dur; sfx('bossSpit'); }
         } else {
           boss.curBeat--;
           if(boss.curBeat<=0){
@@ -11970,7 +12045,7 @@ function updateSwim(){
   // ---- Exit beacon / win ----
   const exitX=lv.worldW-120;
   if(!victoryActive && s.x+s.w>exitX-30 && (!boss||!boss.alive)){
-    saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; SFX.win();
+    saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sfx('portalEnter'); sfx('win');
     for(let i=0;i<24;i++) particles.push({x:exitX,y:SY+40+Math.random()*120,vx:(Math.random()-.5)*2,vy:-1-Math.random()*2,life:40,maxLife:40,type:'spark',color:lv.pal.secondary});
   }
   document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -13988,7 +14063,7 @@ function goToLevel(n){
   projectiles=[]; venom=[]; particles=[]; killCombo=0;
   cutsceneActive=false; victoryActive=false; victoryTimer=0;
   finishCardActive=false; finishCardTimer=0; shockwaves=[]; icicles=[];
-  genPortalOpen=0;
+  genPortalOpen=0; window._genPortalSfx=false; setPortalHum(0);
   bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0}; bikeLift=0; bikeTilt=0;
   buildPlayers();
   buildLevelContent(n);
