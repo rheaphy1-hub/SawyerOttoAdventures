@@ -1607,6 +1607,8 @@ function oskSync(){
 
 let audioCtx = null;
 let sfxBus=null;
+let thunderTimer = 0;
+let thunderTrack = null;
 function getBus(){
   if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state==='suspended'){ try{audioCtx.resume();}catch(e){} }
@@ -1671,7 +1673,6 @@ const SFX = {
   slam:      () => { beep(70,0.22,'sine',0.14,40); noise(0.12,0.07); beep(160,0.06,'square',0.04); },
   charge:    () => { beep(340,0.30,'sawtooth',0.07,110); noise(0.18,0.03); },
   beamCharge:() => { beep(220,0.9,'sine',0.05,1400); beep(440,0.9,'sine',0.03,2100); },
-  thunder:   () => { noise(0.5,0.10); beep(55,0.9,'sawtooth',0.09,30); },
   pickup:    () => { beep(880,0.07,'sine',0.06,1320); beep(1320,0.05,'sine',0.03); },
   portalOpen: () => { beep(80,1.1,'sine',0.10,320); beep(160,1.0,'sine',0.06,640); beep(240,0.9,'sine',0.04,960); noise(0.4,0.03); },
   portalEnter:() => { beep(520,0.5,'sawtooth',0.07,90); beep(1040,0.35,'sine',0.04,180); noise(0.35,0.05); }
@@ -11071,8 +11072,15 @@ function updateGen(){
   const s=sawyer,o=otto, lv=curLV(), bc=lv.boss, boss=lv.bossObj;
 
   if(currentLevel===5){
+    thunderTimer--;
+    if(thunderTimer<=0){
+      thunderTimer = 600 + Math.random()*600;
+      if(!thunderTrack) thunderTrack = new Audio('assets/thunder.mp3');
+      thunderTrack.currentTime=0;
+      thunderTrack.play().catch(()=>{});
+    }
     if(lightT>0) lightT--;
-    if(lightT<=0){ lightStrike=18; lightT=180+(Math.random()*240|0); sfx('thunder'); }
+    if(lightT<=0){ lightStrike=18; lightT=180+(Math.random()*240|0); }
     if(lightStrike>0){ lightStrike--; const k=lightStrike; lightFlash=(k>14)?1:(k>11)?0.4:(k>7)?0.9:(k*0.12); } else lightFlash=0;
   } else lightFlash=0;
   if(currentLevel===5) updateL5Slides();
@@ -14063,7 +14071,7 @@ function goToLevel(n){
   projectiles=[]; venom=[]; particles=[]; killCombo=0;
   cutsceneActive=false; victoryActive=false; victoryTimer=0;
   finishCardActive=false; finishCardTimer=0; shockwaves=[]; icicles=[];
-  genPortalOpen=0; window._genPortalSfx=false; setPortalHum(0);
+  genPortalOpen=0; window._genPortalSfx=false; setPortalHum(0); thunderTimer=0;
   bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0}; bikeLift=0; bikeTilt=0;
   buildPlayers();
   buildLevelContent(n);
