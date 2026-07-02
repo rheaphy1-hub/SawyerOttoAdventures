@@ -2039,12 +2039,13 @@ function loadPortalBuf(){
     .catch(()=>{ portalBuf=null; });
 }
 function playPortalOpen(){
-  if(!sfxOn || !audioCtx) return;
-  loadPortalBuf();
+  if(!sfxOn) return;
+  const bus=getBus();            // creates audioCtx + kicks loadPortalBuf() (4d)
+  if(!audioCtx) return;
   if(portalBuf){
     const src=audioCtx.createBufferSource(), g=audioCtx.createGain();
     src.buffer=portalBuf; g.gain.value=0.9;
-    src.connect(g); g.connect(getBus()); src.start();
+    src.connect(g); g.connect(bus); src.start();
   } else {
     beep(80,1.1,'sine',0.10,320); beep(160,1.0,'sine',0.06,640);
     beep(240,0.9,'sine',0.04,960); noise(0.4,0.03);
