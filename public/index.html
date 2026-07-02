@@ -2064,23 +2064,25 @@ function sfx(name){ const b=SFXBANKS[currentLevel]; ((b&&b[name])||SFX[name]||((
 let portalBuf=null, _portalBufTried=false;
 function loadPortalBuf(){
   if(_portalBufTried || !audioCtx) return; _portalBufTried=true;
-  const paths=['/audio/portal.mp3','assets/portal.mp3'];
+  const paths=['/audio/portal.mp3','audio/portal.mp3','assets/portal.mp3','portal.mp3'];
   (function tryNext(i){
-    if(i>=paths.length){ portalBuf=null; return; }
-    fetch(paths[i]).then(r=>{ if(!r.ok) throw 0; return r.arrayBuffer(); })
-      .then(a=>audioCtx.decodeAudioData(a)).then(b=>{ portalBuf=b; })
-      .catch(()=>tryNext(i+1));
+    if(i>=paths.length){ portalBuf=null; console.warn('[portal] all paths failed -> synth fallback'); return; }
+    fetch(paths[i]).then(r=>{ if(!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then(a=>new Promise((res,rej)=>{ audioCtx.decodeAudioData(a,res,rej); }))
+      .then(b=>{ portalBuf=b; console.log('[portal] loaded',paths[i]); })
+      .catch(err=>{ console.warn('[portal] fail',paths[i],err.message||err); tryNext(i+1); });
   })(0);
 }
 function playPortalOpen(){
   if(!sfxOn) return;
-  const bus=getBus();            // creates audioCtx + kicks loadPortalBuf() (4d)
+  const bus=getBus();            // creates audioCtx + kicks loadPortalBuf()
   if(!audioCtx) return;
   if(portalBuf){
     const src=audioCtx.createBufferSource(), g=audioCtx.createGain();
     src.buffer=portalBuf; g.gain.value=0.9;
     src.connect(g); g.connect(bus); src.start();
   } else {
+    _portalBufTried=false; loadPortalBuf();   // retry for next time
     beep(80,1.1,'sine',0.10,320); beep(160,1.0,'sine',0.06,640);
     beep(240,0.9,'sine',0.04,960); noise(0.4,0.03);
   }
@@ -10993,7 +10995,7 @@ const LV = {
     boss:{ name:'Nexus Nine', tag:'🛰 NEXUS NINE', rage:'🛰 NEXUS NINE — OVERCLOCKED',
            hp:18, vx1:2.0, vx2:2.9, spit1:50, spit2:35, n1:3, n2:5,
            drones:{ count:4, orbitR:78, orbitSpd:0.03 },
-           beam:{ chargeWarn:60, sweepDur:90, sweepArc:Math.PI, width:14, dmg:true, cooldown:240 },
+           beam:{ chargeWarn:78, sweepDur:82, sweepArc:Math.PI*0.6, width:14, dmg:true, cooldown:255, safeSide:true },
            proj:'#FFFF00', body:'#00CCFF', limb:'#FFD700', eye:'#00FFFF', aura:'rgba(0,204,255,0.35)' },
     audio:'/audio/L6probed.mp3'
   }
@@ -11041,6 +11043,19 @@ function buildLevelGen(n){
                       vx:(groundSlots[i]==='B'?0.7:0.95), facing:1, alive:true,
                       plat:gPlat, phase:Math.random()*6, hitCount:0 });
   });
+  // L5 (Haunted Haus) — uniquely Baron: extra ghoul cluster guarding the run-up to the first ladder (x~3098)
+  if(n===5){
+    const hausXs=[2560,2680,2820,2940,3040];
+    const hausSlots=['C','A','D','B','A'];
+    hausXs.forEach((gx,i)=>{
+      let gPlat=lv.platforms[0];
+      for(const pl of lv.platforms){ if(pl.y===FLOOR && gx>=pl.x && gx<=pl.x+pl.w){ gPlat=pl; break; } }
+      lv.enemies.push({ slot:hausSlots[i], x:gx, y:FLOOR-26, w:28, h:26,
+                        vx:(hausSlots[i]==='B'?0.7:1.05), facing:1, alive:true,
+                        plat:gPlat, phase:Math.random()*6, hoverTimer:Math.random()*100|0,
+                        shootTimer:50+((Math.random()*40)|0), hitCount:0 });
+    });
+  }
   buildGenRocks(n);
   lv.rings = [];   // (L6 rings/transponder/spires are built in buildSpaceLevel)
 }
@@ -12132,7 +12147,14 @@ function updateGen(){
             list=[{label:'plasma',w:0.6,do:doPlasma},
                   {label:'beam',w:0.4,do:beamOK?(()=>{ const bm=bc.beam, ccx=boss.x+boss.w/2, ccy=boss.y+boss.h/2;
                     boss.beamState='charge'; boss.beamTimer=bm.chargeWarn; boss.beamHit=false;
-                    boss.beamAng0=Math.atan2((s.y+s.h/2)-ccy,(s.x+s.w/2)-ccx)-bm.sweepArc/2; sfx('beamCharge'); }):doPlasma}];  // beam busy → plasma
+                    // Sweep DOWN across the side the player is on now; the OPPOSITE side stays safe.
+                    // Player has the whole charge window (telegraphed) to cross under the boss to safety.
+                    const onRight=(s.x+s.w/2)>=ccx; boss.beamSide=onRight?1:-1;
+                    // right side: start down-right (0.28), sweep +arc toward straight-down (center).
+                    // left side:  start down-left (π-0.28), sweep -arc toward straight-down (center).
+                    boss.beamAng0 = onRight ? 0.28 : (Math.PI - 0.28);
+                    boss.beamDir  = onRight ? 1 : -1;
+                    sfx('beamCharge'); }):doPlasma}];  // beam busy → plasma
           }
           boss.actionTimer=boss.phaseIndex?40+Math.random()*25:55+Math.random()*35;
         }
@@ -12190,7 +12212,7 @@ function updateGen(){
             if(boss.beamTimer<=0){ boss.beamState='sweep'; boss.beamTimer=bm.sweepDur; boss.beamHit=false;
               sfx('bossSpit'); shakeIntensity=Math.max(shakeIntensity,8); }
           } else if(boss.beamState==='sweep'){
-            const prog=1-(boss.beamTimer/bm.sweepDur), ang=boss.beamAng0+prog*bm.sweepArc;
+            const prog=1-(boss.beamTimer/bm.sweepDur), ang=boss.beamAng0+(boss.beamDir||1)*prog*bm.sweepArc;
             boss.beamAng=ang;
             if(bm.dmg && s.invincible===0 && !boss.beamHit){
               const pdx=(s.x+s.w/2)-ccx, pdy=(s.y+s.h/2)-ccy;
@@ -14370,12 +14392,20 @@ function drawGenBoss(){
     if(currentLevel===6 && boss.alive && boss.active && boss.overclock){
       const bm=lv.boss.beam, ccx=bx+boss.w/2, ccy=by+boss.h/2, LEN=760;
       if(boss.beamState==='charge'){
-        const t=1-(boss.beamTimer/bm.chargeWarn), a=boss.beamAng0;
+        const t=1-(boss.beamTimer/bm.chargeWarn), a0=boss.beamAng0, dir=(boss.beamDir||1), a1=a0+dir*bm.sweepArc;
         const pulse=0.4+0.6*Math.abs(Math.sin(performance.now()*0.02));
         ctx.save();
-        ctx.strokeStyle='rgba(255,40,30,'+(0.35+0.5*t*pulse).toFixed(3)+')'; ctx.lineWidth=2;  // reserved danger line marks the START angle
-        ctx.beginPath(); ctx.moveTo(ccx,ccy); ctx.lineTo(ccx+Math.cos(a)*LEN, ccy+Math.sin(a)*LEN); ctx.stroke();
-        ctx.globalCompositeOperation='lighter'; ctx.strokeStyle='rgba(255,120,60,'+(0.5*pulse).toFixed(3)+')'; ctx.lineWidth=2; // tightening converging ring
+        // shaded danger wedge covering the full sweep — the UNSHADED side of the arena is safe
+        ctx.globalCompositeOperation='lighter';
+        const gw=ctx.createRadialGradient(ccx,ccy,10,ccx,ccy,LEN);
+        gw.addColorStop(0,'rgba(255,40,30,'+(0.18*t*pulse).toFixed(3)+')'); gw.addColorStop(1,'rgba(255,40,30,0)');
+        ctx.fillStyle=gw; ctx.beginPath(); ctx.moveTo(ccx,ccy);
+        ctx.arc(ccx,ccy,LEN,Math.min(a0,a1),Math.max(a0,a1)); ctx.closePath(); ctx.fill();
+        // bright start line + end line marking the wedge edges
+        ctx.strokeStyle='rgba(255,60,40,'+(0.4+0.5*t*pulse).toFixed(3)+')'; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(ccx,ccy); ctx.lineTo(ccx+Math.cos(a0)*LEN, ccy+Math.sin(a0)*LEN);
+        ctx.moveTo(ccx,ccy); ctx.lineTo(ccx+Math.cos(a1)*LEN, ccy+Math.sin(a1)*LEN); ctx.stroke();
+        ctx.strokeStyle='rgba(255,120,60,'+(0.5*pulse).toFixed(3)+')'; ctx.lineWidth=2;
         ctx.beginPath(); ctx.arc(ccx,ccy,boss.w*0.5*(1.6-t*0.9),0,7); ctx.stroke();
         ctx.restore();
         // shared danger-tell ring at the beam pivot (consistent cross-boss read)
