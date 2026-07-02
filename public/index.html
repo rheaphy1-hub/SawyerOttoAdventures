@@ -34,6 +34,16 @@
   @media (orientation:landscape) and (max-height:560px){
     #canvas-container{ width:min(calc(100vw - 8px), calc((100vh - 70px) * (680/360))); }
   }
+  body{ -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; user-select:none; }
+  body.embed-mode #game-wrapper{ padding:0; }
+  body.embed-mode #game-header,
+  body.embed-mode #game-footer,
+  body.embed-mode .legend,
+  body.embed-mode .credit-line{ display:none !important; }
+  body.embed-mode #canvas-container{ width:100vw; height:100vh; max-width:none; border-radius:0; }
+  body.embed-mode #menu-canvas,
+  body.embed-mode #game{ border-radius:0; border:none; }
+  body.embed-mode #fs-btn{ display:none; }
   #fs-btn{ position:absolute; top:8px; right:8px;
     background:rgba(0,0,0,0.5); border:1px solid #5F5E5A;
     color:#FAEEDA; border-radius:6px; padding:4px 9px;
@@ -354,9 +364,7 @@
       <p class="sub">Join Sawyer and his baby brother Otto across desert dunes, icy peaks, and mysterious realms!</p>
     </div>
     <div class="bar">
-      <button class="tb" id="restart" onclick="restart()">&#8635; New game</button>
-      <button class="tb" id="pause-btn" onclick="togglePause()">&#9646;&#9646; Pause</button>
-      <button class="tb" id="snd" onclick="toggleSound()">&#128266; Sound: on</button>
+      <!-- windowed controls relocated to on-canvas HUD cluster (portal-safe) -->
       <span class="dev-only" style="display:none;color:#5F5E5A;font-size:12px;padding:0 2px">|</span>
       <button class="tb dev-only" onclick="jumpToLevel(1)" title="Jump to Level 1" style="display:none;font-size:11px;padding:5px 10px;opacity:0.75">L1</button>
       <button class="tb dev-only" onclick="jumpToLevel(2)" title="Jump to Level 2" style="display:none;font-size:11px;padding:5px 10px;opacity:0.75">L2</button>
@@ -436,7 +444,7 @@
     <b>Goal:</b> grab collectibles for points, stomp or bonk enemies, and defeat each world's boss to advance.<br>
     <b>Power-ups:</b> collect <b>Baby Bottles</b> to shield Sawyer and unleash Otto's <b>Big Baby</b> rush.
   </div>
-  <div style="text-align:center;padding:6px 0 2px;font-size:11px;color:#888;letter-spacing:0.04em;">A game by <b>Activities with Ryan</b></div>
+  <div class="credit-line" style="text-align:center;padding:6px 0 2px;font-size:11px;color:#888;letter-spacing:0.04em;">A game by <b>Activities with Ryan</b></div>
 </div>
 
 <script>
@@ -490,6 +498,17 @@ const ctx = canvas.getContext('2d');
 // matching the R-key affordance. Guarded so it never fires during gameplay.
 canvas.addEventListener('pointerdown', ()=>{ if(won && currentLevel===6 && returnHomeDone){ restartCurrentLevel(); } });
 canvas.addEventListener('pointerdown', ()=>{ if(victoryActive && victoryTimer<=0) vicContinue = true; }); // advance victory screen on tap/click
+// ── On-canvas HUD control cluster input (mouse + touch) ──
+function _canvasToGame(e){ const r=canvas.getBoundingClientRect(); return { gx:(e.clientX-r.left)/r.width*W, gy:(e.clientY-r.top)/r.height*H }; }
+canvas.addEventListener('pointerdown', function(e){
+  const p=_canvasToGame(e);
+  for(const b of _hudHit){ if(p.gx>=b.x&&p.gx<=b.x+b.w&&p.gy>=b.y&&p.gy<=b.y+b.h){ e.preventDefault(); e.stopPropagation(); b.fn(); return; } }
+}, true);
+canvas.addEventListener('mousemove', function(e){
+  const p=_canvasToGame(e); let h=-1;
+  for(let i=0;i<_hudHit.length;i++){ const b=_hudHit[i]; if(p.gx>=b.x&&p.gx<=b.x+b.w&&p.gy>=b.y&&p.gy<=b.y+b.h){ h=i; break; } }
+  _hudHover=h; if(h>=0) canvas.style.cursor='pointer'; else if(canvas.style.cursor==='pointer') canvas.style.cursor='';
+});
 const W = canvas.width, H = canvas.height;
 let RENDER_SCALE = 2;
 function setupHiDPI(){
@@ -536,15 +555,26 @@ const PAR_SCORE = {1:8000,2:9000,3:9000,4:9000,5:10000,6:12000};          // pts
 let jumpBufferedAt = -1;   // Task 2a: simFrame of last ArrowUp press
 let simFrame = 0;          // Task 2a: monotonic fixed-step counter (incremented in loop())
 let runStartMs = Date.now(); // Task 4: wall-clock start of the current run
+// ── Portal embed mode detection (Poki / CrazyGames) ──
+const EMBED = (()=>{ try{
+  const q=new URLSearchParams(location.search).get('embed');
+  if(q==='1') return true;
+  if(q==='0') return false;
+  return window.self !== window.top;   // auto-detect iframe
+}catch(e){ return true; } })();
+// External mute override (portal SDK integration)
+let portalMuteForced = new URLSearchParams(location.search).has('muteAudio');
 // ── Dev/QA mode ── enabled via ?dev=1 (persists in localStorage), cleared via ?dev=0
 const DEV = (()=>{ try{
   const q=new URLSearchParams(location.search).get('dev');
   if(q==='1') localStorage.setItem('sawyer_dev','1');
   if(q==='0') localStorage.removeItem('sawyer_dev');
+  if(EMBED) return false;   // never expose dev/god in portal embed
   return localStorage.getItem('sawyer_dev')==='1';
 }catch(e){ return false; } })();
 let _devGod=false, _devSpeed=false, _devRunTainted=false; // QA fly-through state (Task 3)
 if(DEV){ document.querySelectorAll('.dev-only').forEach(el=>{ el.style.display=''; }); }
+if(EMBED) document.body.classList.add('embed-mode');
 function devBossSkip(){ // Task 3c — kill the active boss so post-boss sequences can be QA'd fast
   let b=null, dt=120;
   if(currentLevel===2){ b=yeti; }
@@ -661,6 +691,7 @@ let bossEnrage = 0;
 let bossArena = { active:false, spawnT:0, deathBurst:0 };
 
 let musicOn = true, sfxOn = true;
+if(portalMuteForced){ musicOn=false; sfxOn=false; }
 let score = 0, levelStartScore = 0, lives = 5, gameOver = false, won = false;
 
 // Unified per-level metadata (victory surfaces). Name, boss, accent + deep theme colors.
@@ -1517,6 +1548,8 @@ const keys = {};
 document.addEventListener('keydown', e => {
   // While the leaderboard name box is open, let the input handle typing.
   if (nameEntryActive || (e.target && e.target.id === 'ne-input')) return;
+  if (e.code==='KeyP'){ togglePause(); e.preventDefault(); return; }
+  if (e.code==='KeyM'){ toggleSound(); e.preventDefault(); return; }
   keys[e.code] = true;
   if (victoryActive && victoryTimer<=0 && (e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')) vicContinue = true; // advance victory screen
   if (e.code === 'ArrowUp') jumpBufferedAt = simFrame;   // Task 2a jump buffer
@@ -1863,10 +1896,11 @@ function introWhoosh(){
   beep(680, 0.5, 'sine', 0.03, 1240, 0.18);
 }
 function toggleSound(){
+  if(portalMuteForced) return;      // portal SDK forced mute -> ignore toggles
   const on = !(musicOn && sfxOn);   // master: both on -> mute both; otherwise enable both
   musicOn = on; sfxOn = on;
   if(!on) setPortalHum(0);
-  document.getElementById('snd').innerHTML = '&#128266; Sound: ' + (on ? 'on' : 'off');
+  const sb=document.getElementById('snd'); if(sb) sb.innerHTML = '&#128266; Sound: ' + (on ? 'on' : 'off');
   audioManager.syncVolume();
 }
 
@@ -1874,11 +1908,11 @@ function togglePause(){
   gamePaused = !gamePaused;
   const btn = document.getElementById('pause-btn');
   if(gamePaused){
-    btn.innerHTML = '&#9654; Resume';
+    if(btn) btn.innerHTML = '&#9654; Resume';
     // Pause background music
     if(audioManager.current) audioManager.current.pause();
   } else {
-    btn.innerHTML = '&#9646;&#9646; Pause';
+    if(btn) btn.innerHTML = '&#9646;&#9646; Pause';
     // Resume background music
     if(musicOn){
       if(audioManager.current) audioManager.current.play().catch(()=>{});
@@ -6883,6 +6917,28 @@ function restart(resetLevel){
 }
 const STEP_MS=1000/60, MAX_STEPS=4, MAX_FRAME_MS=STEP_MS*MAX_STEPS;
 let _lastFrameT=0, _stepAccum=0;
+// ── Portal-safe on-canvas controls (New game / Pause / Sound), top-center ──
+let _hudHit=[]; let _hudHover=-1;
+function drawTopControls(){
+  const bw=30,bh=26,gap=6,n=3;
+  const totalW=n*bw+(n-1)*gap, x0=Math.round(W/2-totalW/2), y0=6;
+  const soundOn=(musicOn||sfxOn);
+  const fns=[ ()=>restart(), ()=>togglePause(), ()=>toggleSound() ];
+  _hudHit=[];
+  const c=ctx; c.save();
+  c.shadowBlur=0; c.globalAlpha=1; c.textAlign='center'; c.textBaseline='middle';
+  for(let i=0;i<n;i++){
+    const bx=x0+i*(bw+gap);
+    _hudHit.push({x:bx,y:y0,w:bw,h:bh,fn:fns[i]});
+    c.fillStyle = _hudHover===i ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.5)';
+    c.strokeStyle='#5F5E5A'; c.lineWidth=1;
+    c.beginPath(); c.roundRect(bx,y0,bw,bh,6); c.fill(); c.stroke();
+    c.fillStyle='#FAEEDA'; c.font='15px system-ui,sans-serif';
+    let lab = i===0 ? '\u21bb' : i===1 ? (gamePaused?'\u25b6':'\u23f8') : (soundOn?'\ud83d\udd0a':'\ud83d\udd07');
+    c.fillText(lab, bx+bw/2, y0+bh/2+1);
+  }
+  c.restore();
+}
 function loop(){
   pollGamepad();
   if(gamePaused){
@@ -6896,8 +6952,9 @@ function loop(){
     ctx.fillText('⏸ PAUSED',W/2,H/2-10);
     ctx.font='14px system-ui,sans-serif';
     ctx.fillStyle='rgba(255,255,255,0.7)';
-    ctx.fillText('Click "Resume" to continue',W/2,H/2+24);
+    ctx.fillText('Tap \u25b6 or press P to resume',W/2,H/2+24);
     ctx.restore();
+    drawTopControls();
     requestAnimationFrame(loop);
     _lastFrameT=0; _stepAccum=0; // resuming next real frame shouldn't dump catch-up steps
     return;
@@ -7217,6 +7274,7 @@ function loop(){
   
   ctx.restore();
   drawHUD();
+  drawTopControls();
   
   // Draw combo indicator
   if (killCombo > 1){
@@ -14908,7 +14966,7 @@ function playReturnHomeCutscene(onDone){
   mCtx.setTransform(_mdpr,0,0,_mdpr,0,0);
   mCtx.imageSmoothingEnabled = true; mCtx.imageSmoothingQuality = 'high';
   let mT = 0, menuRunning = true;
-  let menuMode='title'; // Task 1: 'title' | 'levels'
+  let menuMode='title'; // Task 1: 'title' | 'levels' | 'howto'
 
   // Characters drawn at 5x scale, positioned in lower-center of canvas
   // At 5x: Sawyer (26x40) becomes ~130x200, Otto (22x26) becomes ~110x130
@@ -14949,6 +15007,10 @@ function playReturnHomeCutscene(onDone){
   const musicBtn = { x: MW-112, y:10, w:48, h:42 };
   const sfxBtn   = { x: MW-56,  y:10, w:48, h:42 };
   let musicHover = false, sfxHover = false;
+  // How-to panel (portal-safe in-canvas help)
+  const howtoBtn  = { x: MW/2-90, y: MH-42, w:180, h:22 };
+  const howtoBack = { x: MW/2-40, y: 274,   w:80,  h:34 };
+  let howtoHover=false;
 
   function drawToggleBtn(r, kind, on, hover){
     const c = mCtx;
@@ -15143,6 +15205,36 @@ function playReturnHomeCutscene(onDone){
     }
   }
 
+  function drawHowto(c){
+    c.fillStyle='rgba(0,0,0,0.7)'; c.fillRect(0,0,MW,MH);
+    const pw=380, ph=280, px=(MW-pw)/2, py=(MH-ph)/2;
+    c.save();
+    c.fillStyle='rgba(30,20,50,0.95)'; c.strokeStyle='#FF8A2B'; c.lineWidth=2;
+    c.beginPath(); c.roundRect(px,py,pw,ph,12); c.fill(); c.stroke();
+    c.fillStyle='#FF8A2B'; c.font='bold 20px system-ui,sans-serif'; c.textAlign='center'; c.textBaseline='alphabetic';
+    c.fillText('HOW TO PLAY', MW/2, py+30);
+    c.fillStyle='#E8DFFF'; c.font='13px system-ui,sans-serif'; c.textAlign='left';
+    const lines=[
+      '\u2190 \u2192 Move     \u2191 Jump',
+      '\u2193 Dive     Space Throw',
+      '',
+      'You are Sawyer. Run, jump, and throw',
+      'to clear each broken world.',
+      'Otto is your baby brother \u2014 he follows,',
+      'fights enemies, and cannot be hurt.',
+      '',
+      'Collect points, stomp enemies, and',
+      'defeat each world\u2019s boss.',
+      'Grab Baby Bottles for shields and',
+      'Otto power-ups.'
+    ];
+    let yy=py+58; lines.forEach(function(ln){ c.fillText(ln, px+24, yy); yy+=17; });
+    c.fillStyle = howtoHover ? '#FF6B6B' : '#A87FBF';
+    c.beginPath(); c.roundRect(howtoBack.x,howtoBack.y,howtoBack.w,howtoBack.h,6); c.fill();
+    c.fillStyle='#1a1a18'; c.font='bold 13px system-ui,sans-serif'; c.textAlign='center'; c.textBaseline='middle';
+    c.fillText('BACK', howtoBack.x+howtoBack.w/2, howtoBack.y+howtoBack.h/2);
+    c.restore();
+  }
   function drawMenu(){
     const c = mCtx;
     c.setTransform(_mdpr,0,0,_mdpr,0,0);
@@ -15170,6 +15262,7 @@ function playReturnHomeCutscene(onDone){
 
     // Task 1b: levels hub renders on the same canvas over the shared bg/sparkles
     if(menuMode==='levels'){ drawLevelsMode(c); return; }
+    if(menuMode==='howto'){ drawHowto(c); return; }
 
     // ── Ground band ──
     c.fillStyle='#0a0612'; c.fillRect(0,MH-44,MW,44);
@@ -15268,6 +15361,17 @@ function playReturnHomeCutscene(onDone){
     if('letterSpacing' in c) c.letterSpacing='0px';
     c.restore();
 
+    // ── HOW TO PLAY button ──
+    c.save(); c.textAlign='center';
+    c.fillStyle = howtoHover ? 'rgba(255,138,43,0.16)' : 'rgba(8,7,12,0.50)';
+    c.beginPath(); c.roundRect(howtoBtn.x,howtoBtn.y,howtoBtn.w,howtoBtn.h,6); c.fill();
+    c.lineWidth=1.5; c.strokeStyle = howtoHover ? '#FF8A2B' : 'rgba(255,138,43,0.55)';
+    c.beginPath(); c.roundRect(howtoBtn.x,howtoBtn.y,howtoBtn.w,howtoBtn.h,6); c.stroke();
+    c.fillStyle = howtoHover ? '#FFD9A8' : '#E8C79A';
+    c.font='700 11px system-ui,sans-serif'; c.textBaseline='middle';
+    c.fillText('HOW TO PLAY', howtoBtn.x+howtoBtn.w/2, howtoBtn.y+howtoBtn.h/2+1);
+    c.restore();
+
     // ── Footer credit (neon sign, subtle flicker) ──
     c.save(); c.textAlign='center';
     const nbase = 0.7 + 0.18*Math.sin(mT*0.05);
@@ -15310,12 +15414,14 @@ function playReturnHomeCutscene(onDone){
       mCanvas.style.cursor=(backHover||hoverTile)?'pointer':'default';
       return;
     }
+    if(menuMode==='howto'){ howtoHover=inR(howtoBack); mCanvas.style.cursor=howtoHover?'pointer':'default'; return; }
     backHover=false; hoverTile=0;
+    howtoHover = inR(howtoBtn);
     const hit = inR(btn);
     lvlBtnHover = inR(lvlBtn);
     musicHover = inR(musicBtn); sfxHover = inR(sfxBtn);
     if(hit!==btnHover){ btnHover=hit; }
-    mCanvas.style.cursor = (hit||lvlBtnHover||musicHover||sfxHover) ? 'pointer' : 'default';
+    mCanvas.style.cursor = (hit||lvlBtnHover||musicHover||sfxHover||howtoHover) ? 'pointer' : 'default';
   });
 
   mCanvas.addEventListener('click', function(e){
@@ -15343,9 +15449,11 @@ function playReturnHomeCutscene(onDone){
       }
       return;
     }
+    if(menuMode==='howto'){ if(inR(howtoBack)){ menuMode='title'; if(sfxOn) beep(520,0.05,'square',0.06); } return; }
     // Audio toggles take priority and do NOT start the game
     if(inR(musicBtn)){ musicOn=!musicOn; audioManager.syncVolume(); _snd(); return; }
     if(inR(sfxBtn)){ sfxOn=!sfxOn; _snd(); if(sfxOn) beep(680,0.07,'square',0.08); return; }
+    if(inR(howtoBtn)){ menuMode='howto'; if(sfxOn) beep(620,0.05,'square',0.06); return; }
     if(inR(lvlBtn)){ menuMode='levels'; if(sfxOn) beep(620,0.05,'square',0.06); return; } // Task 1a
     if(inR(btn)){
       menuRunning=false;
