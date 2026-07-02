@@ -624,6 +624,7 @@ const Portal = (()=>{
     else if(/poki\./i.test(ref)) which='poki';
   }
   let poki=null, cg=null, adDepth=0, savM=true, savS=true, _gpActive=false;
+  let _lastAdAt=0; const AD_MIN_MS=90000;
   const syncAudio=()=>{ try{ if(!(musicOn&&sfxOn)) setPortalHum(0); }catch(e){}
                         try{ if(!(musicOn&&sfxOn)&&thunderTrack){ thunderTrack.pause(); thunderTrack.currentTime=0; } }catch(e){}
                         try{ audioManager.syncVolume(); }catch(e){} };
@@ -664,6 +665,8 @@ const Portal = (()=>{
     adBreak(done){
       done = (typeof done==='function') ? done : function(){};
       let fired=false; const go=()=>{ if(fired) return; fired=true; done(); };
+      if(Date.now() - _lastAdAt < AD_MIN_MS){ go(); return; }   // suppressed ad still runs done()
+      _lastAdAt = Date.now();
       if(poki){
         try{ poki.commercialBreak(()=>adMute(true)).then(()=>{ adMute(false); go(); }).catch(()=>{ adMute(false); go(); }); }
         catch(e){ adMute(false); go(); }
@@ -928,17 +931,17 @@ const audioManager = {
   targetVol: 0.4,
   titleVol: 0.38,
   tracks: {
-    1: '/audio/L1desertdusk.mp3',
-    2: '/audio/L2flurries.mp3',
-    3: '/audio/L3sandyshores.mp3',
-    4: '/audio/L4lookinatmyfish.mp3',
-    5: '/audio/L5strangerthangs.mp3',
-    6: '/audio/L6probed.mp3'
+    1: 'audio/L1desertdusk.mp3',
+    2: 'audio/L2flurries.mp3',
+    3: 'audio/L3sandyshores.mp3',
+    4: 'audio/L4lookinatmyfish.mp3',
+    5: 'audio/L5strangerthangs.mp3',
+    6: 'audio/L6probed.mp3'
   },
 
   playTitle() {
     if (this.titleAudio) return;
-    const a = new Audio('/audio/interlude.mp3');
+    const a = new Audio('audio/interlude.mp3');
     a.loop = true;
     a.volume = musicOn ? this.titleVol : 0;
     a.play().catch(()=>{});
@@ -956,7 +959,7 @@ const audioManager = {
   playCredits() {
     if (this.creditsStarted) return;
     this.creditsStarted = true;
-    const incoming = new Audio('/audio/SawyerOttoTheme.mp3');
+    const incoming = new Audio('audio/SawyerOttoTheme.mp3');
     incoming.loop = true;
     incoming.volume = 0;
     incoming.play().catch(()=>{});
@@ -1468,7 +1471,7 @@ let leaderboardData = null;        // cached top-N once fetched
 let lbToken = null;                 // opaque server-issued session token (Task 4)
 let leaderboardLoading = false;
 let leaderboardError = false;
-const LB_API = '';                 // same-origin /api on Vercel
+const LB_API = 'https://sawyer-otto-adventures.vercel.app';
 function sillyName(){
   const a=['Wobbly','Sneaky','Turbo','Cosmic','Grumpy','Zippy','Dizzy','Mighty','Sleepy','Spooky','Sparkly','Rowdy','Bouncy','Cranky','Fuzzy','Galactic'];
   const b=['Cactus','Pickle','Noodle','Comet','Waffle','Goblin','Otter','Yeti','Crab','Bandit','Muffin','Rocket','Pelican','Burrito','Nugget','Walrus'];
@@ -1477,6 +1480,9 @@ function sillyName(){
 }
 function cleanName(raw){
   let n=(raw||'').replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ').trim().slice(0,20);
+  const BANNED=['2g1c','2 girls 1 cup','acrotomophilia','alabama hot pocket','alaskan pipeline','anal','anilingus','anus','apeshit','arsehole','ass','asshole','assmunch','auto erotic','autoerotic','babeland','baby batter','baby juice','ball gag','ball gravy','ball kicking','ball licking','ball sack','ball sucking','bangbros','bangbus','bareback','barely legal','barenaked','bastard','bastardo','bastinado','bbw','bdsm','beaner','beaners','beaver cleaver','beaver lips','beastiality','bestiality','big black','big breasts','big knockers','big tits','bimbos','birdlock','bitch','bitches','black cock','blonde action','blonde on blonde action','blowjob','blow job','blow your load','blue waffle','blumpkin','bollocks','bondage','boner','boob','boobs','booty call','brown showers','brunette action','bukkake','bulldyke','bullet vibe','bullshit','bung hole','bunghole','busty','butt','buttcheeks','butthole','camel toe','camgirl','camslut','camwhore','carpet muncher','carpetmuncher','chocolate rosebuds','cialis','circlejerk','cleveland steamer','clit','clitoris','clover clamps','clusterfuck','cock','cocks','coprolagnia','coprophilia','cornhole','coon','coons','creampie','cum','cumming','cumshot','cumshots','cunnilingus','cunt','darkie','date rape','daterape','deep throat','deepthroat','dendrophilia','dick','dildo','dingleberry','dingleberries','dirty pillows','dirty sanchez','doggie style','doggiestyle','doggy style','doggystyle','dog style','dolcett','domination','dominatrix','dommes','donkey punch','double dong','double penetration','dp action','dry hump','dvda','eat my ass','ecchi','ejaculation','erotic','erotism','escort','eunuch','fag','faggot','fecal','felch','fellatio','feltch','female squirting','femdom','figging','fingerbang','fingering','fisting','foot fetish','footjob','frotting','fuck','fuck buttons','fuckin','fucking','fucktards','fudge packer','fudgepacker','futanari','gangbang','gang bang','gay sex','genitals','giant cock','girl on','girl on top','girls gone wild','goatcx','goatse','god damn','gokkun','golden shower','goodpoop','goo girl','goregasm','grope','group sex','g-spot','guro','hand job','handjob','hard core','hardcore','hentai','homoerotic','honkey','hooker','horny','hot carl','hot chick','how to kill','how to murder','huge fat','humping','incest','intercourse','jack off','jail bait','jailbait','jelly donut','jerk off','jigaboo','jiggaboo','jiggerboo','jizz','juggs','kike','kinbaku','kinkster','kinky','knobbing','leather restraint','leather straight jacket','lemon party','livesex','lolita','lovemaking','make me come','male squirting','masturbate','masturbating','masturbation','menage a trois','milf','missionary position','mong','motherfucker','mound of venus','mr hands','muff diver','muffdiving','nambla','nawashi','negro','neonazi','nigga','nigger','nig nog','nimphomania','nipple','nipples','nsfw','nsfw images','nude','nudity','nutten','nympho','nymphomania','octopussy','omorashi','one cup two girls','one guy one jar','orgasm','orgy','paedophile','paki','panties','panty','pedobear','pedophile','pegging','penis','phone sex','piece of shit','pikey','pissing','piss pig','pisspig','playboy','pleasure chest','pole smoker','ponyplay','poof','poon','poontang','punany','poop chute','poopchute','porn','porno','pornography','prince albert piercing','pthc','pubes','pussy','queaf','queef','quim','raghead','raging boner','rape','raping','rapist','rectum','reverse cowgirl','rimjob','rimming','rosy palm','rosy palm and her 5 sisters','rusty trombone','sadism','santorum','scat','schlong','scissoring','semen','sex','sexcam','sexo','sexy','sexual','sexually','sexuality','shaved beaver','shaved pussy','shemale','shibari','shit','shitblimp','shitty','shota','shrimping','skeet','slanteye','slut','s&m','smut','snatch','snowballing','sodomize','sodomy','spastic','spic','splooge','splooge moose','spooge','spread legs','spunk','strap on','strapon','strappado','strip club','style doggy','suck','sucks','suicide girls','sultry women','swastika','swinger','tainted love','taste my','tea bagging','threesome','throating','thumbzilla','tied up','tight white','tit','tits','titties','titty','tongue in a','topless','tosser','towelhead','tranny','tribadism','tub girl','tubgirl','tushy','twat','twink','twinkie','two girls one cup','undressing','upskirt','urethra play','urophilia','vagina','venus mound','viagra','vibrator','violet wand','vorarephilia','voyeur','voyeurweb','voyuer','vulva','wank','wetback','wet dream','white power','whore','worldsex','wrapping men','wrinkled starfish','xx','xxx','yaoi','yellow showers','yiffy','zoophilia','🖕'];
+  const low=n.toLowerCase();
+  if(BANNED.some(w=> w && low.includes(w))) return sillyName();
   return n || sillyName();
 }
 // HMAC-SHA256(message) keyed by the opaque session token, hex output. The token
@@ -1922,6 +1928,25 @@ function oskSync(){
     tc.querySelectorAll('.tcbtn.pressed').forEach(b=>b.classList.remove('pressed')); });
 })();
 
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden){
+    try{ if(audioManager.current) audioManager.current.pause(); }catch(e){}
+    try{ if(audioManager.titleAudio) audioManager.titleAudio.pause(); }catch(e){}
+    try{ if(audioManager.next) audioManager.next.pause(); }catch(e){}
+    try{ if(thunderTrack) thunderTrack.pause(); }catch(e){}
+    try{ Portal.gameplayStop(); }catch(e){}
+  } else {
+    if(musicOn && !gamePaused){
+      try{ if(audioManager.current) audioManager.current.play().catch(()=>{}); }catch(e){}
+      try{ if(audioManager.titleAudio) audioManager.titleAudio.play().catch(()=>{}); }catch(e){}
+      try{ if(audioManager.next) audioManager.next.play().catch(()=>{}); }catch(e){}
+    }
+    if(gameRunning && !gamePaused && !levelPaused && !won && !gameOver){
+      try{ Portal.gameplayStart(); }catch(e){}
+    }
+  }
+});
+
 let audioCtx = null;
 let sfxBus=null;
 let thunderTimer = 0;
@@ -2064,7 +2089,7 @@ function sfx(name){ const b=SFXBANKS[currentLevel]; ((b&&b[name])||SFX[name]||((
 let portalBuf=null, _portalBufTried=false;
 function loadPortalBuf(){
   if(_portalBufTried || !audioCtx) return; _portalBufTried=true;
-  const paths=['/audio/portal.mp3','audio/portal.mp3','assets/portal.mp3','portal.mp3'];
+  const paths=['audio/portal.mp3','portal.mp3'];
   (function tryNext(i){
     if(i>=paths.length){ portalBuf=null; console.warn('[portal] all paths failed -> synth fallback'); return; }
     fetch(paths[i]).then(r=>{ if(!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
@@ -2120,6 +2145,7 @@ function togglePause(){
     if(btn) btn.innerHTML = '&#9654; Resume';
     // Pause background music
     if(audioManager.current) audioManager.current.pause();
+    try{ Portal.gameplayStop(); }catch(e){}
   } else {
     if(btn) btn.innerHTML = '&#9646;&#9646; Pause';
     // Resume background music
@@ -2128,6 +2154,7 @@ function togglePause(){
       if(audioManager.titleAudio) audioManager.titleAudio.play().catch(()=>{});
       if(audioManager.next) audioManager.next.play().catch(()=>{});
     }
+    try{ Portal.gameplayStart(); }catch(e){}
   }
 }
 
@@ -6838,7 +6865,7 @@ function drawLeaderboardPanel(c, t){
   }
   if(leaderboardError){
     c.fillStyle='rgba(255,180,180,0.75)'; c.font='600 11px system-ui,sans-serif';
-    c.fillText('Leaderboard offline \u2014 deploy /api to enable', W/2, py+ph/2+6);
+    c.fillText('Leaderboard unavailable right now', W/2, py+ph/2+6);
     c.restore(); return;
   }
   const list=(leaderboardData||[]).slice(0,rows);
@@ -10972,7 +10999,7 @@ const LV = {
            proj:'#00FF88', body:'#00FFFF', limb:'#FF00FF', eye:'#FFD700', aura:'rgba(0,255,255,0.30)',
            ink:{ every1:240, every2:160, warn:50, life:150, band:120, coreR:34, dmg:true },
            current:{ force:0.22, dur:120, warn:40 } },
-    audio:'/audio/L4lookinatmyfish.mp3'
+    audio:'audio/L4lookinatmyfish.mp3'
   },
   5: {
     worldW:6500, bossGate:5600, next:6,
@@ -10984,7 +11011,7 @@ const LV = {
            hp:18, vx1:1.5, vx2:2.3, spit1:55, spit2:38, n1:1, n2:3,
            melee:{ range:170, windup:26, dashV:7.5, arc:64, dur:14, cooldown1:150, cooldown2:95 },
            proj:'#9D4EDD', body:'#E8E8E8', limb:'#1A1A1A', eye:'#FFD700', aura:'rgba(157,78,221,0.32)' },
-    audio:'/audio/L5strangerthangs.mp3'
+    audio:'audio/L5strangerthangs.mp3'
   },
   6: {
     worldW:4000, bossGate:3450, next:null,
@@ -10997,7 +11024,7 @@ const LV = {
            drones:{ count:4, orbitR:78, orbitSpd:0.03 },
            beam:{ chargeWarn:78, sweepDur:82, sweepArc:Math.PI*0.6, width:14, dmg:true, cooldown:255, safeSide:true },
            proj:'#FFFF00', body:'#00CCFF', limb:'#FFD700', eye:'#00FFFF', aura:'rgba(0,204,255,0.35)' },
-    audio:'/audio/L6probed.mp3'
+    audio:'audio/L6probed.mp3'
   }
 };
 function curLV(){ return LV[currentLevel]; }
@@ -11701,7 +11728,7 @@ function updateGen(){
     if(thunderTimer<=0){
       thunderTimer = 1800;   // every 30s @60fps
       if(sfxOn && musicOn){   // respect mute button + ad-mute (Poki/CrazyGames)
-        if(!thunderTrack) thunderTrack = new Audio('assets/thunder.mp3');
+        if(!thunderTrack) thunderTrack = new Audio('audio/thunder.mp3');
         thunderTrack.currentTime=0;
         thunderTrack.volume=0.35;   // turned down — was full volume
         thunderTrack.play().catch(()=>{});
