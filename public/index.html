@@ -594,7 +594,7 @@ const Portal = (()=>{
     if(/crazygames\./i.test(ref)) which='crazygames';
     else if(/poki\./i.test(ref)) which='poki';
   }
-  let poki=null, cg=null, adDepth=0, savM=true, savS=true;
+  let poki=null, cg=null, adDepth=0, savM=true, savS=true, _gpActive=false;
   const syncAudio=()=>{ try{ if(!(musicOn&&sfxOn)) setPortalHum(0); }catch(e){}
                         try{ audioManager.syncVolume(); }catch(e){} };
   // save/restore the player's real mute prefs around an ad
@@ -628,8 +628,8 @@ const Portal = (()=>{
     get which(){ return which; },
     init,
     loadingFinished(){ try{ if(poki) poki.gameLoadingFinished(); else if(cg) cg.game.loadingStop(); }catch(e){} },
-    gameplayStart(){ try{ if(poki) poki.gameplayStart(); else if(cg) cg.game.gameplayStart(); }catch(e){} },
-    gameplayStop(){  try{ if(poki) poki.gameplayStop();  else if(cg) cg.game.gameplayStop();  }catch(e){} },
+    gameplayStart(){ if(_gpActive) return; _gpActive=true; try{ if(poki) poki.gameplayStart(); else if(cg) cg.game.gameplayStart(); }catch(e){} },
+    gameplayStop(){  if(!_gpActive) return; _gpActive=false; try{ if(poki) poki.gameplayStop();  else if(cg) cg.game.gameplayStop();  }catch(e){} },
     // Ad break at a natural stop; `done` runs after the ad, or immediately if none plays.
     adBreak(done){
       done = (typeof done==='function') ? done : function(){};
@@ -1193,6 +1193,14 @@ function buildBottles(){
   const list = spots[currentLevel] || [{x:1200, y:FLOOR-40}];
   for(const sp of list){ bottles.push({x:sp.x, y:sp.y, got:false, bobT:Math.random()*6}); }
 }
+function clearHazards(){
+  // wipe every in-flight boss projectile / hazard so nothing lingers to kill Sawyer post-defeat
+  projectiles = []; venom = [];
+  if(typeof shockwaves!=='undefined') shockwaves = [];
+  if(typeof icicles!=='undefined') icicles = [];
+  if(typeof l3Waves!=='undefined') l3Waves = [];
+  if(currentLevel>=4 && currentLevel<=6 && LV[currentLevel]) LV[currentLevel].hazards = [];
+}
 function resetGiantOtto(){
   giantOttoPhase='idle'; giantOttoTimer=0;
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0;
@@ -1206,6 +1214,7 @@ function unleashBigBaby(){
   ottoPower = 1; ottoPowerTimer = 0;                       // power 1 self-terminates
   giantOttoPhase='growing'; giantOttoTimer=GIANT_GROW_FRAMES;
   otto.facing = sawyer.facing;
+  otto._bbHitBoss = false;
   SFX.win(); shakeIntensity = Math.max(shakeIntensity, 6);
 }
 
@@ -1236,6 +1245,23 @@ function updateGiantOttoCharge(curEnemies){
           vx:Math.cos(i/12*Math.PI*2)*4,vy:Math.sin(i/12*Math.PI*2)*4-2,
           life:24,maxLife:24,type:'squash',color:'#B5D4F4'
         });
+      }
+    }
+    // BIG BABY sweeps away all spawned projectiles/hazards it plows through
+    clearHazards();
+    // ...and deals damage to the boss if the giant body overlaps it
+    const _bb = (typeof boss!=='undefined' && boss && boss.alive) ? boss
+              : (typeof yeti!=='undefined' && yeti && yeti.alive) ? yeti : null;
+    if(_bb && _bb.active && !otto._bbHitBoss){
+      if(gx+gw>_bb.x && gx<_bb.x+_bb.w && gy+gh>_bb.y && gy<_bb.y+_bb.h){
+        otto._bbHitBoss=true;                 // one boss-hit per charge (not per frame)
+        const dmg=Math.max(1, Math.round((_bb.maxHp||10)*0.15));
+        _bb.hp-=dmg; _bb.hitFlash=10; shakeIntensity=Math.max(shakeIntensity,10);
+        score+=300; popPoints(_bb.x+_bb.w/2, _bb.y-6, 300, '#FFD27A');
+        try{ SFX.bossHit&&SFX.bossHit(); }catch(e){ try{ sfx('bossHit'); }catch(_){} }
+        for(let i=0;i<16;i++) particles.push({x:_bb.x+_bb.w/2,y:_bb.y+_bb.h/2,
+          vx:(Math.random()-.5)*7,vy:(Math.random()-.5)*7-1,life:30,maxLife:30,type:'spark',color:'#FFE0A0'});
+        if(_bb.hp<1) _bb.hp=1;               // never the killing blow — leaves death to a normal hit so each level's death sequence fires
       }
     }
     // Keep otto in world bounds
@@ -1671,6 +1697,7 @@ document.addEventListener('keydown', e => {
   // While the leaderboard name box is open, let the input handle typing.
   if (nameEntryActive || (e.target && e.target.id === 'ne-input')) return;
   if (e.code==='KeyP'){ togglePause(); e.preventDefault(); return; }
+  if (e.code==='Escape'){ togglePause(); e.preventDefault(); return; }
   if (e.code==='KeyM'){ toggleSound(); e.preventDefault(); return; }
   keys[e.code] = true;
   if (victoryActive && victoryTimer<=0 && (e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')) vicContinue = true; // advance victory screen
@@ -1872,6 +1899,7 @@ let thunderTrack = null;
 function getBus(){
   if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state==='suspended'){ try{audioCtx.resume();}catch(e){} }
+  loadPortalBuf();
   if(!sfxBus){
     const comp=audioCtx.createDynamicsCompressor();
     comp.threshold.value=-18; comp.knee.value=24; comp.ratio.value=6; comp.attack.value=0.003; comp.release.value=0.25;
@@ -1934,7 +1962,7 @@ const SFX = {
   charge:    () => { beep(340,0.30,'sawtooth',0.07,110); noise(0.18,0.03); },
   beamCharge:() => { beep(220,0.9,'sine',0.05,1400); beep(440,0.9,'sine',0.03,2100); },
   pickup:    () => { beep(880,0.07,'sine',0.06,1320); beep(1320,0.05,'sine',0.03); },
-  portalOpen: () => { beep(80,1.1,'sine',0.10,320); beep(160,1.0,'sine',0.06,640); beep(240,0.9,'sine',0.04,960); noise(0.4,0.03); },
+  portalOpen: () => playPortalOpen(),
   portalEnter:() => { beep(520,0.5,'sawtooth',0.07,90); beep(1040,0.35,'sine',0.04,180); noise(0.35,0.05); }
 };
 // Level 2 icy sound effects
@@ -2002,6 +2030,26 @@ const SFX6 = { // space void, Nexus: synthetic
 // Router: per-level bank with base-SFX fallback
 const SFXBANKS={2:SFX2,3:SFX3,4:SFX4,5:SFX5,6:SFX6};
 function sfx(name){ const b=SFXBANKS[currentLevel]; ((b&&b[name])||SFX[name]||(()=>{}))(); }
+// Portal-open whoosh: recorded one-shot with synth fallback.
+let portalBuf=null, _portalBufTried=false;
+function loadPortalBuf(){
+  if(_portalBufTried || !audioCtx) return; _portalBufTried=true;
+  fetch('assets/portal.mp3').then(r=>{ if(!r.ok) throw 0; return r.arrayBuffer(); })
+    .then(a=>audioCtx.decodeAudioData(a)).then(b=>{ portalBuf=b; })
+    .catch(()=>{ portalBuf=null; });
+}
+function playPortalOpen(){
+  if(!sfxOn || !audioCtx) return;
+  loadPortalBuf();
+  if(portalBuf){
+    const src=audioCtx.createBufferSource(), g=audioCtx.createGain();
+    src.buffer=portalBuf; g.gain.value=0.9;
+    src.connect(g); g.connect(getBus()); src.start();
+  } else {
+    beep(80,1.1,'sine',0.10,320); beep(160,1.0,'sine',0.06,640);
+    beep(240,0.9,'sine',0.04,960); noise(0.4,0.03);
+  }
+}
 // Rising portal-warp swell — used on the intro → Level 1 transit card.
 let portalHum=null;
 function setPortalHum(level){ // level 0..1, call every frame while a portal exists
@@ -2872,6 +2920,7 @@ function update(){
         boss.hp--; boss.hitFlash=8; shakeIntensity = 5; score+= pr.type==='milk'?18:40;
         SFX.bossHit(); pr.life = pr.type==='milk'?Math.min(pr.life,2):0;
         if (boss.hp<=0){ boss.alive=false; boss.dieTimer=120; die(); score+=500; shakeIntensity=12; SFX.bossDie();
+          clearHazards();
           // ---- arena collapses: ledges vanish in a violent crumble burst ----
           bossArena.active=false; bossArena.deathBurst=24;
           for(const pl of platforms){ if(pl.bossPlatform && !pl.hidden){
@@ -8281,7 +8330,7 @@ function updateLevel2(){
           for(let i=0;i<10;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*4,vy:-1-Math.random()*2.5,life:22,maxLife:22,type:'snow',color:'#EAF4FF'});
           for(let i=0;i<6;i++) particles.push({x:pr.x,y:pr.y,vx:(Math.random()-.5)*3,vy:-1-Math.random()*2,life:18,maxLife:18,type:'spark',color:i%2?'#FF8A2A':'#FFD27A'});
           if(yeti.hp===9&&yeti.currentPhase===1){yeti.currentPhase=2;shakeIntensity=12;SFX.rattle();}
-          if(yeti.hp<=0){yeti.alive=false;yeti.dieTimer=120;yeti.cryTimer=120;score+=750;shakeIntensity=16;SFX.bossDie();yetiSetAnim(yeti,'death');
+          if(yeti.hp<=0){yeti.alive=false;yeti.dieTimer=120;yeti.cryTimer=120;score+=750;shakeIntensity=16;SFX.bossDie();yetiSetAnim(yeti,'death');clearHazards();
             if(l2Portal.state==='closed'){ l2Portal.state='opening'; sfx('portalOpen'); }
             // arena shatters: glacier ledges burst and vanish as the Yeti falls
             l2Arena.active=false; l2Arena.deathBurst=24;
@@ -11871,7 +11920,7 @@ function updateGen(){
           }
         }
         if(boss.hp<=0){ boss.alive=false;boss.dieTimer=(currentLevel===5?150:120);score+=1000;shakeIntensity=16;sfx('bossDie');
-          venom=[]; projectiles=[];   // clear all in-flight bolts so nothing lingers over the death dissolve
+          clearHazards();   // clear all in-flight bolts/hazards so nothing lingers over the death dissolve
           if(currentLevel===5){ // play the sprite-sheet death dissolve, then scatter a swarm of spectral eyes
             boss.animName='death'; boss.animFrame=0; boss.animAcc=0; boss.casting=false;
             boss.deathFlash=1; boss.fxDeathT=120; boss.deathEyes=[]; boss.fxDarken=0; boss.fxViolet=0; boss.fxRed=0; boss.fxEnrage=0;
@@ -12522,7 +12571,7 @@ function updateSwim(){
         boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;if(pr.type==='milk') globalOttoBossHits++; sfx('bossHit');pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         const half=Math.ceil(bc.hp/2);
         if(boss.hp<=half&&boss.phaseIndex===0){ boss.phaseIndex=1;boss.spitTimer=bc.spit2;shakeIntensity=16;hurtFlashTimer=20;sfx('rattle'); }
-        if(boss.hp<=0){ boss.alive=false;boss.dieTimer=120;score+=1000;shakeIntensity=16;sfx('bossDie');venom=[];
+        if(boss.hp<=0){ boss.alive=false;boss.dieTimer=120;score+=1000;shakeIntensity=16;sfx('bossDie');clearHazards();
           for(let i=0;i<18;i++) particles.push({x:boss.x+boss.w/2,y:boss.y+boss.h/2,vx:(Math.random()-.5)*6,vy:(Math.random()-.5)*6,life:40,maxLife:40,type:'spark',color:bc.body}); }
       }
     }
@@ -15648,46 +15697,6 @@ function playReturnHomeCutscene(onDone){
 try{ Portal.init().then(()=>Portal.loadingFinished()).catch(()=>{}); }catch(e){}
 
 // game started by menu button above
-</script>
-
-<!-- Mobile Controls -->
-<div id="mobile-controls" style="display:none;position:fixed;bottom:0;left:0;right:0;height:130px;z-index:200;pointer-events:none;user-select:none;">
-  <div style="position:absolute;left:16px;bottom:16px;display:flex;gap:8px;pointer-events:all;">
-    <button id="mb-left"  style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.18);border:2px solid rgba(255,255,255,0.4);font-size:22px;color:#fff;cursor:pointer;touch-action:none;">◀</button>
-    <button id="mb-right" style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,0.18);border:2px solid rgba(255,255,255,0.4);font-size:22px;color:#fff;cursor:pointer;touch-action:none;">▶</button>
-  </div>
-  <div style="position:absolute;right:16px;bottom:16px;display:flex;gap:8px;pointer-events:all;">
-    <button id="mb-throw" style="width:56px;height:56px;border-radius:50%;background:rgba(255,140,0,0.35);border:2px solid rgba(255,180,0,0.6);font-size:13px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;">⚽</button>
-    <button id="mb-down"  style="width:56px;height:56px;border-radius:50%;background:rgba(80,160,255,0.28);border:2px solid rgba(120,200,255,0.55);font-size:20px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;display:none;">▼</button>
-    <button id="mb-jump"  style="width:64px;height:64px;border-radius:50%;background:rgba(80,160,255,0.35);border:2px solid rgba(120,200,255,0.6);font-size:13px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;">JUMP</button>
-    <button id="mb-smash" style="width:56px;height:56px;border-radius:50%;background:rgba(127,212,255,0.30);border:2px solid rgba(127,212,255,0.7);font-size:22px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;">💥</button>
-  </div>
-</div>
-<script>
-(function(){
-  const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || window.innerWidth < 600;
-  if(!isMobile) return;
-  document.getElementById('mobile-controls').style.display='block';
-  const held = {};
-  function bindBtn(id, key){
-    const el = document.getElementById(id);
-    if(!el) return;
-    el.addEventListener('touchstart', e=>{ e.preventDefault(); held[key]=true; keys[key]=true; }, {passive:false});
-    el.addEventListener('touchend',   e=>{ e.preventDefault(); held[key]=false; keys[key]=false; }, {passive:false});
-    el.addEventListener('touchcancel',e=>{ held[key]=false; keys[key]=false; });
-  }
-  bindBtn('mb-left',  'ArrowLeft');
-  bindBtn('mb-right', 'ArrowRight');
-  bindBtn('mb-jump',  'ArrowUp');
-  bindBtn('mb-throw', 'Space');
-  bindBtn('mb-down',  'ArrowDown');
-  { const sb=document.getElementById('mb-smash');
-    if(sb) sb.addEventListener('touchstart', e=>{ e.preventDefault(); unleashBigBaby(); }, {passive:false}); }
-  const _downBtn=document.getElementById('mb-down'), _jumpBtn=document.getElementById('mb-jump');
-  setInterval(()=>{ const swim=(typeof currentLevel!=='undefined'&&currentLevel===4);
-    if(_downBtn) _downBtn.style.display=swim?'block':'none';
-    if(_jumpBtn) _jumpBtn.textContent=swim?'▲':'JUMP'; }, 300);
-})();
 </script>
 
 </body>
