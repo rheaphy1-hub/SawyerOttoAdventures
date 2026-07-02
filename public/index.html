@@ -564,6 +564,78 @@ const EMBED = (()=>{ try{
 }catch(e){ return true; } })();
 // External mute override (portal SDK integration)
 let portalMuteForced = new URLSearchParams(location.search).has('muteAudio');
+// ── Portal SDK bridge (Poki / CrazyGames): loading-finished, ad breaks, mute ──
+// Select via ?portal=poki | ?portal=crazygames (alias: crazy). Auto-detects from
+// referrer when embedded. Every call is a guarded no-op when no SDK is present, so
+// standalone/local play is unchanged. Mute is honored from three sources: the
+// ?muteAudio param (above), host postMessage(muteAudio/unmuteAudio), and ads.
+const Portal = (()=>{
+  const _q = new URLSearchParams(location.search);
+  let which = (_q.get('portal')||'').toLowerCase();
+  if(which==='crazy') which='crazygames';
+  if(!which && EMBED){
+    const ref = document.referrer||'';
+    if(/crazygames\./i.test(ref)) which='crazygames';
+    else if(/poki\./i.test(ref)) which='poki';
+  }
+  let poki=null, cg=null, adDepth=0, savM=true, savS=true;
+  const syncAudio=()=>{ try{ if(!(musicOn&&sfxOn)) setPortalHum(0); }catch(e){}
+                        try{ audioManager.syncVolume(); }catch(e){} };
+  // save/restore the player's real mute prefs around an ad
+  function adMute(on){
+    if(on){ if(adDepth++===0){ savM=musicOn; savS=sfxOn; musicOn=false; sfxOn=false; syncAudio(); } }
+    else  { if(adDepth>0 && --adDepth===0){ if(!portalMuteForced){ musicOn=savM; sfxOn=savS; } syncAudio(); } }
+  }
+  // host -> game forced mute (postMessage). Overrides player toggles while active.
+  function forceMute(on){ portalMuteForced=on; if(on){ musicOn=false; sfxOn=false; } else { musicOn=true; sfxOn=true; } syncAudio(); }
+  function loadScript(src){ return new Promise((res,rej)=>{ const el=document.createElement('script'); el.src=src; el.async=true; el.onload=res; el.onerror=rej; document.head.appendChild(el); }); }
+  async function init(){
+    // muteAudio listener — honor host mute regardless of which SDK is active
+    window.addEventListener('message', (e)=>{
+      const d=e&&e.data; if(d==null) return;
+      const t=(typeof d==='string') ? d : (d.type||d.action||d.command||'');
+      if(t==='muteAudio'||t==='mute') forceMute(true);
+      else if(t==='unmuteAudio'||t==='unmute') forceMute(false);
+    });
+    if(which==='poki'){
+      try{ await loadScript('https://game-cdn.poki.com/scripts/v2/poki-sdk.js');
+           poki=window.PokiSDK||null; if(poki){ await poki.init(); try{poki.setDebug(false);}catch(e){} } }
+      catch(e){ poki=null; }
+    } else if(which==='crazygames'){
+      try{ await loadScript('https://sdk.crazygames.com/crazygames-sdk-v3.js');
+           cg=(window.CrazyGames&&window.CrazyGames.SDK)||null; if(cg){ await cg.init(); try{cg.game.loadingStart();}catch(e){} } }
+      catch(e){ cg=null; }
+    }
+    return which;
+  }
+  return {
+    get which(){ return which; },
+    init,
+    loadingFinished(){ try{ if(poki) poki.gameLoadingFinished(); else if(cg) cg.game.loadingStop(); }catch(e){} },
+    gameplayStart(){ try{ if(poki) poki.gameplayStart(); else if(cg) cg.game.gameplayStart(); }catch(e){} },
+    gameplayStop(){  try{ if(poki) poki.gameplayStop();  else if(cg) cg.game.gameplayStop();  }catch(e){} },
+    // Ad break at a natural stop; `done` runs after the ad, or immediately if none plays.
+    adBreak(done){
+      done = (typeof done==='function') ? done : function(){};
+      let fired=false; const go=()=>{ if(fired) return; fired=true; done(); };
+      if(poki){
+        try{ poki.commercialBreak(()=>adMute(true)).then(()=>{ adMute(false); go(); }).catch(()=>{ adMute(false); go(); }); }
+        catch(e){ adMute(false); go(); }
+        return;
+      }
+      if(cg && cg.ad && cg.ad.requestAd){
+        try{ cg.ad.requestAd('midgame', {
+               adStarted:()=>adMute(true),
+               adFinished:()=>{ adMute(false); go(); },
+               adError:()=>{ adMute(false); go(); }
+             }); }
+        catch(e){ adMute(false); go(); }
+        return;
+      }
+      go(); // no SDK -> proceed instantly
+    }
+  };
+})();
 // ── Dev/QA mode ── enabled via ?dev=1 (persists in localStorage), cleared via ?dev=0
 const DEV = (()=>{ try{
   const q=new URLSearchParams(location.search).get('dev');
@@ -628,7 +700,8 @@ function playerVarJump(s){
 // Behavior-preserving extraction — proven frame-identical against the prior inline
 // math across all 5 land engines (see diff_harness.js).
 function stepPlayer(s, P, shoot){
-  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && s.attackTimer<=0;
+  const _ladOverlap = levelLadders.some(e=>{ const pl=ladderRect(e); return s.x+s.w>pl.x+2 && s.x<pl.x+pl.w-2 && s.y+s.h>pl.y-2 && s.y<pl.y+pl.h+4; });
+  const _sDuck = s.onGround && keys['ArrowDown'] && !s.climbing && !_ladOverlap && s.attackTimer<=0;
   applyDuckState(s, _sDuck);
   if(P.horiz){ P.horiz(s); }
   else {
@@ -958,7 +1031,7 @@ function initRelic(n){
   levelRelic = null;
   if(getStars(n)&8) return;   // already found on a previous run — the medal is the permanent record
   let x=0, y=0;
-  if(n===1){ x=950;  y=FLOOR-433; }                    // topmost sky-route crumble perch
+  if(n===1){ x=900;  y=FLOOR-433; }                    // topmost sky-route crumble perch (x offset from rock at 950)
   else if(n===2){ x=1520; y=FLOOR-400; }               // floating high above the ember crest — leap of faith
   else if(n===3){ x=2790; y=FLOOR-233; }               // TOP of the beach-rigging shaft (clear of the transponder barrel at x2674)
   else if(n===4){ x=2320; y=swimFloorY()-30; }         // far floor pocket — well east of the clam (x1904)
@@ -1393,6 +1466,7 @@ function finishNameEntry(useName){
   oskVisible=false; const osk=document.getElementById('osk'); if(osk) osk.style.display='none';
   submitScore(name).then(()=>fetchLeaderboard()).catch(()=>fetchLeaderboard());
   won=true;  // proceed to credits (board renders there once loaded)
+  try{ Portal.gameplayStop(); }catch(e){}
 }
 
 // ===== Rolling tumbleweeds (Level 1 living desert decor) =====
@@ -1955,6 +2029,7 @@ function closeLevelPopup(){
   // Ensure game state is clean when player clicks Play
   if(won){ won = false; }
   if(victoryActive){ victoryActive = false; }
+  try{ Portal.gameplayStart(); }catch(e){}
 }
 
 let sawyer = null, otto = null;
@@ -3026,7 +3101,7 @@ function hurt(p, reposition){
     transponderRespawn = (transponderAnchor && transponderAnchor.level===currentLevel)
       ? { level:currentLevel, x:transponderAnchor.x, y:transponderAnchor.y }
       : null;
-    gameOver=true; saveBestScore(currentLevel,score); SFX.over(); return;
+    gameOver=true; saveBestScore(currentLevel,score); SFX.over(); try{ Portal.gameplayStop(); }catch(e){} return;
   }
   if (reposition){
     // Fall/pit death — relocate to checkpoint or nearest safe ground.
@@ -6247,24 +6322,6 @@ function drawVictoryAnimation(){
     ctx.restore();
   }
 
-  // Flag waving at centre-top
-  const flagWave = Math.sin(prog*Math.PI*4)*0.18;
-  ctx.save();
-  ctx.translate(W/2 - 20, 50);
-  ctx.rotate(flagWave);
-  ctx.fillStyle = (LEVEL_META[currentLevel]||{}).accent || (isL2 ? '#3F51B5' : '#854F0B');
-  ctx.fillRect(-3,0,6,70);
-  ctx.save();
-  ctx.fillStyle = isL2 ? '#E8EAF6' : '#1D9E75';
-  ctx.beginPath();
-  ctx.moveTo(3,8);
-  const wv = Math.sin(prog*Math.PI*4)*24;
-  ctx.quadraticCurveTo(18+wv, 22, 3, 38);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-  ctx.restore();
-
   // Victory title
   const meta = LEVEL_META[currentLevel] || {boss:'',accent:'#FFD700'};
   const subtotal = score - levelStartScore;
@@ -6310,7 +6367,7 @@ function drawVictoryAnimation(){
   // Time-attack results panel + Continue prompt (screen holds until the player continues)
   {
     const settled = victoryTimer<=0;
-    const pw=400, ph=78, px=(W-pw)/2, py=H-ph-30;
+    const pw=400, ph=96, px=(W-pw)/2, py=H-ph-28;
     ctx.save();
     ctx.globalAlpha=Math.min(1,prog*3);
     ctx.fillStyle='rgba(8,6,18,0.78)'; ctx.beginPath(); ctx.roundRect(px,py,pw,ph,11); ctx.fill();
@@ -6321,7 +6378,7 @@ function drawVictoryAnimation(){
     let _tl='Time '+fmtTime(_lastClearMs)+'  \u00b7  PAR '+fmtTimeShort(PAR_TIME[currentLevel]||0);
     if(_newBestTime) _tl+='   \u2605 NEW BEST!'; else if(_bt>0) _tl+='    (Best '+fmtTime(_bt)+')';
     ctx.fillText(_tl, W/2, py+22);
-    drawStarRow(ctx, W/2, py+46, 9, 120, currentLevel);
+    drawStarRow(ctx, W/2, py+60, 10, 120, currentLevel);
     ctx.restore();
     if(settled){
       const _bk=0.55+0.45*Math.sin(simFrame*0.12);
@@ -6554,7 +6611,7 @@ function drawOverlay(msg,sub){
   const best=getBestScore(currentLevel);
   if(best>0){
     ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle='#FFD700';
-    ctx.fillText('🏆 Best: '+best+' pts',W/2,H/2+26);
+    ctx.fillText('Best: '+best+' pts',W/2,H/2+26);
   }
   ctx.font='400 13px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.7)';
   ctx.fillText('Tap Play Again, or press R',W/2,H/2+50);
@@ -6574,22 +6631,21 @@ function drawFinishCard(){
   ctx.save();
   ctx.fillStyle='rgba(6,6,14,0.74)'; ctx.fillRect(0,0,W,H);
   // Card background — themed to level
-  const cw=420,ch=240,cx2=(W-cw)/2,cy2=(H-ch)/2;
+  const cw=420,ch=258,cx2=(W-cw)/2,cy2=(H-ch)/2;
   ctx.fillStyle=meta.deep; ctx.beginPath(); ctx.roundRect(cx2,cy2,cw,ch,14); ctx.fill();
   ctx.strokeStyle=meta.accent; ctx.lineWidth=3; ctx.beginPath(); ctx.roundRect(cx2,cy2,cw,ch,14); ctx.stroke();
   // Trophy
-  ctx.font='38px system-ui'; ctx.textAlign='center';
-  ctx.fillText('🏆', W/2, cy2+54);
+  ctx.textAlign='center';
   // Headings
   ctx.font='bold 22px system-ui,sans-serif'; ctx.fillStyle=meta.accent;
-  ctx.fillText('LEVEL COMPLETE!', W/2, cy2+88);
+  ctx.fillText('LEVEL COMPLETE!', W/2, cy2+48);
   ctx.font='600 15px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)';
-  ctx.fillText(meta.name, W/2, cy2+110);
+  ctx.fillText(meta.name, W/2, cy2+70);
   // Score: animated subtotal + running total
   ctx.font='600 14px system-ui,sans-serif'; ctx.fillStyle='#A8F0C6';
-  ctx.fillText('Level: ' + shownSub + '   Total: ' + shownTot, W/2, cy2+136);
+  ctx.fillText('Level: ' + shownSub + '   Total: ' + shownTot, W/2, cy2+96);
   // New-best flash (pulses) — only after count-up settles
-  let by = cy2+160;
+  let by = cy2+126;
   if(vicNewBest && cp>=1){
     const pulse = 0.6 + 0.4*Math.sin(finishCardTimer*0.25);
     ctx.save(); ctx.globalAlpha=pulse;
@@ -6599,12 +6655,12 @@ function drawFinishCard(){
   }
   // Best line
   const best=getBestScore(currentLevel);
-  if(best>0 && !vicNewBest){ ctx.font='600 12px system-ui,sans-serif'; ctx.fillStyle='#FFD700'; ctx.fillText('🏆 Best: '+best+' pts',W/2,by); }
+  if(best>0 && !vicNewBest){ ctx.font='600 12px system-ui,sans-serif'; ctx.fillStyle='#FFD700'; ctx.fillText('Best: '+best+' pts',W/2,by); }
   // Time-attack: run/best time + 3 labeled stars
-  const _taY=cy2+186; ctx.textAlign='center';
+  const _taY=cy2+152; ctx.textAlign='center';
   ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle=_newBestTime?'#FFD700':'#A8F0C6';
   ctx.fillText('Time '+fmtTime(_lastClearMs)+' \u00b7 PAR '+fmtTimeShort(PAR_TIME[currentLevel]||0)+(_newBestTime?'  \u2605 NEW BEST!':(getBestTime(currentLevel)>0?'   Best '+fmtTime(getBestTime(currentLevel)):'')), W/2, _taY);
-  drawStarRow(ctx, W/2, _taY+22, 8, 92, currentLevel);
+  drawStarRow(ctx, W/2, _taY+22, 9, 96, currentLevel);
   ctx.restore();
 }
 
@@ -6871,13 +6927,17 @@ function resetRunState(lvl, opts){
   transponderRespawn=null;
 }
 function restartCurrentLevel(){
-  resetRunState(currentLevel||1, {keepTransponderResume:true});
-  audioManager.stop();
-  audioManager.play(currentLevel);
-  const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'HAUNTED HAUS',6:'SPACE VOID'};
-  const popupDescs={1:'Guide Sawyer across the Texas desert!',2:'Brave the blizzard — defeat the Yeti!',3:'Otto spotted a hermit crab and now they\'re sprinting down the beach!'};
-  levelPaused = true;
-  showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
+  try{ Portal.gameplayStop(); }catch(e){}   // death -> retry: stop gameplay, offer an ad, then rebuild
+  const _rebuild = ()=>{
+    resetRunState(currentLevel||1, {keepTransponderResume:true});
+    audioManager.stop();
+    audioManager.play(currentLevel);
+    const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'HAUNTED HAUS',6:'SPACE VOID'};
+    const popupDescs={1:'Guide Sawyer across the Texas desert!',2:'Brave the blizzard — defeat the Yeti!',3:'Otto spotted a hermit crab and now they\'re sprinting down the beach!'};
+    levelPaused = true;
+    showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
+  };
+  try{ Portal.adBreak(_rebuild); }catch(e){ _rebuild(); }
 }
 function jumpToLevel(n){
   resetRunState(n, {});
@@ -6909,6 +6969,7 @@ function restart(resetLevel){
     skipNextLevelPopup = false;
     levelPaused = false;
     levelStartFrame = simFrame; // Task 5b: intro path never hits closeLevelPopup — start the run clock here
+    try{ Portal.gameplayStart(); }catch(e){}
   } else {
     levelPaused = true;
     const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'HAUNTED HAUS',6:'SPACE VOID'};
@@ -7241,8 +7302,8 @@ function loop(){
   const _tcEl = document.getElementById('touch-controls');
   if (_tcEl) _tcEl.style.display = _overlayUp ? 'none' : '';
   if (gameOver) drawOverlay('Game Over', 'Score: ' + score);
-  if (won && currentLevel===1) drawOverlay('You Beat The Drifter! \u{1F3DC}\uFE0F', 'Final Score: ' + score);
-  if (won && currentLevel===2) drawOverlay('You Beat the Yeti! \u2744\uFE0F', 'Final Score: ' + score);
+  if (won && currentLevel===1) drawOverlay('You Beat The Drifter!', 'Final Score: ' + score);
+  if (won && currentLevel===2) drawOverlay('You Beat the Yeti!', 'Final Score: ' + score);
   if (won && currentLevel===6){
     victoryActive=false;
     if(returnHomeDone){
@@ -14683,7 +14744,11 @@ function fadeThenBuild(build){
     }, 700);
   }, 1500);
 }
-function fadeToLevel(n){ fadeThenBuild(()=>goToLevel(n)); }
+function fadeToLevel(n){   // level -> next level: stop gameplay, offer an ad, then fade + build
+  try{ Portal.gameplayStop(); }catch(e){}
+  const _go = ()=> fadeThenBuild(()=>goToLevel(n));
+  try{ Portal.adBreak(_go); }catch(e){ _go(); }
+}
 function goToLevel(n){
   resetAllGameState();  // SPRINT H+I: portal-hum teardown + transient combat/victory/cheer state
   currentLevel=n; cameraX=0; levelStartScore=score;
@@ -14695,6 +14760,7 @@ function goToLevel(n){
   buildPlayers();
   buildLevelContent(n);
   audioManager.play(n);
+  try{ Portal.gameplayStart(); }catch(e){}
 }
 
 function showLevelPopup(title, desc){
@@ -15486,6 +15552,9 @@ function playReturnHomeCutscene(onDone){
   window.addEventListener('keydown', _resumeTitle);
   menuLoop();
 })();
+
+// Portal SDK boot: load the selected SDK, then signal the menu is ready to play.
+try{ Portal.init().then(()=>Portal.loadingFinished()).catch(()=>{}); }catch(e){}
 
 // game started by menu button above
 </script>
