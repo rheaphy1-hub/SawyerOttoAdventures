@@ -913,13 +913,14 @@ function acquireItem(key){
 // Runtime state lives ONLY here and is (re)built by initRelic(), which every
 // restart/jump path reaches via buildLevelContent(). No scattered reset code.
 const RELIC_DEF = {
-  1:{ key:'relic',  color:'#C9B6FF' },   // violet relic
-  2:{ key:'key',    color:'#FFD27A' },   // frozen gold key
-  3:{ key:'pearl',  color:'#BFEFFF' },   // giant pearl
-  4:{ key:'shell',  color:'#FFB3D9' },   // scalloped shell
-  5:{ key:'locket', color:'#D2456B' },   // haunted locket
-  6:{ key:'core',   color:'#00FF88' }    // reactor core
+  1:{ key:'relic',  color:'#C9B6FF', label:'SUN RELIC'   },   // violet relic
+  2:{ key:'key',    color:'#FFD27A', label:'FROST KEY'   },   // frozen gold key
+  3:{ key:'pearl',  color:'#BFEFFF', label:'TIDE PEARL'  },   // giant pearl
+  4:{ key:'shell',  color:'#FFB3D9', label:'ABYSS SHELL' },   // scalloped shell
+  5:{ key:'locket', color:'#D2456B', label:'LOST LOCKET' },   // haunted locket
+  6:{ key:'core',   color:'#00FF88', label:'STAR CORE'   }    // reactor core
 };
+let relicToast = { t:0, label:'', color:'#fff', n:0 };  // pickup banner: identity + N/6
 let levelRelic = null;
 let levelLadders = [];   // Sprint: vertical climb — per-level ladder rects (rebuilt by buildLadders)
 function initRelic(n){
@@ -928,12 +929,17 @@ function initRelic(n){
   let x=0, y=0;
   if(n===1){ x=950;  y=FLOOR-433; }                    // topmost sky-route crumble perch
   else if(n===2){ x=1520; y=FLOOR-400; }               // floating high above the ember crest — leap of faith
-  else if(n===3){ x=2695; y=FLOOR-233; }               // apex of the zig-zag tidal climb
-  else if(n===4){ x=2072; y=swimFloorY()-30; }         // deep floor pocket beneath the whirlpool
+  else if(n===3){ x=2790; y=FLOOR-233; }               // TOP of the beach-rigging shaft (clear of the transponder barrel at x2674)
+  else if(n===4){ x=2320; y=swimFloorY()-30; }         // far floor pocket — well east of the clam (x1904)
   else if(n===5){ x=3345; y=FLOOR-178; }               // dead-end loot pocket off the ladder climb
   else if(n===6){                                       // highest drifting asteroid — needs the low-grav float
     const P=(LV[6]&&LV[6].platforms)||[]; let best=null;
-    for(let i=1;i<P.length;i++){ const pl=P[i]; if(pl.drift&&!pl.arenaRock&&(!best||pl.y<best.y)) best=pl; }
+    const _txi=P._txi, _txX=(P[_txi]?P[_txi].x:1e9);   // transponder rock x
+    // highest drifting asteroid that is well AWAY (>=280px) from the transponder beacon,
+    // so the relic sits back in the field rather than on the neighbouring approach rock.
+    for(let i=1;i<P.length;i++){ const pl=P[i]; if(i===_txi||pl.arenaRock||!pl.drift)continue;
+      if(Math.abs(pl.x-_txX)<280)continue; if(!best||pl.y<best.y) best=pl; }
+    if(!best){ for(let i=1;i<P.length;i++){ const pl=P[i]; if(i===_txi||pl.arenaRock||!pl.drift)continue; if(!best||pl.y<best.y) best=pl; } }
     if(!best) return;
     x=best.x+best.w/2-10; y=best.y-64;
   }
@@ -949,6 +955,7 @@ function updateRelic(){
       if(!(DEV&&_devRunTainted)) setStars(currentLevel,8);  // awarded IMMEDIATELY; tainted QA runs earn nothing
       const d=RELIC_DEF[currentLevel];
       acquireItem(d.key); score+=750;
+      relicToast={ t:200, label:d.label||'RELIC', color:d.color, n:countAcquiredRelics() };
       popPoints(r.x+r.w/2, ry-6, 750, d.color); sfx('win');
       for(let i=0;i<30;i++) particles.push({x:r.x+r.w/2,y:ry+r.h/2,vx:(Math.random()-.5)*7,vy:-2-Math.random()*5,life:32,maxLife:32,type:'spark',color:d.color});
       break;
@@ -959,18 +966,44 @@ function drawRelic(){
   const r=levelRelic; if(!r||r.got||r.level!==currentLevel) return;
   const sx=r.x-cameraX; if(sx<-60||sx>W+60) return;
   const d=RELIC_DEF[currentLevel], cx=sx+r.w/2, cy=r.y+Math.sin(r.bobT)*4+r.h/2;
-  const pulse=0.5+0.5*Math.sin(r.bobT*2);
+  // TRULY HIDDEN: no radial beacon, no distance twinkle. The relic reads as a dim,
+  // easily-missed object — you find it by exploring, not by spotting a waypoint. The
+  // only tell is a faint glint that shows ONLY when Sawyer is right next to it.
+  const near = Math.hypot((sawyer.x+sawyer.w/2)-r.x, (sawyer.y+sawyer.h/2)-r.y);
+  const prox = Math.max(0, 1 - near/120);           // 0 far → 1 point-blank
   ctx.save();
-  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.30+0.20*pulse;
-  const g=ctx.createRadialGradient(cx,cy,1,cx,cy,16+pulse*5);
-  g.addColorStop(0,d.color); g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,16+pulse*5,0,7); ctx.fill();
+  ctx.globalAlpha = 0.32 + 0.30*prox;               // dim until you're close
+  drawAcquiredIcon(ctx, d.key, cx, cy, 10, d.color);
+  if(prox>0){                                        // tiny 1px glint, close range only
+    ctx.globalAlpha = 0.25*prox*(0.5+0.5*Math.sin(r.bobT*2));
+    ctx.fillStyle='#FFFFFF'; ctx.fillRect(cx, cy-12, 1, 1);
+  }
   ctx.restore();
-  drawAcquiredIcon(ctx, d.key, cx, cy, 11, d.color);
-  // 2px twinkle — the faint hook observant players spot from a distance
-  ctx.globalAlpha=0.4+0.6*Math.abs(Math.sin(r.bobT*1.7)); ctx.fillStyle='#FFFFFF';
-  ctx.fillRect(cx-1, cy-14, 2, 2);
+}
+// Pickup banner + running ◆N/6 tracker — the relic's value made explicit.
+function drawRelicToast(){
+  if(relicToast.t<=0) return; relicToast.t--;
+  const a=Math.min(1,relicToast.t/28)*Math.min(1,(200-relicToast.t)/16);
+  ctx.save(); ctx.globalAlpha=a; ctx.textAlign='center';
+  ctx.font='900 18px system-ui,sans-serif'; ctx.lineWidth=4; ctx.lineJoin='round';
+  ctx.strokeStyle='rgba(6,4,18,0.9)'; ctx.strokeText('HIDDEN RELIC FOUND', W/2, 70);
+  ctx.fillStyle=relicToast.color; ctx.shadowColor=relicToast.color; ctx.shadowBlur=10;
+  ctx.fillText('HIDDEN RELIC FOUND', W/2, 70); ctx.shadowBlur=0;
+  ctx.font='800 13px system-ui,sans-serif';
+  ctx.strokeText(relicToast.label+'  \u2666 '+relicToast.n+'/6', W/2, 90);
+  ctx.fillStyle='#FFE9A8'; ctx.fillText(relicToast.label+'  \u2666 '+relicToast.n+'/6', W/2, 90);
+  if(relicToast.n===6){ ctx.fillStyle='#9FFFC0'; ctx.font='800 11px system-ui,sans-serif';
+    ctx.fillText('ALL RELICS RECOVERED \u2014 TRUE ENDING UNLOCKED', W/2, 106); }
   ctx.restore();
+}
+// Persistent ◆N/6 badge under the score — always visible so the goal is legible.
+function drawRelicCounter(c, rightX, y){
+  const n=countAcquiredRelics(); c.save(); c.textAlign='right';
+  c.font='900 12px system-ui,sans-serif'; c.lineWidth=3; c.lineJoin='round';
+  c.strokeStyle='rgba(6,4,18,0.9)'; const txt='\u2666 '+n+'/6';
+  c.strokeText(txt, rightX, y);
+  c.fillStyle = n===6 ? '#9FFFC0' : '#C9B6FF'; c.shadowColor='rgba(150,90,255,0.5)'; c.shadowBlur=5;
+  c.fillText(txt, rightX, y); c.restore();
 }
 
 
@@ -6377,6 +6410,7 @@ function drawHUD(){
     c.strokeText(_tt, rightX-_pw, _ty);
     c.fillStyle='rgba(222,212,255,0.92)'; c.fillText(_tt, rightX-_pw, _ty);
   }
+  drawRelicCounter(c, rightX, sy+ (gameRunning&&!levelPaused&&!victoryActive&&!cutsceneActive&&!finishCardActive&&!nameEntryActive ? 34 : 18));
   c.restore();
   drawAcquiredTray();
   if(DEV){ // QA screenshots identifiable — no background box per spec
@@ -6649,8 +6683,23 @@ function drawCreditsOverlay(){
   hg.addColorStop(0,'#FFE08A'); hg.addColorStop(1,'#FF9A2E');
   ctx.fillStyle=hg; ctx.fillText('GAME COMPLETE!', W/2, 46);
   ctx.restore();
-  ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)';
-  ctx.fillText('Sawyer & Otto conquered all six worlds \u2728', W/2, 68);
+  const _relN=countAcquiredRelics();
+  if(_relN===6){
+    ctx.save();
+    ctx.font='800 13px system-ui,sans-serif';
+    ctx.shadowColor='rgba(120,255,180,0.7)'; ctx.shadowBlur=10; ctx.fillStyle='#9FFFC0';
+    ctx.fillText('\u2726 TRUE ENDING \u2014 ALL SIX RELICS RECOVERED \u2726', W/2, 66);
+    ctx.restore();
+    // showcase the six relic gems, lit in their level colors
+    const gy=84, gsp=34, gx0=W/2-2.5*gsp;
+    for(let i=1;i<=6;i++){ const d=RELIC_DEF[i], gx=gx0+(i-1)*gsp;
+      drawAcquiredIcon(ctx, d.key, gx, gy, 9, d.color); }
+  } else {
+    ctx.font='600 13px system-ui,sans-serif'; ctx.fillStyle='rgba(255,255,255,0.85)';
+    ctx.fillText('Sawyer & Otto conquered all six worlds \u2728', W/2, 66);
+    ctx.font='700 11px system-ui,sans-serif'; ctx.fillStyle='rgba(201,182,255,0.9)';
+    ctx.fillText('Hidden relics recovered:  \u2666 '+_relN+'/6', W/2, 84);
+  }
 
   // ── Global leaderboard panel ──
   if(leaderboardData===null && !leaderboardLoading){ fetchLeaderboard(); }
@@ -6754,7 +6803,7 @@ function resetRunState(lvl, opts){
   resetAllGameState();
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
-  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
+  projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[]; relicToast={t:0,label:'',color:'#fff',n:0};
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0;
   shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
@@ -6920,7 +6969,7 @@ function loop(){
   
   if(currentLevel===2){
     drawL2Bg(); cosmicGlow(); drawL2Platforms(); drawLadders('frozen'); drawL2Flag(); drawL2Rocks(); drawEmberStone(); drawL2Artifact();
-    drawL2Enemies(); drawIcicles(); drawRelic(); drawCheckpoint();
+    drawL2Enemies(); drawIcicles(); drawRelic(); drawRelicToast(); drawCheckpoint();
     if(snowWall>0.01) drawSnowWall();
     // Yeti + his combat FX render AFTER the whiteout so the blizzard never washes the boss out.
     drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawL2Stals(); drawProjectiles();
@@ -6928,17 +6977,17 @@ function loop(){
   } else if(currentLevel===3){
     drawL3BgFar(); cosmicGlow(); drawL3BgNear(); drawL3Platforms(); drawLadders('beach'); drawL3Flag(); drawL3Rocks();
     drawL3Artifact();
-    drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawRelic(); drawCheckpoint();
+    drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawRelic(); drawRelicToast(); drawCheckpoint();
     drawL3BossWarning();
   } else if(currentLevel===4){
-    drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls(); drawSwimClam(); drawRelic();
-    drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint(); drawSwimBossWarning();
+    drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls(); drawSwimClam(); drawRelic(); drawRelicToast();
+    drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawRelicToast(); drawCheckpoint(); drawSwimBossWarning();
   } else if(currentLevel>=5&&currentLevel<=6){
     drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===5)drawLadders('spooky'); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
-    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); drawL5HauntedFlame(); } drawRelic(); drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5){ drawL5TransponderWarning(); drawL5FlameWarning(); } if(currentLevel===6){ drawL6DroneToast(); }
+    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); drawL5HauntedFlame(); } drawRelic(); drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5){ drawL5TransponderWarning(); drawL5FlameWarning(); } if(currentLevel===6){ drawL6DroneToast(); } drawRelicToast();
   } else {
     drawBg(); cosmicGlow(); drawPlatforms(); drawLadders('desert'); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
-    drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawRelic(); drawCheckpoint(); drawBossWind(); drawBossWarning();
+    drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawRelic(); drawRelicToast(); drawCheckpoint(); drawBossWind(); drawBossWarning();
   }
   
   // Draw particles (dust, sparks, snow etc)
