@@ -1748,7 +1748,7 @@ const SFX2 = {
   // Crunchy footstep-jump (higher, crisp)
   jump:     ()=>{ beep(620,0.12,'square',0.07,900); beep(300,0.06,'sine',0.03); },
   jumpBaby: ()=>{ beep(820,0.10,'sine',0.05,1100); },
-  // Snowball throw — soft thud
+  // Soccer ball kick — soft thud
   ball:     ()=>{ beep(520,0.06,'square',0.08,180); beep(280,0.08,'sine',0.04); },
   // Milk spit — bubbly
   barf:     ()=>{ beep(720,0.06,'sine',0.07,380); noise(0.05,0.04); },
@@ -1910,7 +1910,7 @@ function buildPlayers(){
     skin:'#F2C9A3', hair:'#C9A878', onesie:'#B5D4F4', label:'#993C1D',
     name:'Otto', baby:true, ai:true,
     vx:0, vy:0, onGround:false, attackTimer:0, attackCooldown:0, invincible:0, facing:1,
-    cheer:0, cower:0
+    cheer:0
   };
   startPortalDump();
 }
@@ -2299,6 +2299,40 @@ function ottoAutoDuck(o){
   }
   return o.duckHold>0 && o.onGround;
 }
+// ── SPRINT H+I: single source of truth for Otto's autonomous threat detection.
+//    Otto is an intelligent companion: he scans enemies, the L4 clam, and the active
+//    boss, and fires milk at the nearest valid target ahead of Sawyer on his own
+//    240-frame cooldown. Space-synced fire (fireAttack) is a separate, unchanged path. ──
+function ottoTryAttack(enemyList, bossObj){
+  const o=otto, s=sawyer;
+  if(o.attackCooldown>0 || cutsceneActive || levelPaused || ottoPower!==0) return;
+  let tgt=null, td=200;
+  // 1) enemies in this level's array
+  if(enemyList) for(const e of enemyList){
+    if(!e || !e.alive) continue;
+    const d=Math.abs(e.x-o.x);
+    if(d<td && Math.sign(e.x-s.x)===s.facing){ td=d; tgt=e; }
+  }
+  // 2) the L4 sealed clam counts as a valid target (Otto can auto-crack it)
+  try{
+    const lv=curLV();
+    if(lv && lv.transponder && !lv.transponder.got && lv.transponder.clamHp>0){
+      const d=Math.abs(lv.transponder.x-o.x);
+      if(d<td && Math.sign(lv.transponder.x-s.x)===s.facing){ td=d; tgt=lv.transponder; }
+    }
+  }catch(e){}
+  // 3) the active boss — Otto protects Sawyer from bosses too
+  if(bossObj && bossObj.active && (bossObj.alive!==false) && bossObj.hp>0){
+    const d=Math.abs(bossObj.x-o.x);
+    if(d<td && Math.sign(bossObj.x-s.x)===s.facing){ td=d; tgt=bossObj; }
+  }
+  if(tgt){
+    o.attackTimer=8; o.attackCooldown=240;
+    projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5});
+    sfx('barf');
+  }
+}
+
 function updateOtto(){
   const o = otto, s = sawyer;
   if(o.onGround) o.crossingPit=0;
@@ -2354,25 +2388,8 @@ function updateOtto(){
   
   // Cheer animation (bounce + raise)
   if (o.cheer>0) o.cheer--;
-  
-  // Cower animation (hide behind Sawyer)
-  if (o.cower>0) o.cower--;
-
-  // Passive auto-spit: enemy within 180px and ahead of Sawyer
-  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
-    let nearestE=null, nearestD=180;
-    for(const e of enemies){
-      if(!e.alive) continue;
-      const d=Math.abs(e.x-o.x);
-      // Only target enemies roughly ahead in sawyer's facing direction
-      if(d<nearestD && Math.sign(e.x-s.x)===s.facing){ nearestD=d; nearestE=e; }
-    }
-    if(nearestE){
-      o.attackTimer=8; o.attackCooldown=240;
-      projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5});
-      SFX.barf();
-    }
-  }
+  // Passive auto-spit — shared threat detection (enemies + boss)
+  ottoTryAttack(enemies, boss);
 }
 
 
@@ -2403,7 +2420,6 @@ function update(){
     if (cutsceneTimer <= 0){
       cutsceneActive = false;
       boss.active = true;
-      otto.cower = 120;
       SFX.rattle();
       // ---- The arena rises: obsidian ledges erupt from the sand as the fight begins ----
       bossArena.active = true; bossArena.spawnT = 0;
@@ -2444,6 +2460,7 @@ function update(){
     if (bikeEscape.timer <= 0){
       victoryActive = true;
       victoryTimer = 300;
+      sawyer.cheer=180; otto.cheer=180;
       recordLevelClear(currentLevel);
       bikeEscape.active = false;
       bikeEscape.phase = 'idle';
@@ -2654,7 +2671,7 @@ function update(){
     }
     if (boss && boss.alive && boss.active){
       if (pr.x>boss.x+10 && pr.x<boss.x+boss.w-10 && pr.y>boss.y && pr.y<boss.y+boss.h){
-        boss.hp--; boss.hitFlash=8; shakeIntensity = 5; score+= pr.type==='milk'?15:40;
+        boss.hp--; boss.hitFlash=8; shakeIntensity = 5; score+= pr.type==='milk'?18:40;
         SFX.bossHit(); pr.life = pr.type==='milk'?Math.min(pr.life,2):0;
         if (boss.hp<=0){ boss.alive=false; boss.dieTimer=120; die(); score+=500; shakeIntensity=12; SFX.bossDie();
           // ---- arena collapses: ledges vanish in a violent crumble burst ----
@@ -2844,7 +2861,7 @@ function update(){
   // win at flag (L1) — only once the portal is open enough to step through
   if (!victoryActive && portal.open>0.55 && s.x+s.w > FLAG.x+10 && s.x < FLAG.x+90 && s.y+s.h >= FLOOR-10){
     if (!boss || !boss.alive){
-      victoryActive = true; victoryTimer = 360;
+      victoryActive = true; victoryTimer = 360; sawyer.cheer=180; otto.cheer=180;
       recordLevelClear(currentLevel);
       s.vx = 0; s.vy = 0; s.facing = 1;
       otto.vx = 0; otto.vy = 0; otto.facing = 1;
@@ -3407,11 +3424,7 @@ window.addEventListener('keydown',function(e){
 // =========================================================================
 function drawPlayer(p){
   const px=p.x-cameraX, py=p.y;
-  
-  if (p.baby && otto.cower > 0){
-    ctx.globalAlpha = Math.max(0.3, 1 - (120 - otto.cower) / 120);
-  }
-  
+
   const blink = !cutsceneActive && p.invincible>0 && Math.floor(p.invincible/5)%2===0 && !(DEV && _devGod && !p.baby);
   if(DEV && _devGod && !p.baby){ // Task 3a: faint gold outline so QA can see god mode is on
     ctx.save(); ctx.strokeStyle='rgba(255,215,0,0.55)'; ctx.lineWidth=2;
@@ -3438,7 +3451,37 @@ function drawPlayer(p){
       if (p.onGround) drawY += Math.sin(t / 900) * 0.8;
     }
 
-    // Cheer bounce for Otto
+    // ── SPRINT H+I: victory cheer — both brothers celebrate on-level.
+    //    1.2x scale about the feet, bobbing, arms raised, periodic star-burst. ──
+    if (p.cheer > 8){
+      p.cheer--;
+      drawY = py - 3 - Math.abs(Math.sin(p.cheer*0.3))*4;
+      const fcx = px + p.w/2, fcy = py + p.h;
+      ctx.save();
+      ctx.translate(fcx, fcy); ctx.scale(1.2, 1.2); ctx.translate(-fcx, -fcy);
+      if(!drawCharSprite(p, drawY)){ p.baby ? drawBaby(px, drawY, p) : drawBoy(px, drawY, p); }
+      // raised arms
+      ctx.strokeStyle = p.skin || '#E8B98A'; ctx.lineWidth = p.baby?3:4; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(px+4, drawY+(p.baby?14:20)); ctx.lineTo(px-3, drawY+(p.baby?4:6)); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px+p.w-4, drawY+(p.baby?14:20)); ctx.lineTo(px+p.w+3, drawY+(p.baby?4:6)); ctx.stroke();
+      ctx.restore();
+      // star-burst every ~12 frames
+      if (p.cheer % 12 === 0){
+        ctx.save(); ctx.fillStyle='#FFD700'; ctx.globalAlpha=0.9;
+        for(let i=0;i<5;i++){
+          const a=(p.cheer*0.5)+i*1.257, r=16+(i%2)*7;
+          const sx=fcx+Math.cos(a)*r, sy=drawY-6+Math.sin(a)*r*0.6;
+          ctx.beginPath();
+          for(let k=0;k<5;k++){ const sa=k*1.257-1.57+a; const sr=k%2?1.2:3;
+            ctx.lineTo(sx+Math.cos(sa)*sr, sy+Math.sin(sa)*sr); }
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+    // Cheer bounce for Otto (kill-hop, cheer<=8)
     if (p.baby && otto.cheer > 0){
       const cheerProg = 1 - (otto.cheer / 8);
       drawY = py - Math.sin(cheerProg * Math.PI) * 6;
@@ -6674,8 +6717,25 @@ function drawCreditsOverlay(){
 // Clears every global the (previously triplicated) inline resets touched, then
 // rebuilds via buildPlayers() + buildLevelContent(). Callers keep their own
 // audio / popup / menu / loop logic unchanged.
+// ── SPRINT H+I Part 7: centralized cross-level global cleanup. Owns audio-node
+//    teardown + transient combat/victory state ONLY; buildLevelN still owns geometry.
+//    Called from every reset path via resetRunState (restart / restartCurrentLevel /
+//    jumpToLevel, incl. the game-over → restart flow). ──
+function resetAllGameState(){
+  // stop portal hum: graceful fade + explicit oscillator stop so nothing bleeds across levels
+  try{ setPortalHum(0); }catch(e){}
+  try{ if(portalHum){ portalHum.o1.stop(); portalHum.o2.stop(); portalHum=null; } }catch(e){}
+  // clear transient projectile/particle arrays
+  projectiles=[]; venom=[]; particles=[]; shockwaves=[];
+  // reset gen-boss transient AI state (bossObj is also rebuilt by buildLevelContent)
+  try{ for(const n of [4,5,6]){ const b=LV[n]&&LV[n].bossObj; if(b){ b.lastMove=null; b.prevMove=null; b.actionTimer=0; } } }catch(e){}
+  // victory / cheer flags
+  victoryActive=false; victoryTimer=0; vicContinue=false;
+  try{ if(sawyer) sawyer.cheer=0; if(otto) otto.cheer=0; }catch(e){}
+}
 function resetRunState(lvl, opts){
   opts = opts||{};
+  resetAllGameState();
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[];
@@ -7730,7 +7790,7 @@ function updateLevel2(){
   if(cutsceneActive){
     cutsceneTimer--;
     if(cutsceneTimer<=0){
-      cutsceneActive=false; yeti.active=true; otto.cower=120; SFX.rattle();
+      cutsceneActive=false; yeti.active=true; SFX.rattle();
       // The frozen arena rises: glacier ledges erupt as the fight begins
       l2Arena.active=true; l2Arena.spawnT=0; shakeIntensity=Math.max(shakeIntensity,9);
       for(const pl of l2Platforms){ if(pl.bossPlatform){ pl.hidden=false; pl.y=pl.baseY; pl.spawnPop=1;
@@ -7757,7 +7817,7 @@ function updateLevel2(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L2_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -8079,13 +8139,9 @@ function updateLevel2(){
 
   // Boulders & shockwaves
   for(const v of venom){
-    if(v.isBoulder){v.vy+=0.18;} else if(v.isSnowball){v.vy+=0.14;} else if(v.isShard){v.vy+=0.08;if(v.spin!==undefined)v.spin+=0.3;} else {v.vy+=0.12;}
+    if(v.isBoulder){v.vy+=0.18;} else if(v.isShard){v.vy+=0.08;if(v.spin!==undefined)v.spin+=0.3;} else {v.vy+=0.12;}
     v.x+=v.vx;v.y+=v.vy;v.life--;
     if(v.isBoulder&&v.y+v.r>=FLOOR){v.y=FLOOR-v.r;v.vy*=-0.3;v.vx*=0.7;}
-    if(v.isSnowball&&v.y+v.r>=FLOOR){
-      v.life=0;
-      for(let i=0;i<4;i++) particles.push({x:v.x,y:FLOOR,vx:(Math.random()-.5)*3,vy:-1-Math.random()*1.5,life:12,maxLife:12,type:'snow',color:'#EAF4FF'});
-    }
     if(v.isShard&&v.y+v.r>=FLOOR){
       v.life=0;
       for(let i=0;i<5;i++) particles.push({x:v.x,y:FLOOR,vx:(Math.random()-.5)*4,vy:-1-Math.random()*2,life:14,maxLife:14,type:'snow',color:'#CFEAFF'});
@@ -8129,7 +8185,7 @@ function updateLevel2(){
   if(!victoryActive && l2Portal.open>0.55 && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
     if(!yeti || !yeti.alive){
       saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
-      victoryActive = true; victoryTimer = 360;
+      victoryActive = true; victoryTimer = 360; sawyer.cheer=180; otto.cheer=180;
       s.vx=0; s.vy=0; s.facing=1;
       otto.vx=0; otto.vy=0; otto.facing=1;
       sfx('portalEnter'); sfx('win');
@@ -8187,14 +8243,9 @@ function updateOttoL2(){
   if(o.attackCooldown>0)o.attackCooldown--;
   if(o.attackTimer>0)o.attackTimer--;
   if(o.cheer>0)o.cheer--;
-  if(o.cower>0)o.cower--;
 
-  // Passive auto-spit L2
-  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
-    let nearestE=null, nearestD=180;
-    for(const e of l2Enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
-    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); SFX.barf(); }
-  }
+  // Passive auto-spit L2 — shared threat detection (enemies + Yeti)
+  ottoTryAttack(l2Enemies, yeti);
 }
 
 function resolveL2(p){
@@ -8608,7 +8659,7 @@ function updateLevel3(){
   if(cutsceneActive){
     cutsceneTimer--;
     if(cutsceneTimer<=0){
-      cutsceneActive=false; kingCrab.active=true; otto.cower=120; sfx('rattle');
+      cutsceneActive=false; kingCrab.active=true; sfx('rattle');
       // arena rafts surge up out of the surf as the fight begins (spawn-pop + spray)
       for(const r of l3Arena){
         r.hidden=false; r.x=r.baseX; r.y=r.baseY; r.dx=0; r.dy=0; r.spawnT=0;
@@ -8636,7 +8687,7 @@ function updateLevel3(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L3_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -8957,7 +9008,7 @@ function updateLevel3(){
   if(!victoryActive&&s.x+s.w>L3_FLAG.x+10&&s.x<L3_FLAG.x+90&&s.y+s.h>=FLOOR-10){
     if(!kingCrab||!kingCrab.alive){
       saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
-      victoryActive=true; victoryTimer=360;
+      victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
       sfx('portalEnter'); sfx('win');
@@ -8994,14 +9045,9 @@ function updateOttoL3(){
   if(o.attackCooldown>0)o.attackCooldown--;
   if(o.attackTimer>0)o.attackTimer--;
   if(o.cheer>0)o.cheer--;
-  if(o.cower>0)o.cower--;
 
-  // Passive auto-spit L3
-  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
-    let nearestE=null, nearestD=180;
-    for(const e of l3Enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
-    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); sfx('barf'); }
-  }
+  // Passive auto-spit L3 — shared threat detection (enemies + King Crab)
+  ottoTryAttack(l3Enemies, kingCrab);
 }
 
 function resolveL3(p){
@@ -9880,11 +9926,6 @@ function drawL2Boulders(){
       ctx.fillStyle='#A0C8E8';ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.fill();
       ctx.fillStyle='rgba(255,255,255,0.4)';ctx.beginPath();ctx.arc(x-2,y-2,v.r*0.4,0,7);ctx.fill();
       ctx.strokeStyle='#5A8FC7';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.stroke();
-    } else if(v.isSnowball){
-      // Frost goblin snowball — white fluffy ball
-      ctx.fillStyle='rgba(230,242,255,0.95)';ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.fill();
-      ctx.fillStyle='rgba(255,255,255,0.7)';ctx.beginPath();ctx.arc(x-1.5,y-1.5,v.r*0.45,0,7);ctx.fill();
-      ctx.strokeStyle='rgba(160,200,240,0.8)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(x,y,v.r,0,7);ctx.stroke();
     } else if(v.isShard){
       // Frost sprite ice shard — glinting crystal
       ctx.save();ctx.translate(x,y);ctx.rotate(v.spin||0);
@@ -11176,12 +11217,8 @@ function updateOttoGen(){
   if(o.attackCooldown>0)o.attackCooldown--;
   if(o.attackTimer>0)o.attackTimer--;
   if(o.cheer>0)o.cheer--;
-  if(o.cower>0)o.cower--;
-  if(ottoPower===0 && o.attackCooldown<=0 && !cutsceneActive && !levelPaused){
-    let nearestE=null, nearestD=180;
-    for(const e of lv.enemies){ if(!e.alive)continue; const d=Math.abs(e.x-o.x); if(d<nearestD && Math.sign(e.x-s.x)===s.facing){nearestD=d;nearestE=e;} }
-    if(nearestE){ o.attackTimer=8; o.attackCooldown=240; projectiles.push({type:'milk',owner:o,x:o.x+(o.facing>0?o.w:0),y:o.y+8,vx:o.facing*9,vy:0,life:42,r:5}); sfx('barf'); }
-  }
+  // Passive auto-spit — shared threat detection (enemies + gen boss)
+  ottoTryAttack(lv.enemies, lv.bossObj);
 }
 
 // ---- main per-level update (clone of updateLevel3) ----
@@ -11211,7 +11248,7 @@ function updateGen(){
   if(cutsceneActive){
     cutsceneTimer--;
     if(currentLevel===5 && boss && boss.manifestT!==undefined && boss.manifestT<boss.manifestMax) boss.manifestT++;
-    if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; otto.cower=120; sfx('rattle'); }
+    if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; sfx('rattle'); }
     s.vx=0; s.vy=Math.min(s.vy+GRAVITY,12); resolveGen(s);
     if(s.y+s.h>FLOOR){s.y=FLOOR-s.h;s.vy=0;}
     return;
@@ -11241,7 +11278,7 @@ function updateGen(){
       }
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -11417,13 +11454,15 @@ function updateGen(){
         pr.life=0;sfx('bossHit');break;
       }
     }
-    // ── L6 NEXUS drone shield: shoot the orbiting eye-nodes to drop the shield ──
+    // ── L6 NEXUS drone shield: Otto's milk one-shots the orbiting eye-nodes to drop the shield.
+    //    Sawyer's soccer ball bounces off drones harmlessly — milk is the specialist key here. ──
     if(pr.life>0 && currentLevel===6 && boss && boss.active && boss.alive && boss.shielded && boss.drones){
       const ccx=boss.x+boss.w/2, ccy=boss.y+boss.h/2, dr=bc.drones;
       for(const dn of boss.drones){
         if(!dn.alive) continue;
         const dx=ccx+Math.cos(dn.ang)*dr.orbitR, dy=ccy+Math.sin(dn.ang)*dr.orbitR;
         if(Math.abs(pr.x-dx)<16 && Math.abs(pr.y-dy)<16){
+          if(pr.type!=='milk'){ pr.life=0; pr.vx*=-0.4; sfx('ball'); break; } // ball bounces off — drones are milk-only
           dn.alive=false; dn.dieT=8; pr.life=0; score+=40; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie');
           for(let i=0;i<12;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.523)*3.2,vy:Math.sin(i*0.523)*3.2,life:22,maxLife:22,type:'spark',color:bc.proj});
           if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; sfx('shieldDown'); }
@@ -11437,9 +11476,10 @@ function updateGen(){
       else { tbX0=boss.x; tbX1=boss.x+boss.w; tbY0=boss.y; tbY1=boss.y+boss.h; }
       if(pr.x>tbX0&&pr.x<tbX1&&pr.y>tbY0&&pr.y<tbY1){
         if(currentLevel===6 && boss.shielded){
-          // shield absorbs any shot that reaches the core — redirect to the nearest living node
+          // shield absorbs any shot that reaches the core — Otto's MILK redirects to the nearest
+          // living node; Sawyer's ball just fizzles (drones/shield are milk-exclusive)
           pr.life=0; boss.hitFlash=4; sfx('bossHit');
-          if(boss.drones){ let best=null,bd=1e9; const ccx=boss.x+boss.w/2,ccy=boss.y+boss.h/2,dr=bc.drones;
+          if(pr.type==='milk' && boss.drones){ let best=null,bd=1e9; const ccx=boss.x+boss.w/2,ccy=boss.y+boss.h/2,dr=bc.drones;
             for(const dn of boss.drones){ if(!dn.alive)continue; const ex=ccx+Math.cos(dn.ang)*dr.orbitR-pr.x, ey=ccy+Math.sin(dn.ang)*dr.orbitR-pr.y; const q=ex*ex+ey*ey; if(q<bd){bd=q;best=dn;} }
             if(best){ best.alive=false; best.dieT=8; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie');
               const dx=ccx+Math.cos(best.ang)*dr.orbitR,dy=ccy+Math.sin(best.ang)*dr.orbitR;
@@ -11812,7 +11852,7 @@ function updateGen(){
   if(!victoryActive&&s.x+s.w>flagX+10&&s.x<flagX+90&&s.y+s.h>=FLOOR-10){
     if(!boss||!boss.alive){
       saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
-      victoryActive=true; victoryTimer=360;
+      victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
       sfx('portalEnter'); sfx('win');
@@ -11891,7 +11931,7 @@ function buildSwimLevel(){
   });
 
   // ── SPRINT G: the transponder is sealed inside a giant clam on the golden path.
-  //    Otto-only objective: 3 milk hits crack it open; Sawyer's snowballs bounce off. ──
+  //    Otto-only objective: 3 milk hits crack it open; Sawyer's soccer ball bounces off. ──
   lv.transponder = { x:1904, y:swimFloorY()-34, w:34, h:28, got:false, clamHp:3, open:0, hitFlash:0, phase:0 };
   lv.transponderTaken = false;
 
@@ -11953,6 +11993,10 @@ function updateOttoSwim(){
   if(Math.abs(o.x-s.x)>460){ o.x=s.x-s.facing*40; o.y=s.y; o.vx=0; o.vy=0; }
   if(o.attackCooldown>0)o.attackCooldown--;
   if(o.attackTimer>0)o.attackTimer--;
+  if(o.cheer>0)o.cheer--;
+  // Passive auto-spit L4 — shared threat detection (sea creatures + clam + Leviathan)
+  const _lv4=curLV();
+  ottoTryAttack(_lv4.enemies, _lv4.bossObj);
 }
 
 function updateSwim(){
@@ -11965,7 +12009,7 @@ function updateSwim(){
 
   if(cutsceneActive){
     cutsceneTimer--;
-    if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; otto.cower=120; sfx('rattle'); }
+    if(cutsceneTimer<=0){ cutsceneActive=false; boss.active=true; sfx('rattle'); }
     s.vx*=0.8; s.vy*=0.8; s.x+=s.vx; s.y+=s.vy; resolveSwim(s);
     return;
   }
@@ -12089,7 +12133,7 @@ function updateSwim(){
         pr.life=0;sfx('squash');break;
       }
     }
-    // ── SPRINT G: giant clam — Otto's milk cracks it (3 hits); snowballs bounce off harmlessly ──
+    // ── SPRINT G: giant clam — only Otto's milk cracks it (3 hits); Sawyer's soccer ball bounces off ──
     if(pr.life>0 && lv.transponder && !lv.transponder.got && lv.transponder.clamHp>0){
       const tp=lv.transponder;
       if(pr.x>tp.x-4&&pr.x<tp.x+tp.w+4&&pr.y>tp.y-6&&pr.y<tp.y+tp.h+4){
@@ -12258,7 +12302,7 @@ function updateSwim(){
   // ---- Exit beacon / win ----
   const exitX=lv.worldW-120;
   if(!victoryActive && s.x+s.w>exitX-30 && (!boss||!boss.alive)){
-    saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sfx('portalEnter'); sfx('win');
+    saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180; sfx('portalEnter'); sfx('win');
     for(let i=0;i<24;i++) particles.push({x:exitX,y:SY+40+Math.random()*120,vx:(Math.random()-.5)*2,vy:-1-Math.random()*2,life:40,maxLife:40,type:'spark',color:lv.pal.secondary});
   }
   document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -12657,6 +12701,35 @@ function drawSwimClam(){
       ctx.save(); ctx.shadowColor='rgba(159,216,255,0.8)'; ctx.shadowBlur=12;
       ctx.imageSmoothingEnabled=true; ctx.drawImage(transponderImg, cx-iw/2, ty-ih/2, iw, ih); ctx.restore();
     } else { ctx.fillStyle='#9FD8FF'; ctx.fillRect(cx-8,ty-5,16,10); }
+  }
+  // ── SPRINT H+I: sealed-state LOCK GLYPH — big, pulsing, readable across the murk.
+  //    Removed the instant clamHp hits 0; the open beacon takes over as the visual. ──
+  if(tp.clamHp>0){
+    try{
+      const glow=(lv.pal&&lv.pal.glow)||'#7FE8FF';
+      const lx=cx, ly=tp.y-34;                       // centered above the clam
+      const pulse=0.55+0.4*Math.sin(t*2);            // higher floor so it never dips out of view
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';        // cuts through the murk overlay
+      // soft halo behind the glyph so it reads at distance
+      const halo=ctx.createRadialGradient(lx,ly+4,0,lx,ly+4,22);
+      halo.addColorStop(0,'rgba(127,232,255,'+(0.28*pulse).toFixed(3)+')');
+      halo.addColorStop(1,'rgba(127,232,255,0)');
+      ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(lx,ly+4,22,0,7); ctx.fill();
+      ctx.globalAlpha=pulse;
+      ctx.strokeStyle=glow; ctx.lineWidth=2.5; ctx.lineCap='round';
+      ctx.shadowColor=glow; ctx.shadowBlur=12;
+      // shackle: arc of two-circle geometry (open U over the body)
+      ctx.beginPath(); ctx.arc(lx, ly-4, 7, Math.PI, 0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx-7, ly-4); ctx.lineTo(lx-7, ly+1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(lx+7, ly-4); ctx.lineTo(lx+7, ly+1); ctx.stroke();
+      // lock body: vertical rect (locked position) + bottom bar
+      ctx.strokeRect(lx-10, ly+1, 20, 13);
+      ctx.beginPath(); ctx.moveTo(lx-10, ly+14); ctx.lineTo(lx+10, ly+14); ctx.stroke();
+      // keyhole dot
+      ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(lx, ly+7, 2.2, 0, 7); ctx.fill();
+      ctx.restore();
+    }catch(e){}
   }
   // two ridged shell halves rotating apart around the base hinge
   const shellCol = tp.hitFlash>0 ? '#EAF6FF' : lv.pal.plat;
@@ -14336,12 +14409,12 @@ function fadeThenBuild(build){
 }
 function fadeToLevel(n){ fadeThenBuild(()=>goToLevel(n)); }
 function goToLevel(n){
+  resetAllGameState();  // SPRINT H+I: portal-hum teardown + transient combat/victory/cheer state
   currentLevel=n; cameraX=0; levelStartScore=score;
-  acquiredItems=[];
-  projectiles=[]; venom=[]; particles=[]; killCombo=0;
-  cutsceneActive=false; victoryActive=false; victoryTimer=0;
-  finishCardActive=false; finishCardTimer=0; shockwaves=[]; icicles=[];
-  genPortalOpen=0; window._genPortalSfx=false; setPortalHum(0); thunderTimer=0;
+  acquiredItems=[]; killCombo=0;
+  cutsceneActive=false;
+  finishCardActive=false; finishCardTimer=0; icicles=[];
+  genPortalOpen=0; window._genPortalSfx=false; thunderTimer=0;
   bikeEscape={active:false,x:0,phase:'idle',timer:0,wheelSpin:0}; bikeLift=0; bikeTilt=0;
   buildPlayers();
   buildLevelContent(n);
