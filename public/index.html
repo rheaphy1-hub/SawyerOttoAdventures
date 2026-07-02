@@ -898,11 +898,77 @@ function acquireItem(key){
     ember:      { label:'EMBER STONE', color:'#FF9A3A', icon:'ember' },
     relic:      { label:'RELIC',       color:'#C9B6FF', icon:'relic' },
     pearl:      { label:'PEARL',       color:'#BFEFFF', icon:'pearl' },
-    key:        { label:'KEY',         color:'#FFD27A', icon:'key' }
+    key:        { label:'KEY',         color:'#FFD27A', icon:'key' },
+    shell:      { label:'SHELL',       color:'#FFB3D9', icon:'shell' },
+    locket:     { label:'LOCKET',      color:'#D2456B', icon:'locket' },
+    core:       { label:'CORE',        color:'#00FF88', icon:'core' }
   };
   if(acquiredItems.some(it=>it.key===key)) return;
   const d = DEF[key] || { label:key.toUpperCase(), color:'#FFD27A', icon:'gem' };
   acquiredItems.push({ key, label:d.label, color:d.color, icon:d.icon, pop:1 });
+}
+
+// ══ SPRINT G: HIDDEN RELICS — one per level, persistent 4th medal (star bit3 = 8) ══
+// Runtime state lives ONLY here and is (re)built by initRelic(), which every
+// restart/jump path reaches via buildLevelContent(). No scattered reset code.
+const RELIC_DEF = {
+  1:{ key:'relic',  color:'#C9B6FF' },   // violet relic
+  2:{ key:'key',    color:'#FFD27A' },   // frozen gold key
+  3:{ key:'pearl',  color:'#BFEFFF' },   // giant pearl
+  4:{ key:'shell',  color:'#FFB3D9' },   // scalloped shell
+  5:{ key:'locket', color:'#D2456B' },   // haunted locket
+  6:{ key:'core',   color:'#00FF88' }    // reactor core
+};
+let levelRelic = null;
+function initRelic(n){
+  levelRelic = null;
+  if(getStars(n)&8) return;   // already found on a previous run — the medal is the permanent record
+  let x=0, y=0;
+  if(n===1){ x=950;  y=FLOOR-433; }                    // topmost sky-route crumble perch
+  else if(n===2){ x=1520; y=FLOOR-400; }               // floating high above the ember crest — leap of faith
+  else if(n===3){ x=2695; y=FLOOR-233; }               // apex of the zig-zag tidal climb
+  else if(n===4){ x=2072; y=swimFloorY()-30; }         // deep floor pocket beneath the whirlpool
+  else if(n===5){ x=3345; y=FLOOR-178; }               // dead-end loot pocket off the ladder climb
+  else if(n===6){                                       // highest drifting asteroid — needs the low-grav float
+    const P=(LV[6]&&LV[6].platforms)||[]; let best=null;
+    for(let i=1;i<P.length;i++){ const pl=P[i]; if(pl.drift&&!pl.arenaRock&&(!best||pl.y<best.y)) best=pl; }
+    if(!best) return;
+    x=best.x+best.w/2-10; y=best.y-64;
+  }
+  levelRelic = { x, y, w:20, h:26, got:false, bobT:Math.random()*6, level:n };
+}
+function updateRelic(){
+  const r=levelRelic; if(!r||r.got||r.level!==currentLevel) return;
+  r.bobT+=0.06;
+  const ry=r.y+Math.sin(r.bobT)*4;
+  for(const p of [sawyer,otto]){
+    if(p.x+p.w>r.x&&p.x<r.x+r.w&&p.y+p.h>ry&&p.y<ry+r.h){
+      r.got=true;
+      if(!(DEV&&_devRunTainted)) setStars(currentLevel,8);  // awarded IMMEDIATELY; tainted QA runs earn nothing
+      const d=RELIC_DEF[currentLevel];
+      acquireItem(d.key); score+=750;
+      popPoints(r.x+r.w/2, ry-6, 750, d.color); sfx('win');
+      for(let i=0;i<30;i++) particles.push({x:r.x+r.w/2,y:ry+r.h/2,vx:(Math.random()-.5)*7,vy:-2-Math.random()*5,life:32,maxLife:32,type:'spark',color:d.color});
+      break;
+    }
+  }
+}
+function drawRelic(){
+  const r=levelRelic; if(!r||r.got||r.level!==currentLevel) return;
+  const sx=r.x-cameraX; if(sx<-60||sx>W+60) return;
+  const d=RELIC_DEF[currentLevel], cx=sx+r.w/2, cy=r.y+Math.sin(r.bobT)*4+r.h/2;
+  const pulse=0.5+0.5*Math.sin(r.bobT*2);
+  ctx.save();
+  ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.30+0.20*pulse;
+  const g=ctx.createRadialGradient(cx,cy,1,cx,cy,16+pulse*5);
+  g.addColorStop(0,d.color); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(cx,cy,16+pulse*5,0,7); ctx.fill();
+  ctx.restore();
+  drawAcquiredIcon(ctx, d.key, cx, cy, 11, d.color);
+  // 2px twinkle — the faint hook observant players spot from a distance
+  ctx.globalAlpha=0.4+0.6*Math.abs(Math.sin(r.bobT*1.7)); ctx.fillStyle='#FFFFFF';
+  ctx.fillRect(cx-1, cy-14, 2, 2);
+  ctx.restore();
 }
 
 
@@ -2317,6 +2383,7 @@ function updateOtto(){
 function update(){
   if (gameOver||won||levelPaused) return;
   const speed=3.1, s=sawyer;
+  updateRelic();       // Sprint G: hidden relic pickup
   updatePlatforms();   // animate slide/elevator/spring/crumble ledges
   carryRiders();       // riders move with the platform beneath them
   updateTumbleweeds(); // rolling desert decor
@@ -2865,7 +2932,7 @@ function hurt(p, reposition){
     // still respawn normally (near-camera ground); we do NOT touch `checkpoint` here.
     // If the transponder was collected this run, resume past the acquisition point on
     // restart. The anchor holds sawyer's exact valid position at pickup, keyed by level,
-    // so any level (1,2,3,5,6 — L4 has no transponder) resumes correctly.
+    // so any level (1–6; L4's clam transponder included as of Sprint G) resumes correctly.
     transponderRespawn = (transponderAnchor && transponderAnchor.level===currentLevel)
       ? { level:currentLevel, x:transponderAnchor.x, y:transponderAnchor.y }
       : null;
@@ -6189,18 +6256,22 @@ function starPath(c,cx,cy,r){
   c.closePath();
 }
 // 3 labeled time-attack stars from the persisted bitmask. Centered on midX.
+function gemPath(c,cx,cy,r){ // 4-point gem for the Relic medal
+  c.beginPath(); c.moveTo(cx,cy-r); c.lineTo(cx+r*0.72,cy); c.lineTo(cx,cy+r); c.lineTo(cx-r*0.72,cy); c.closePath();
+}
 function drawStarRow(c, midX, y, sr, slotW, lvl){
-  const stars=getStars(lvl), defs=[[1,'Cleared'],[2,'Under Par'],[4,'No Damage']], prev=c.textAlign;
-  const x0=midX-slotW; c.textAlign='center';
-  for(let i=0;i<3;i++){
-    const bit=defs[i][0], on=(stars&bit)!==0, sx=x0+i*slotW;
-    starPath(c,sx,y,sr);
-    if(on){ c.fillStyle='#FFD700'; c.shadowColor='rgba(255,210,80,0.7)'; c.shadowBlur=6; c.fill(); c.shadowBlur=0;
+  const stars=getStars(lvl), defs=[[1,'Cleared'],[2,'Under Par'],[4,'No Damage'],[8,'Relic']], prev=c.textAlign;
+  const x0=midX-1.5*slotW; c.textAlign='center';
+  const relCol=(RELIC_DEF[lvl]||{}).color||'#C9B6FF';
+  for(let i=0;i<4;i++){
+    const bit=defs[i][0], on=(stars&bit)!==0, sx=x0+i*slotW, relic=bit===8;
+    if(relic) gemPath(c,sx,y,sr); else starPath(c,sx,y,sr);
+    if(on){ c.fillStyle=relic?relCol:'#FFD700'; c.shadowColor=relic?relCol:'rgba(255,210,80,0.7)'; c.shadowBlur=6; c.fill(); c.shadowBlur=0;
             c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.6)'; c.stroke(); }
-    else { c.fillStyle='rgba(255,255,255,0.12)'; c.fill(); c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.30)'; c.stroke(); }
+    else { c.fillStyle='rgba(255,255,255,0.12)'; c.fill(); c.lineWidth=1; c.strokeStyle=relic?relCol:'rgba(255,255,255,0.30)'; c.stroke(); }
     c.font='700 8px system-ui,sans-serif';
-    c.fillStyle = on ? '#FFE9A8' : 'rgba(255,255,255,0.45)';
-    c.fillText('\u2605 '+defs[i][1], sx, y+sr+9);
+    c.fillStyle = on ? (relic?relCol:'#FFE9A8') : 'rgba(255,255,255,0.45)';
+    c.fillText((relic?'\u25C6 ':'\u2605 ')+defs[i][1], sx, y+sr+9);
   }
   c.textAlign=prev;
 }
@@ -6305,6 +6376,28 @@ function drawAcquiredIcon(c, type, cx, cy, r, color){
     c.beginPath(); c.arc(cx-r*0.35,cy,r*0.45,0,7); c.stroke();
     c.beginPath(); c.moveTo(cx,cy); c.lineTo(cx+r*0.8,cy); c.stroke();
     c.beginPath(); c.moveTo(cx+r*0.55,cy); c.lineTo(cx+r*0.55,cy+r*0.4); c.stroke();
+  } else if(type==='shell'){ // scalloped fan, hinge at the base
+    c.fillStyle=color; c.strokeStyle='rgba(120,50,90,0.8)'; c.lineWidth=1;
+    c.beginPath(); c.moveTo(cx,cy+r*0.8);
+    for(let i=0;i<=5;i++){ const a=Math.PI+i*(Math.PI/5); c.lineTo(cx+Math.cos(a)*r*0.9, cy+r*0.1+Math.sin(a)*r*0.9); }
+    c.closePath(); c.fill(); c.stroke();
+    c.strokeStyle='rgba(120,50,90,0.5)'; c.lineWidth=0.7;
+    for(let i=1;i<5;i++){ const a=Math.PI+i*(Math.PI/5);
+      c.beginPath(); c.moveTo(cx,cy+r*0.8); c.lineTo(cx+Math.cos(a)*r*0.85, cy+r*0.1+Math.sin(a)*r*0.85); c.stroke(); }
+  } else if(type==='locket'){ // oval + chain hint
+    c.strokeStyle='rgba(255,220,235,0.8)'; c.lineWidth=1;
+    c.beginPath(); c.arc(cx,cy-r*0.75,r*0.28,0,7); c.stroke();
+    const lg=c.createLinearGradient(cx,cy-r*0.5,cx,cy+r);
+    lg.addColorStop(0,'#F0A8C0'); lg.addColorStop(1,color);
+    c.fillStyle=lg; c.strokeStyle='rgba(90,20,45,0.8)';
+    c.beginPath(); c.ellipse(cx,cy+r*0.15,r*0.62,r*0.8,0,0,7); c.fill(); c.stroke();
+    c.strokeStyle='rgba(255,235,245,0.55)'; c.lineWidth=0.7;
+    c.beginPath(); c.ellipse(cx,cy+r*0.15,r*0.36,r*0.5,0,0,7); c.stroke();
+  } else if(type==='core'){ // hexagon + inner dot
+    c.fillStyle='rgba(0,60,30,0.85)'; c.strokeStyle=color; c.lineWidth=1.4;
+    c.beginPath(); for(let k=0;k<6;k++){ const a=-Math.PI/2+k*Math.PI/3; c.lineTo(cx+Math.cos(a)*r*0.9, cy+Math.sin(a)*r*0.9); }
+    c.closePath(); c.fill(); c.stroke();
+    c.fillStyle=color; c.beginPath(); c.arc(cx,cy,r*0.3,0,7); c.fill();
   }
   c.restore();
 }
@@ -6602,10 +6695,17 @@ function resetRunState(lvl, opts){
     if(currentLevel===1){ if(artifact){artifact.got=true;} artifactCollected=true; if(barrier) barrier.sealed=false; acquireItem('transponder'); }
     else if(currentLevel===2){ if(l2Artifact){l2Artifact.got=true; l2Artifact.freed=true;} l2ArtifactCollected=true; acquireItem('transponder'); }
     else if(currentLevel===3){ if(l3Artifact){l3Artifact.got=true;} l3ArtifactCollected=true; acquireItem('transponder'); }
-    else if(currentLevel===5||currentLevel===6){ const lv=LV[currentLevel]; if(lv.transponder){lv.transponder.got=true; lv.transponder.locked=false;} lv.transponderTaken=true; acquireItem('transponder'); }
+    else if(currentLevel===4||currentLevel===5||currentLevel===6){ const lv=LV[currentLevel];
+      if(lv.transponder){ lv.transponder.got=true; lv.transponder.locked=false;
+        if(currentLevel===4){ lv.transponder.clamHp=0; lv.transponder.open=1; } }  // clam already cracked open on resume
+      lv.transponderTaken=true; acquireItem('transponder'); }
     const wWorld = currentLevel===2 ? L2_WORLD_W : currentLevel===3 ? L3_WORLD_W : (currentLevel>=4&&LV[currentLevel]) ? LV[currentLevel].worldW : WORLD_W;
     sawyer.x=cp.x; sawyer.y=cp.y-sawyer.h; sawyer.vx=0; sawyer.vy=0; sawyer.invincible=90;
     otto.x=cp.x-26; otto.y=cp.y-otto.h; otto.vx=0; otto.vy=0;
+    if(currentLevel===4){ // swim resume: keep both heroes inside the water column
+      sawyer.y=Math.max(SWIM.surfaceY, Math.min(swimFloorY()-sawyer.h, sawyer.y));
+      otto.y  =Math.max(SWIM.surfaceY, Math.min(swimFloorY()-otto.h,   otto.y));
+    }
     cameraX=Math.max(0, Math.min(cp.x - W/3, wWorld - W));
     transponderAnchor={ level:currentLevel, x:cp.x, y:cp.y }; // re-arm for repeat deaths
   }
@@ -6744,7 +6844,7 @@ function loop(){
   
   if(currentLevel===2){
     drawL2Bg(); cosmicGlow(); drawL2Platforms(); drawL2Flag(); drawL2Rocks(); drawEmberStone(); drawL2Artifact();
-    drawL2Enemies(); drawIcicles(); drawCheckpoint();
+    drawL2Enemies(); drawIcicles(); drawRelic(); drawCheckpoint();
     if(snowWall>0.01) drawSnowWall();
     // Yeti + his combat FX render AFTER the whiteout so the blizzard never washes the boss out.
     drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawL2Stals(); drawProjectiles();
@@ -6752,17 +6852,17 @@ function loop(){
   } else if(currentLevel===3){
     drawL3BgFar(); cosmicGlow(); drawL3BgNear(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
     drawL3Artifact();
-    drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawCheckpoint();
+    drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawRelic(); drawCheckpoint();
     drawL3BossWarning();
   } else if(currentLevel===4){
-    drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls();
-    drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint();
+    drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls(); drawSwimClam(); drawRelic();
+    drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint(); drawSwimBossWarning();
   } else if(currentLevel>=5&&currentLevel<=6){
     drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
-    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); } drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5) drawL5TransponderWarning();
+    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); } drawRelic(); drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5) drawL5TransponderWarning();
   } else {
     drawBg(); cosmicGlow(); drawPlatforms(); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
-    drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawCheckpoint(); drawBossWind(); drawBossWarning();
+    drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawRelic(); drawCheckpoint(); drawBossWind(); drawBossWarning();
   }
   
   // Draw particles (dust, sparks, snow etc)
@@ -7625,6 +7725,7 @@ function drawIcicles(){
 function updateLevel2(){
   if(gameOver||won||levelPaused) return;
   const speed=3.1, s=sawyer;
+  updateRelic();       // Sprint G: hidden relic pickup
 
   if(cutsceneActive){
     cutsceneTimer--;
@@ -8481,6 +8582,7 @@ function drawL3Arena(){
 function updateLevel3(){
   if(gameOver||won||levelPaused) return;
   const s=sawyer,o=otto;
+  updateRelic();       // Sprint G: hidden relic pickup
 
   // platform "give": spring each ledge/raft's squash back to rest (critically damped-ish)
   for(const pl of l3Platforms){
@@ -11089,6 +11191,7 @@ function updateLevel6(){ updateGen(); }
 function updateGen(){
   if(gameOver||won||levelPaused) return;
   const s=sawyer,o=otto, lv=curLV(), bc=lv.boss, boss=lv.bossObj;
+  updateRelic();       // Sprint G: hidden relic pickup
 
   if(currentLevel===5){
     thunderTimer--;
@@ -11724,6 +11827,7 @@ function updateGen(){
 // Self-contained swim engine for L4. L5/L6 stay on the platformer engine.
 const SWIM = { accel:0.62, drag:0.86, maxV:4.4, buoy:0.05, surfaceY:62 };
 let swimMurk = 0; // 0..1 visibility-reduction (boss phase 2 ink)
+let l4BossWarnT = 0; // Sprint G: "find the transponder" gate-nudge toast timer
 // Escape-vortex openness for generic levels (L4-6). Stays 0 until the boss is defeated,
 // then eases open — so the portal/vortex isn't visible before the fight is won.
 let genPortalOpen = 0;
@@ -11785,6 +11889,11 @@ function buildSwimLevel(){
     const y = SY+30 + ((i*53)% ( (FY-SY)-80 ));
     lv.rocks.push({x, y, got:false, rarity, points, swim:true, phase:Math.random()*6});
   });
+
+  // ── SPRINT G: the transponder is sealed inside a giant clam on the golden path.
+  //    Otto-only objective: 3 milk hits crack it open; Sawyer's snowballs bounce off. ──
+  lv.transponder = { x:1904, y:swimFloorY()-34, w:34, h:28, got:false, clamHp:3, open:0, hitFlash:0, phase:0 };
+  lv.transponderTaken = false;
 
   lv.pitMobs = []; lv.pitTimer = 9999; // pits unused underwater
   swimMurk = 0;
@@ -11851,6 +11960,8 @@ function updateSwim(){
   if(gameOver||won||levelPaused) return;
   const s=sawyer,o=otto, lv=curLV(), bc=lv.boss, boss=lv.bossObj;
   const FY=swimFloorY(), SY=SWIM.surfaceY;
+  updateRelic();                         // Sprint G: hidden relic pickup
+  if(l4BossWarnT>0) l4BossWarnT--;       // Sprint G: gate-nudge toast decay
 
   if(cutsceneActive){
     cutsceneTimer--;
@@ -11978,6 +12089,16 @@ function updateSwim(){
         pr.life=0;sfx('squash');break;
       }
     }
+    // ── SPRINT G: giant clam — Otto's milk cracks it (3 hits); snowballs bounce off harmlessly ──
+    if(pr.life>0 && lv.transponder && !lv.transponder.got && lv.transponder.clamHp>0){
+      const tp=lv.transponder;
+      if(pr.x>tp.x-4&&pr.x<tp.x+tp.w+4&&pr.y>tp.y-6&&pr.y<tp.y+tp.h+4){
+        if(pr.type==='milk'){
+          tp.clamHp--; tp.hitFlash=8; sfx('bossHit'); pr.life=0;
+          for(let i=0;i<10;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*5,vy:-1-Math.random()*3,life:20,maxLife:20,type:'spark',color:'#BFEFFF'});
+        } else { pr.vx*=-0.6; pr.x+=pr.vx*2; sfx('ball'); } // Otto-only objective by design
+      }
+    }
     if(pr.life>0&&boss&&boss.active&&boss.alive){
       if(pr.x>boss.x&&pr.x<boss.x+boss.w&&pr.y>boss.y&&pr.y<boss.y+boss.h){
         boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;sfx('bossHit');pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
@@ -12003,10 +12124,32 @@ function updateSwim(){
     }
   }
 
+  // ── SPRINT G: cracked clam eases open; the transponder inside is Sawyer's to take ──
+  if(lv.transponder && !lv.transponder.got){
+    const tp=lv.transponder;
+    tp.phase+=0.05; if(tp.hitFlash>0)tp.hitFlash--;
+    if(tp.clamHp<=0){
+      tp.open += (1-tp.open)*0.08;
+      if(tp.open>0.7){
+        const pcx=s.x+s.w/2, pcy=s.y+s.h/2;
+        if(pcx>tp.x-16 && pcx<tp.x+tp.w+16 && pcy>tp.y-24 && pcy<tp.y+tp.h+12){
+          tp.got=true; lv.transponderTaken=true; transponderAnchor={ level:4, x:sawyer.x, y:sawyer.y+sawyer.h }; acquireItem('transponder'); score+=500;
+          popPoints(tp.x+tp.w/2, tp.y-6, 500, '#9FD8FF'); sfx('win'); shakeIntensity=Math.max(shakeIntensity,8);
+          for(let i=0;i<28;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*7,vy:-2-Math.random()*5,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#BFEFFF'});
+        }
+      }
+    }
+  }
+
   // ---- Boss: Leviathan Lyra (2D free-roam pursuit, omni ink, phase-2 murk) ----
   if(boss&&boss.alive){
     if(!boss.active&&!cutsceneActive&&s.x>lv.bossGate){
-      cutsceneActive=true;cutsceneTimer=240; s.invincible=240; s.vx=0; s.vy=0; venom=[]; projectiles=[];
+      if(lv.transponderTaken){
+        cutsceneActive=true;cutsceneTimer=240; s.invincible=240; s.vx=0; s.vy=0; venom=[]; projectiles=[];
+      } else {
+        // no transponder yet — toast + soft pushback; the player must backtrack for the clam
+        l4BossWarnT=100; s.x=lv.bossGate-2; s.vx=Math.min(s.vx,-1.6);
+      }
     }
     if(boss.active){
       boss.phase+=0.06; boss.orbit+=0.04;
@@ -12492,6 +12635,60 @@ function drawSwimInk(){
     ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(x-v.r*0.3,v.y-v.r*0.3,v.r*0.4,0,7); ctx.fill();
   }
 }
+
+// ── SPRINT G: giant clam holding the L4 transponder ──
+function drawSwimClam(){
+  const lv=LV[4], tp=lv&&lv.transponder; if(!tp||tp.got) return;
+  const x=tp.x-cameraX; if(x<-80||x>W+80) return;
+  const cx=x+tp.w/2, baseY=tp.y+tp.h, t=tp.phase;
+  const breathe=Math.sin(t*1.6)*0.04;                       // slight breathing wobble
+  ctx.save();
+  // once open: cyan beacon column + transponder hovering inside (reads across the murk)
+  if(tp.open>0.4){
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    const pulse=0.5+0.5*Math.sin(t*3);
+    const bg=ctx.createLinearGradient(cx,baseY-200,cx,baseY);
+    bg.addColorStop(0,'rgba(159,216,255,0)'); bg.addColorStop(1,'rgba(159,216,255,'+((0.20+0.14*pulse)*tp.open).toFixed(3)+')');
+    ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(cx-7,baseY); ctx.lineTo(cx+7,baseY); ctx.lineTo(cx+3,baseY-200); ctx.lineTo(cx-3,baseY-200); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    const ty=tp.y-4-tp.open*10+Math.sin(t*2)*2;
+    if(transponderImg.complete && transponderImg.naturalWidth){
+      const ih=18, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+      ctx.save(); ctx.shadowColor='rgba(159,216,255,0.8)'; ctx.shadowBlur=12;
+      ctx.imageSmoothingEnabled=true; ctx.drawImage(transponderImg, cx-iw/2, ty-ih/2, iw, ih); ctx.restore();
+    } else { ctx.fillStyle='#9FD8FF'; ctx.fillRect(cx-8,ty-5,16,10); }
+  }
+  // two ridged shell halves rotating apart around the base hinge
+  const shellCol = tp.hitFlash>0 ? '#EAF6FF' : lv.pal.plat;
+  for(const dir of [-1,1]){
+    ctx.save(); ctx.translate(cx,baseY); ctx.rotate(dir*(0.10+breathe+tp.open*1.05));
+    ctx.fillStyle=shellCol; ctx.strokeStyle=lv.pal.glow; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(0,0);
+    ctx.quadraticCurveTo(dir*4, -tp.h-6, dir*(tp.w/2+3), -tp.h*0.55);
+    ctx.quadraticCurveTo(dir*(tp.w/2+5), -4, 0, 0);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,0.22)'; ctx.lineWidth=0.8;   // scallop ridges
+    for(let k=1;k<=3;k++){ ctx.beginPath(); ctx.moveTo(0,-2);
+      ctx.quadraticCurveTo(dir*3*k, -(tp.h-2)*k/3-3, dir*(tp.w/2)*k/3.4, -(tp.h*0.5)*k/3); ctx.stroke(); }
+    ctx.restore();
+  }
+  // remaining-HP pips while still sealed
+  if(tp.clamHp>0) for(let i=0;i<3;i++){ ctx.fillStyle=i<tp.clamHp?'#BFEFFF':'rgba(40,80,100,0.6)'; ctx.fillRect(cx-10+i*8, tp.y-14, 5, 3); }
+  ctx.restore();
+}
+// Boss-gate nudge: fires when the player reaches Lyra's gate without the transponder
+function drawSwimBossWarning(){
+  const lv=LV[4]; if(l4BossWarnT<=0 || (lv&&lv.transponderTaken)) return;
+  const a=Math.min(1,l4BossWarnT/100), cx=W/2, cy=92;
+  ctx.save(); ctx.globalAlpha=a;
+  ctx.font='bold 18px system-ui,sans-serif'; ctx.textAlign='center';
+  ctx.fillStyle='#7FE8FF'; ctx.shadowColor='rgba(10,60,90,0.9)'; ctx.shadowBlur=8;
+  ctx.fillText('FIND THE TRANSPONDER', cx, cy);
+  ctx.font='bold 12px system-ui,sans-serif'; ctx.fillStyle='#CFE6FF'; ctx.shadowBlur=5;
+  ctx.fillText('crack open the giant clam \u2014 only Otto\'s milk can do it', cx, cy+18);
+  ctx.restore();
+}
+
 function drawSwimBossLyra(){
   const lv=curLV(), bc=lv.boss, boss=lv.bossObj;
   if(!boss)return; if(!boss.alive&&boss.dieTimer<=0)return;
@@ -14112,6 +14309,7 @@ function buildLevelContent(n){
   else if(n===5){ buildLevel5(); }
   else if(n===6){ buildLevel6(); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
+  initRelic(n); // Sprint G: hidden relic (skipped if already earned — getStars(n)&8)
   buildBottles();
 }
 // Patient black fade between levels: fade to black → load level → fade back in.
@@ -14592,10 +14790,10 @@ function playReturnHomeCutscene(onDone){
     c.fillStyle=hg; c.fillText('SELECT WORLD', MW/2, 40);
     c.restore();
     // Total-star counter (top-right)
-    let tot=0; for(let n=1;n<=6;n++){ const st=getStars(n); tot+=(st&1?1:0)+(st&2?1:0)+(st&4?1:0); }
+    let tot=0; for(let n=1;n<=6;n++){ const st=getStars(n); tot+=(st&1?1:0)+(st&2?1:0)+(st&4?1:0)+(st&8?1:0); }
     c.save(); c.textAlign='right'; c.font='800 15px system-ui,sans-serif';
     c.fillStyle='#FFD700'; c.shadowColor='rgba(255,210,80,0.6)'; c.shadowBlur=6;
-    c.fillText('\u2605 '+tot+'/18', MW-16, 34); c.restore();
+    c.fillText('\u2605 '+tot+'/24', MW-16, 34); c.restore();
     // BACK button (top-left)
     c.save();
     c.fillStyle = backHover ? 'rgba(255,138,43,0.16)' : 'rgba(8,7,12,0.50)';
@@ -14623,18 +14821,19 @@ function playReturnHomeCutscene(onDone){
       c.font='900 15px system-ui,sans-serif'; c.fillStyle=meta.accent;
       c.fillText(meta.name, t.x+12, t.y+38);
       if(unlocked){
-        // three star slots: Cleared / Under Par / No Damage
-        const stars=getStars(n), bits=[1,2,4], labels=['Cleared','Under Par','No Damage'];
-        const slotW=56, x0=t.x+t.w/2-slotW, sy2=t.y+62;
+        // four medal slots: Cleared / Under Par / No Damage / Relic
+        const stars=getStars(n), bits=[1,2,4,8], labels=['Cleared','Under Par','No Damage','Relic'];
+        const slotW=44, x0=t.x+t.w/2-1.5*slotW, sy2=t.y+62;
+        const relCol=(RELIC_DEF[n]||{}).color||'#C9B6FF';
         c.textAlign='center';
-        for(let i=0;i<3;i++){
-          const on=(stars&bits[i])!==0, sx=x0+i*slotW;
-          starPath(c,sx,sy2,8);
-          if(on){ c.fillStyle='#FFD700'; c.shadowColor='rgba(255,210,80,0.7)'; c.shadowBlur=5; c.fill(); c.shadowBlur=0;
+        for(let i=0;i<4;i++){
+          const on=(stars&bits[i])!==0, sx=x0+i*slotW, relic=bits[i]===8;
+          if(relic) gemPath(c,sx,sy2,8); else starPath(c,sx,sy2,8);
+          if(on){ c.fillStyle=relic?relCol:'#FFD700'; c.shadowColor=relic?relCol:'rgba(255,210,80,0.7)'; c.shadowBlur=5; c.fill(); c.shadowBlur=0;
                   c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.6)'; c.stroke(); }
-          else { c.fillStyle='rgba(255,255,255,0.10)'; c.fill(); c.lineWidth=1; c.strokeStyle='rgba(255,255,255,0.30)'; c.stroke(); }
+          else { c.fillStyle='rgba(255,255,255,0.10)'; c.fill(); c.lineWidth=1; c.strokeStyle=relic?relCol:'rgba(255,255,255,0.30)'; c.stroke(); }
           c.font='700 7px system-ui,sans-serif';
-          c.fillStyle = on ? '#FFE9A8' : 'rgba(255,255,255,0.45)';
+          c.fillStyle = on ? (relic?relCol:'#FFE9A8') : 'rgba(255,255,255,0.45)';
           c.fillText(labels[i], sx, sy2+16);
         }
         const bt=getBestTime(n);
