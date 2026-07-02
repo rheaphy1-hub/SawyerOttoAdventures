@@ -55,7 +55,7 @@
   @media (pointer: coarse){ #touch-controls{ display:block; } }
   #dpad, #actions{ position:absolute; bottom:16px; pointer-events:none; }
   #dpad{ left:16px; width:152px; height:120px; }
-  #actions{ right:16px; width:160px; height:120px; }
+  #actions{ right:16px; width:160px; height:170px; }
   .tcbtn{ position:absolute; pointer-events:auto; touch-action:none;
     -webkit-user-select:none; user-select:none; -webkit-tap-highlight-color:transparent;
     -webkit-touch-callout:none; background:rgba(255,255,255,0.12);
@@ -75,6 +75,8 @@
     background:rgba(120,255,180,0.18); border-color:rgba(150,255,200,0.55); }
   #tc-throw{ right:86px; bottom:30px; background:rgba(255,200,120,0.18);
     border-color:rgba(255,210,140,0.55); }
+  #tc-smash{ right:86px; bottom:100px; width:52px; height:52px; font-size:20px;
+    background:rgba(127,212,255,0.20); border-color:rgba(127,212,255,0.6); }
   #restart-overlay-btn{ display:none; position:absolute; left:50%; top:68%;
     transform:translate(-50%,-50%); z-index:12; pointer-events:auto;
     background:#E24B4A; color:#fff; border:2px solid #fff; border-radius:10px;
@@ -84,6 +86,15 @@
     touch-action:manipulation; }
   #restart-overlay-btn:active{ transform:translate(-50%,-50%) scale(0.95);
     background:#C93B3A; }
+  #revive-overlay-btn{ display:none; position:absolute; left:50%; top:58%;
+    transform:translate(-50%,-50%); z-index:12; pointer-events:auto;
+    background:#2FA36B; color:#fff; border:2px solid #fff; border-radius:10px;
+    padding:12px 30px; font-size:18px; font-weight:700; cursor:pointer;
+    font-family:system-ui,sans-serif; letter-spacing:0.02em;
+    box-shadow:0 4px 18px rgba(0,0,0,0.5); -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation; }
+  #revive-overlay-btn:active{ transform:translate(-50%,-50%) scale(0.95);
+    background:#258356; }
   #game-footer{ width:100%; max-width:1200px; padding:10px 16px 0;
     display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:14px; }
   #score-display{ display:none; }
@@ -107,6 +118,9 @@
   #canvas-container:fullscreen #restart-overlay-btn,
   #canvas-container:-webkit-full-screen #restart-overlay-btn{
     position:fixed; left:50%; top:64%; z-index:2147483647; }
+  #canvas-container:fullscreen #revive-overlay-btn,
+  #canvas-container:-webkit-full-screen #revive-overlay-btn{
+    position:fixed; left:50%; top:54%; z-index:2147483647; }
   
   /* ===== Level start window — translucent desert-highway neon sign ===== */
   .level-popup {
@@ -405,9 +419,11 @@
         <button class="tcbtn act dev-only" id="tc-god" style="display:none">GOD</button>
         <button class="tcbtn act" id="tc-throw" data-key="Space">THROW</button>
         <button class="tcbtn act" id="tc-jump"  data-key="ArrowUp">JUMP</button>
+        <button class="tcbtn act" id="tc-smash" onclick="unleashBigBaby()">&#128165;</button>
       </div>
     </div>
     <button id="restart-overlay-btn" onclick="restartCurrentLevel()">&#8635; Play Again</button>
+    <button id="revive-overlay-btn" onclick="reviveFromGameOver()">&#128250; Revive &middot; watch ad</button>
   </div>
 
   <div id="name-entry">
@@ -633,6 +649,28 @@ const Portal = (()=>{
         return;
       }
       go(); // no SDK -> proceed instantly
+    },
+    canRewarded(){ return !!(poki||cg); },
+    // onReward() runs ONLY if the ad completed and a reward was earned.
+    rewardedBreak(onReward){
+      if(poki){
+        adMute(true);
+        try{ poki.rewardedBreak({size:'medium'})
+              .then((withReward)=>{ adMute(false); if(withReward) onReward(); })
+              .catch(()=>{ adMute(false); }); }
+        catch(e){ adMute(false); }
+        return;
+      }
+      if(cg){
+        adMute(true);
+        try{ cg.ad.requestAd('rewarded', {
+               adStarted(){},
+               adFinished(){ adMute(false); onReward(); },
+               adError(){   adMute(false); }
+             }); }
+        catch(e){ adMute(false); }
+        return;
+      }
     }
   };
 })();
@@ -669,6 +707,7 @@ window.addEventListener('keydown', function(e){
 // ---- Time-attack + star-rating (client-only) ----
 let levelStartFrame = 0;         // simFrame at PLAY-click; pause-proof time-attack clock origin
 let _runTookDamage = false;      // player (not AI) took a hit this run -> blocks No-Damage star
+let _reviveUsedThisRun = false;  // one revive per run: portal-compliant, not chainable
 let _levelClearRecorded = false; // idempotent guard: some levels clear via >1 code path
 
 // ---- Task 2/3: player jump (Sawyer) lives in ONE place, called by every engine ----
@@ -992,6 +1031,7 @@ let shakeX = 0, shakeY = 0, shakeIntensity = 0;
 let particles = [];
 // ── Floating "+N" point popups (rises & fades above collected objects) ──
 function popPoints(wx, wy, amount, color){
+  bigBabyMeter = Math.min(1, bigBabyMeter + (amount||0) * BIGBABY_FILL_PER_POINT);
   particles.push({ x:wx, y:wy, vx:(Math.random()-.5)*0.4, vy:-1.15,
     life:46, maxLife:46, type:'float', txt:'+'+amount, color: color||'#FFE08A' });
 }
@@ -1133,6 +1173,8 @@ let giantOttoTimer = 0;
 const GIANT_GROW_FRAMES  = 30;
 const GIANT_CHARGE_FRAMES = 150;
 const GIANT_CHARGE_SPEED  = 11;
+let bigBabyMeter = 0;              // 0..1; fills from combat, spent on unleash
+const BIGBABY_FILL_PER_POINT = 1/2200;   // ~one screen of enemies fills it
 
 // Baby bottles
 let bottles = [];
@@ -1154,6 +1196,17 @@ function buildBottles(){
 function resetGiantOtto(){
   giantOttoPhase='idle'; giantOttoTimer=0;
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0;
+  bigBabyMeter = 0;
+}
+function unleashBigBaby(){
+  if(bigBabyMeter < 1) return;
+  if(ottoPower!==0 || giantOttoPhase!=='idle') return;     // not while another power is live
+  if(cutsceneActive || levelPaused || gameOver || won || victoryActive) return;
+  bigBabyMeter = 0;
+  ottoPower = 1; ottoPowerTimer = 0;                       // power 1 self-terminates
+  giantOttoPhase='growing'; giantOttoTimer=GIANT_GROW_FRAMES;
+  otto.facing = sawyer.facing;
+  SFX.win(); shakeIntensity = Math.max(shakeIntensity, 6);
 }
 
 function updateGiantOttoCharge(curEnemies){
@@ -1202,15 +1255,10 @@ function updateBottles(s){
     for(const p of [s, otto]){
       if(p.x+p.w>b.x && p.x<b.x+20 && p.y+p.h>b.y && p.y<b.y+28){
         b.got=true;
-        const newPwr = 1 + Math.floor(Math.random()*3);
+        const newPwr = 2 + Math.floor(Math.random()*2);   // 2=MILK BLAST, 3=SNUGGLE STUN (bottles never grant BIG BABY)
         ottoPower = newPwr;
         ottoRibbonT = 0; // restart the announce/fade cycle for the ribbon
-        // Power 1 (giant rush) is self-terminating — no timer needed
-        ottoPowerTimer = newPwr === 1 ? 0 : POWER_DURATION;
-        if(newPwr===1){
-          giantOttoPhase='growing'; giantOttoTimer=GIANT_GROW_FRAMES;
-          otto.facing=sawyer.facing;
-        }
+        ottoPowerTimer = POWER_DURATION;
         SFX.win();
         // burst particles
         for(let i=0;i<12;i++) particles.push({x:b.x+10,y:b.y+14,vx:(Math.random()-.5)*6,vy:-3-Math.random()*3,life:20,maxLife:20,type:'spark',color:'#B5D4F4'});
@@ -1629,6 +1677,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'ArrowUp') jumpBufferedAt = simFrame;   // Task 2a jump buffer
   if (['Space','ArrowUp','ArrowLeft','ArrowRight','ArrowDown'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyR' && (gameOver || won)) restartCurrentLevel();
+  if (e.code === 'KeyX') unleashBigBaby();
 });
 document.addEventListener('keyup', e => { if (e.target && e.target.id === 'ne-input') return; keys[e.code] = false; });
 
@@ -1707,6 +1756,7 @@ function pollGamepad(){
 
   if(_gpEdge('pause', START)) togglePause();
   if(_gpEdge('restart', B) && (gameOver || won)) restartCurrentLevel();
+  if(_gpEdge('smash', gp.buttons[3]?.pressed)) unleashBigBaby();
 }
 
 // ---- On-screen QWERTY keyboard (gamepad-only; mobile uses native, desktop uses physical) ----
@@ -6473,8 +6523,30 @@ function drawHUD(){
       c.lineWidth = 1.5; c.strokeStyle = 'rgba(150,120,210,0.55)'; c.stroke();
     }
   }
-  // ── Legible cosmic score ──
-  const sy = topY + hs + 12;
+  // ── BIG BABY charge meter (under hearts, right-aligned; clear of score) ──
+  {
+    const bw=90, bh=7, bx=rightX-bw, by=topY+hs+2;
+    const ready = bigBabyMeter>=1;
+    const pulse = 0.5+0.5*Math.sin(performance.now()*0.006);
+    c.shadowBlur=0;
+    c.fillStyle='rgba(10,8,26,0.72)';                    // housing
+    c.beginPath(); c.roundRect(bx-2, by-2, bw+4, bh+4, 4); c.fill();
+    c.fillStyle= ready ? `rgba(255,215,90,${0.55+0.45*pulse})` : '#7FD4FF';  // fill
+    c.beginPath(); c.roundRect(bx, by, Math.max(0,bw*bigBabyMeter), bh, 3); c.fill();
+    c.lineWidth=1; c.strokeStyle= ready ? `rgba(255,230,140,${0.6+0.4*pulse})` : 'rgba(150,220,255,0.5)';
+    c.beginPath(); c.roundRect(bx, by, bw, bh, 3); c.stroke();
+    if(ready){
+      const coarse = matchMedia('(pointer:coarse)').matches;
+      const hint = coarse ? 'OTTO READY \u2014 \uD83D\uDCA5' : 'OTTO READY \u2014 X';
+      c.textAlign='right'; c.font='800 10px system-ui,-apple-system,sans-serif';
+      c.fillStyle=`rgba(255,225,120,${0.6+0.4*pulse})`;
+      c.shadowColor='rgba(255,200,80,0.6)'; c.shadowBlur=6;
+      c.fillText(hint, rightX, by+bh+11);
+      c.shadowBlur=0;
+    }
+  }
+  // ── Legible cosmic score ── (offset below the BIG BABY meter)
+  const sy = topY + hs + 24;
   const txt = 'SCORE  ' + score;
   c.textAlign = 'right'; c.font = '900 17px system-ui,-apple-system,sans-serif';
   c.lineWidth = 4; c.lineJoin = 'round'; c.strokeStyle = 'rgba(6,4,18,0.9)';
@@ -6895,7 +6967,7 @@ function resetRunState(lvl, opts){
   nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[]; relicToast={t:0,label:'',color:'#fff',n:0};
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
-  ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0;
+  ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0; _reviveUsedThisRun=false; bigBabyMeter=0;
   shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
   checkpoint=null; // cleared here; the transponder resume block below re-arms it when applicable
   currentLevel=lvl;
@@ -6938,6 +7010,22 @@ function restartCurrentLevel(){
     showLevelPopup(popupTitles[currentLevel],popupDescs[currentLevel]);
   };
   try{ Portal.adBreak(_rebuild); }catch(e){ _rebuild(); }
+}
+function reviveFromGameOver(){
+  if(!gameOver || _reviveUsedThisRun) return;
+  Portal.rewardedBreak(()=>{                 // body runs only if the ad paid out
+    _reviveUsedThisRun = true;
+    gameOver = false;
+    lives = 3;                               // partial refill (second wind, not a full reset)
+    hurtFlashTimer = 0;
+    const sp = respawnSpot(sawyer);          // shared checkpoint-or-safe-ground logic; sp.y is already top-of-head
+    sawyer.x=sp.x; sawyer.y=sp.y; sawyer.vx=0; sawyer.vy=0; sawyer.invincible=120;
+    otto.x=sp.x-26; otto.y=sp.y; otto.vx=0; otto.vy=0; otto.invincible=120;
+    const ww = (currentLevel>=4&&LV[currentLevel]) ? LV[currentLevel].worldW
+               : currentLevel===2 ? L2_WORLD_W : currentLevel===3 ? L3_WORLD_W : WORLD_W;
+    cameraX = Math.max(0, Math.min(sawyer.x - W/3, ww - W));
+    try{ Portal.gameplayStart(); }catch(e){}  // resuming gameplay after the reward ad
+  });
 }
 function jumpToLevel(n){
   resetRunState(n, {});
@@ -7299,6 +7387,9 @@ function loop(){
   const _creditsSeq = (won && currentLevel===6); // return-home video + GAME COMPLETE credits
   const _rb = document.getElementById('restart-overlay-btn');
   if (_rb) _rb.style.display = (_overlayUp && !_creditsSeq) ? 'block' : 'none';
+  const _rev = document.getElementById('revive-overlay-btn');
+  if(_rev) _rev.style.display =
+    (gameOver && !_creditsSeq && !_reviveUsedThisRun && Portal.canRewarded()) ? 'block' : 'none';
   const _tcEl = document.getElementById('touch-controls');
   if (_tcEl) _tcEl.style.display = _overlayUp ? 'none' : '';
   if (gameOver) drawOverlay('Game Over', 'Score: ' + score);
@@ -15569,6 +15660,7 @@ try{ Portal.init().then(()=>Portal.loadingFinished()).catch(()=>{}); }catch(e){}
     <button id="mb-throw" style="width:56px;height:56px;border-radius:50%;background:rgba(255,140,0,0.35);border:2px solid rgba(255,180,0,0.6);font-size:13px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;">⚽</button>
     <button id="mb-down"  style="width:56px;height:56px;border-radius:50%;background:rgba(80,160,255,0.28);border:2px solid rgba(120,200,255,0.55);font-size:20px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;display:none;">▼</button>
     <button id="mb-jump"  style="width:64px;height:64px;border-radius:50%;background:rgba(80,160,255,0.35);border:2px solid rgba(120,200,255,0.6);font-size:13px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;">JUMP</button>
+    <button id="mb-smash" style="width:56px;height:56px;border-radius:50%;background:rgba(127,212,255,0.30);border:2px solid rgba(127,212,255,0.7);font-size:22px;font-weight:700;color:#fff;cursor:pointer;touch-action:none;">💥</button>
   </div>
 </div>
 <script>
@@ -15589,6 +15681,8 @@ try{ Portal.init().then(()=>Portal.loadingFinished()).catch(()=>{}); }catch(e){}
   bindBtn('mb-jump',  'ArrowUp');
   bindBtn('mb-throw', 'Space');
   bindBtn('mb-down',  'ArrowDown');
+  { const sb=document.getElementById('mb-smash');
+    if(sb) sb.addEventListener('touchstart', e=>{ e.preventDefault(); unleashBigBaby(); }, {passive:false}); }
   const _downBtn=document.getElementById('mb-down'), _jumpBtn=document.getElementById('mb-jump');
   setInterval(()=>{ const swim=(typeof currentLevel!=='undefined'&&currentLevel===4);
     if(_downBtn) _downBtn.style.display=swim?'block':'none';
