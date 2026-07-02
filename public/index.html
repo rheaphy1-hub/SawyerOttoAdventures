@@ -286,7 +286,7 @@
     <div class="popup-badge">🌵</div>
     <div class="popup-kicker">Level 1</div>
     <h2>DESERT DASH</h2>
-    <p>Guide Sawyer across the Texas desert &mdash; baby brother Otto tags along and helps out.</p>
+    <p>DRIFTER CANYON — The sandstorm separated them. Otto is somewhere up ahead — Sawyer must reach him.</p>
     <p class="popup-scoring">Grab cool rocks (75 pts), stomp enemies (100 pts), defeat The Drifter!</p>
     <p class="popup-par">🎯 Par time: <span data-par="1"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -297,7 +297,7 @@
     <div class="popup-badge">❄️</div>
     <div class="popup-kicker">Level 2</div>
     <h2>FROZEN PEAKS</h2>
-    <p>Climb the icy slopes with Otto as the blizzard howls and frozen creatures stalk the snow.</p>
+    <p>FROZEN SUMMIT — Otto slipped ahead into the blizzard. The mountain creatures are closing in. Reach him before the cold does.</p>
     <p class="popup-scoring">Grab glowing ice crystals (75 pts), defeat frozen foes (100 pts), bring down the Yeti (+1 000)!</p>
     <p class="popup-par">🎯 Par time: <span data-par="2"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -308,7 +308,7 @@
     <div class="popup-badge">🦀</div>
     <div class="popup-kicker">Level 3</div>
     <h2>MOONLIGHT BAY</h2>
-    <p>Otto spotted a hermit crab and now they're sprinting down the beach. Dodge the surf, brave the pier, and defeat King Crab Krawley!</p>
+    <p>TIDAL REEF — Otto chased a hermit crab straight into King Crab Krawley's territory. Reach him before the tide returns — and take down Krawley!</p>
     <p class="popup-scoring">Collect seashells (75 pts), pearl shells (150 pts), starfish (250 pts), defeat crabs & gulls (100–150 pts), beat the boss (+1 000)!</p>
     <p class="popup-par">🎯 Par time: <span data-par="3"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -319,7 +319,7 @@
     <div class="popup-badge">🌊</div>
     <div class="popup-kicker">Level 4</div>
     <h2>THE ABYSS</h2>
-    <p>Dive into a glowing deep-sea reef. Swim past darting glowfish, grasping octopi and stinging anemones, dodge the pressure-pod mines, and descend to face The Leviathan!</p>
+    <p>LEVIATHAN'S TRENCH — Otto is trapped in a giant clam on the ocean floor. Only his milk can crack it open. Dive in and free him before The Leviathan finds him first!</p>
     <p class="popup-scoring">Collect pearls (75–250 pts), strike sea creatures (100–150 pts), beat the boss (+1 000)!</p>
     <p class="popup-par">🎯 Par time: <span data-par="4"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -330,7 +330,7 @@
     <div class="popup-badge">👻</div>
     <div class="popup-kicker">Level 5</div>
     <h2>HAUNTED HAUS</h2>
-    <p>You've entered a haunted German manor where a rotten feast has come alive. Creaking floors, guttering candlelight, and grotesque banquet-horrors await — survive to meet Baron Von Skream!</p>
+    <p>HAUNTED MANOR — A cursed flame seals the path deeper in. Otto needs your protection — and only his milk can break the seal. Survive the horrors and save Otto from Baron Von Skream!</p>
     <p class="popup-scoring">Grab coins & spell orbs (75–250 pts), put down the feast-horrors (100–150 pts), beat the boss (+1 000)!</p>
     <p class="popup-par">🎯 Par time: <span data-par="5"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -341,7 +341,7 @@
     <div class="popup-badge">🌌</div>
     <div class="popup-kicker">Final Level</div>
     <h2>SPACE VOID</h2>
-    <p>Adrift in the void between stars. Slip past the things that watch and devour in the dark — then face the tear in reality, Nexus Nine!</p>
+    <p>THE VOID — Nexus Nine is pulling Otto toward it. The drones are everywhere — and only Otto's milk destroys them. Fight together and bring him home!</p>
     <p class="popup-scoring">Collect cells (75–250 pts), banish void entities (100–150 pts), beat the final boss (+1 000)!</p>
     <p class="popup-par">🎯 Par time: <span data-par="6"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -698,6 +698,7 @@ function getBestTime(level){
 function saveBestTime(level, ms){
   try{ localStorage.setItem('sawyer_btime_'+level, ms); }catch(e){}
 }
+function countAcquiredRelics(){ let n=0; for(let i=1;i<=6;i++) if(getStars(i)&8) n++; return n; }
 function getStars(level){
   try{ return parseInt(localStorage.getItem('sawyer_stars_'+level)||'0',10); }catch(e){ return 0; }
 }
@@ -920,6 +921,7 @@ const RELIC_DEF = {
   6:{ key:'core',   color:'#00FF88' }    // reactor core
 };
 let levelRelic = null;
+let levelLadders = [];   // Sprint: vertical climb — per-level ladder rects (rebuilt by buildLadders)
 function initRelic(n){
   levelRelic = null;
   if(getStars(n)&8) return;   // already found on a previous run — the medal is the permanent record
@@ -1271,7 +1273,9 @@ async function submitScore(name){
     lbToken=null;        // tokens are one-time-use; force a fresh mint next run
     const hmac=await hmacHex(token, `${name}|${score0}|${level0}|${runMs0}`);
     await fetch(LB_API+'/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name, score:score0, level:level0, runMs:runMs0, token, hmac})});
+      body:JSON.stringify({name, score:score0, level:level0, runMs:runMs0, token, hmac,
+        relicsFound:countAcquiredRelics(), ottoBossHits:globalOttoBossHits,
+        ottoDroneKills:(currentLevel===6?ottoKillCount:0)})});
   }catch(e){ /* offline: silently skip, credits still play */ }
 }
 // Coerce whatever /api/top returns into a clean [{name, score}] list. Handles: array of
@@ -1953,6 +1957,8 @@ const platforms = [
   {...makePlatform(1380, FLOOR-285, 100), sky:true, shape:'bone'},
   {...makePlatform(1560, FLOOR-240, 100), sky:true, shape:'disc'},                                     // descent
   {...makePlatform(920,  FLOOR-405, 80),  sky:true, shape:'slab',  kind:'crumble', dyn:true, state:'solid', bx:920, by:FLOOR-405, alpha:1, crackT:0}, // topmost crumble loot perch
+  // ── Sprint: vertical climb — landing ledge for the desert relic ladder shaft ──
+  {...makePlatform(930,  FLOOR-300, 90),  shape:'slab'},
 ];
 
 function makeEnemy(plat, type){
@@ -6535,7 +6541,7 @@ function drawFinishCard(){
 }
 
 function drawLeaderboardPanel(c, t){
-  const pw=300, px=(W-pw)/2, py=80, rows=5, rowH=17, ph=28+rows*rowH;
+  const pw=300, px=(W-pw)/2, py=80, rows=5, rowH=22, ph=28+rows*rowH;
   c.save();
   c.fillStyle='rgba(10,8,26,0.66)';
   c.beginPath(); c.roundRect(px,py,pw,ph,10); c.fill();
@@ -6568,10 +6574,20 @@ function drawLeaderboardPanel(c, t){
     c.fillStyle = i===0?'#FFD700' : i===1?'#D8D8E8' : i===2?'#E6A86B' : 'rgba(255,255,255,0.82)';
     if(mine){ c.fillStyle='#7CFFC4'; }
     c.fillText((i+1)+'.', x0, ry);
-    const nm=(e.name||'???').slice(0,20);
+    const nm=(e.name||'???').slice(0,14);
     c.fillText(nm, x0+22, ry);
     c.textAlign='right';
     c.fillText(String(e.score), x1, ry);
+    // Sprint J: show otto hits / relics if present in entry
+    if(e.ottoBossHits||e.ottoDroneKills||e.relicsFound){
+      c.textAlign='left'; c.font='500 9px system-ui,sans-serif'; c.fillStyle='rgba(180,255,200,0.65)';
+      const extras=[];
+      if(e.relicsFound) extras.push('\u2666'+e.relicsFound+'/6');
+      if(e.ottoBossHits) extras.push('\u{1F37C}'+e.ottoBossHits);
+      else if(e.ottoDroneKills) extras.push('\u26A1'+e.ottoDroneKills);
+      if(extras.length) c.fillText(extras.join(' '), x0+22, ry+9);
+      c.font='700 12px system-ui,sans-serif';
+    }
   }
   c.restore();
 }
@@ -6903,14 +6919,14 @@ function loop(){
   if (cutsceneActive){ _cutPrevCamX = applyCutsceneCam(); }
   
   if(currentLevel===2){
-    drawL2Bg(); cosmicGlow(); drawL2Platforms(); drawL2Flag(); drawL2Rocks(); drawEmberStone(); drawL2Artifact();
+    drawL2Bg(); cosmicGlow(); drawL2Platforms(); drawLadders('frozen'); drawL2Flag(); drawL2Rocks(); drawEmberStone(); drawL2Artifact();
     drawL2Enemies(); drawIcicles(); drawRelic(); drawCheckpoint();
     if(snowWall>0.01) drawSnowWall();
     // Yeti + his combat FX render AFTER the whiteout so the blizzard never washes the boss out.
     drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawL2Stals(); drawProjectiles();
     drawL2BossWarning();
   } else if(currentLevel===3){
-    drawL3BgFar(); cosmicGlow(); drawL3BgNear(); drawL3Platforms(); drawL3Flag(); drawL3Rocks();
+    drawL3BgFar(); cosmicGlow(); drawL3BgNear(); drawL3Platforms(); drawLadders('beach'); drawL3Flag(); drawL3Rocks();
     drawL3Artifact();
     drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawRelic(); drawCheckpoint();
     drawL3BossWarning();
@@ -6918,10 +6934,10 @@ function loop(){
     drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls(); drawSwimClam(); drawRelic();
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawCheckpoint(); drawSwimBossWarning();
   } else if(currentLevel>=5&&currentLevel<=6){
-    drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
-    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); } drawRelic(); drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5) drawL5TransponderWarning();
+    drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===5)drawLadders('spooky'); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
+    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); drawL5HauntedFlame(); } drawRelic(); drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5){ drawL5TransponderWarning(); drawL5FlameWarning(); } if(currentLevel===6){ drawL6DroneToast(); }
   } else {
-    drawBg(); cosmicGlow(); drawPlatforms(); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
+    drawBg(); cosmicGlow(); drawPlatforms(); drawLadders('desert'); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawRelic(); drawCheckpoint(); drawBossWind(); drawBossWarning();
   }
   
@@ -7212,6 +7228,8 @@ const l2Platforms = [
   {...makePlatform(840,  FLOOR-330, 100), sky:true, shape:'disc'},
   {...makePlatform(1020, FLOOR-360, 100), sky:true, shape:'rock'},                     // peak
   {...makePlatform(900,  FLOOR-405, 130), sky:true, shape:'slab', artifactPerch:true}, // TOPMOST: holds the ice-frozen artifact (boss key)
+  // ── Sprint: vertical climb — relic ledge above the ember crest (frozen ladder tops here) ──
+  {...makePlatform(1452, FLOOR-372, 90), shape:'slab'},
   // ---- FROZEN BOSS ARENA: glacier ledges, HIDDEN until the fight; bob on staggered sines; shatter on Yeti death ----
   // Floating ice floes on the frozen arena sea — asymmetric sizes/heights, each drifts
   // horizontally AND bobs vertically on its own phase (buoy-like), so dodging means real traversal.
@@ -7590,6 +7608,9 @@ const l3Platforms = [
   makePlatform(1700, FLOOR-82, 80),
   makePlatform(2090, FLOOR-80, 80),
   makePlatform(2480, FLOOR-80, 80),
+  // ── Sprint: vertical climb — beach-rigging shaft to the zig-zag apex relic (appended; index-safe) ──
+  makePlatform(2750, FLOOR-110, 90),
+  makePlatform(2760, FLOOR-205, 70),
 ];
 
 let l3Enemies = [];
@@ -10639,10 +10660,10 @@ function curLV(){ return LV[currentLevel]; }
 // player-physics profile (consumed by the shared stepPlayer). No art/data rewritten;
 // L4/swim is intentionally absent (it runs its own buoyancy physics in updateSwim). ----
 LV[1]=LV[1]||{}; LV[2]=LV[2]||{}; LV[3]=LV[3]||{};
-LV[1].phys={ speed:3.1, fric:0.72, vclamp:0, dust:'dust', resolve:resolve,    gravMul:1,    vyCap:0,   worldW:()=>WORLD_W };
-LV[2].phys={ horiz:_physHorizL2,            dust:'snow', resolve:resolveL2,  gravMul:1,    vyCap:0,   worldW:()=>L2_WORLD_W };
-LV[3].phys={ speed:4,   fric:0.8,  vclamp:5, dust:'dust', resolve:resolveL3,  gravMul:1,    vyCap:0,   worldW:()=>L3_WORLD_W };
-LV[5].phys={ speed:4,   fric:0.8,  vclamp:5, dust:'dust', resolve:resolveGen, gravMul:1,    vyCap:0,   climb:handleL5Climb, carry:carryL5, worldW:()=>curLV().worldW };
+LV[1].phys={ speed:3.1, fric:0.72, vclamp:0, dust:'dust', resolve:resolve,    gravMul:1,    vyCap:0,   climb:handleClimb, worldW:()=>WORLD_W };
+LV[2].phys={ horiz:_physHorizL2,            dust:'snow', resolve:resolveL2,  gravMul:1,    vyCap:0,   climb:handleClimb, worldW:()=>L2_WORLD_W };
+LV[3].phys={ speed:4,   fric:0.8,  vclamp:5, dust:'dust', resolve:resolveL3,  gravMul:1,    vyCap:0,   climb:handleClimb, worldW:()=>L3_WORLD_W };
+LV[5].phys={ speed:4,   fric:0.8,  vclamp:5, dust:'dust', resolve:resolveGen, gravMul:1,    vyCap:0,   climb:handleClimb, carry:carryL5, worldW:()=>curLV().worldW };
 LV[6].phys={ speed:4,   fric:0.8,  vclamp:5, dust:'dust', resolve:resolveGen, gravMul:0.42, vyCap:6.2, postResolve:_physPostL6,           worldW:()=>curLV().worldW };
 
 // Enemy roster per level: 5 archetypes (A patrol-1hit, B patrol-2hit, C hover,
@@ -10803,6 +10824,8 @@ function buildHausLevel(){
   lv.transponder = { x:3780, y:FLOOR-560, w:22, h:26, got:false, cased:1, locked:true, phase:0 };
   lv.transponderTaken = false;
   lv._slideT = 0;
+  // Sprint J: haunted flame pre-boss puzzle — blocks passage until Otto's milk extinguishes it
+  lv.hauntedFlame = { x:5180, y:FLOOR-70, w:36, h:70, hp:1, active:true, smokeT:0 };
 }
 function buildLevel5(){ buildHausLevel(); buildGenBoss(5); }
 
@@ -10822,10 +10845,13 @@ function updateL5Slides(){
 function carryL5(p){ const sp=p&&p._standPlat; if(p&&p.onGround&&sp&&sp.kind==='slide'&&sp.dx) p.x+=sp.dx; }
 
 // Ladder climbing for Sawyer. Returns true while latched (caller skips normal ground physics).
-function handleL5Climb(s){
-  const lv=LV[5]; if(!lv||!lv.platforms) return false;
+// Level-agnostic (Sprint: vertical climb): scans levelLadders. Entries are static rects
+// {x,y,w,h} or {plat,w} refs whose x/y/h track a moving platform live each frame.
+function ladderRect(e){ return e.plat ? {x:e.plat.x, y:e.plat.y, w:e.w, h:e.plat.h} : e; }
+function handleClimb(s){
+  if(!levelLadders.length) return false;
   let lad=null;
-  for(const pl of lv.platforms){ if(!pl.isLadder)continue;
+  for(const e of levelLadders){ const pl=ladderRect(e);
     if(s.x+s.w>pl.x+2 && s.x<pl.x+pl.w-2 && s.y+s.h>pl.y-2 && s.y<pl.y+pl.h+4){ lad=pl; break; } }
   if(!s.climbing){
     if(lad && (keys['ArrowUp']||keys['ArrowDown'])){ s.climbing=true; s.vx=0; s.vy=0; if(typeof sfx==='function') sfx('creak'); }
@@ -10840,6 +10866,26 @@ function handleL5Climb(s){
   if(s.y+s.h <= lad.y+4){ s.y=lad.y-s.h; s.climbing=false; s.onGround=true; s.vy=0; return false; }  // step onto deck above
   if(s.y+s.h >= lad.y+lad.h){ s.y=lad.y+lad.h-s.h; if(keys['ArrowDown']){ s.climbing=false; return false; } } // hit the bottom
   return true;
+}
+
+// Register ladders per level (mirrors initRelic's reset pattern; called from buildLevelContent).
+function buildLadders(n){
+  levelLadders = [];
+  if(n===1){
+    // Desert relic shaft: mid rock (960,F-170) -> ledge (930,F-300) -> crumble perch (920,F-405)
+    levelLadders.push({x:986, y:FLOOR-300, w:24, h:130});
+    levelLadders.push({x:944, y:FLOOR-405, w:24, h:105});
+  } else if(n===2){
+    // Frozen relic shaft: ember crest (1468,F-272) -> relic ledge (1452,F-372)
+    levelLadders.push({x:1478, y:FLOOR-372, w:24, h:100});
+  } else if(n===3){
+    // Beach rigging: ground -> ledge (2750,F-110) -> apex-side deck (2760,F-205)
+    levelLadders.push({x:2812, y:FLOOR-110, w:24, h:110});
+    levelLadders.push({x:2766, y:FLOOR-205, w:24, h:95});
+  } else if(n===5){
+    // Migrate the three existing isLadder platforms as LIVE refs (sliding ladder tracks its plat).
+    for(const pl of LV[5].platforms){ if(pl.isLadder) levelLadders.push({plat:pl, w:pl.w}); }
+  }
 }
 
 // Evil Giant Bratwurst — bounce/chase state machine, haunted-mustard spit, hp; frees the transponder on death.
@@ -10905,24 +10951,57 @@ function updateBratwurst(){
   }
 }
 
-// ── Spooky wooden ladder ──
-function drawLadder(p,sx){
+// ── Per-world ladders. Themes: 'desert' knotted rope, 'frozen' ice-crusted rope,
+//    'beach' wet ship rigging, 'spooky'/'default' the original haunted wood look. ──
+const LADDER_THEMES={
+  desert:{ rail:'#8A6237', railHi:'rgba(196,150,90,0.8)',  rung:'#6B4A26', glow:null,                    knots:'#5C3E1E' },
+  frozen:{ rail:'#B8DCEF', railHi:'rgba(240,252,255,0.85)',rung:'#8FC4E0', glow:'rgba(140,220,255,0.14)', frost:'rgba(255,255,255,0.35)' },
+  beach: { rail:'#7A7468', railHi:'rgba(168,160,146,0.75)',rung:'#5E594E', glow:null,                    barnacle:'rgba(226,218,196,0.55)' },
+  spooky:{ rail:'#3A281A', railHi:'rgba(90,64,38,0.7)',    rung:'#2E2012', glow:'rgba(150,90,210,',      web:true }
+};
+function drawLadders(theme){
+  theme = theme||'default';
+  for(const e of levelLadders){
+    const rect = ladderRect(e);
+    drawLadder(rect, rect.x - cameraX, theme);
+  }
+}
+function drawLadder(p,sx,theme){
   const x=sx, y=p.y, w=p.w, h=p.h, t=Date.now()*0.001;
+  const T = LADDER_THEMES[theme] || LADDER_THEMES.spooky;
   ctx.save();
   // rails
-  ctx.strokeStyle='#3A281A'; ctx.lineWidth=4; ctx.lineCap='round';
+  ctx.strokeStyle=T.rail; ctx.lineWidth=4; ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(x+3,y); ctx.lineTo(x+3,y+h); ctx.moveTo(x+w-3,y); ctx.lineTo(x+w-3,y+h); ctx.stroke();
-  ctx.strokeStyle='rgba(90,64,38,0.7)'; ctx.lineWidth=1.5;
+  ctx.strokeStyle=T.railHi; ctx.lineWidth=1.5;
   ctx.beginPath(); ctx.moveTo(x+3,y); ctx.lineTo(x+3,y+h); ctx.moveTo(x+w-3,y); ctx.lineTo(x+w-3,y+h); ctx.stroke();
   // rungs
-  ctx.strokeStyle='#2E2012'; ctx.lineWidth=3;
+  ctx.strokeStyle=T.rung; ctx.lineWidth=3;
   for(let ry=y+8; ry<y+h-2; ry+=14){ ctx.beginPath(); ctx.moveTo(x+1,ry); ctx.lineTo(x+w-1,ry); ctx.stroke(); }
-  // faint cobweb in a corner + soft violet haunt glow
-  ctx.strokeStyle='rgba(210,210,225,0.18)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+w*0.6,y+10); ctx.moveTo(x+w,y); ctx.lineTo(x+w*0.4,y+10); ctx.stroke();
-  ctx.save(); ctx.globalCompositeOperation='lighter';
-  const g=ctx.createLinearGradient(x,y,x+w,y); g.addColorStop(0,'rgba(150,90,210,0)'); g.addColorStop(0.5,'rgba(150,90,210,'+(0.10+0.05*Math.sin(t*2+p.x))+')'); g.addColorStop(1,'rgba(150,90,210,0)');
-  ctx.fillStyle=g; ctx.fillRect(x-2,y,w+4,h); ctx.restore();
+  // theme detail passes (deterministic — anchored to world y, never Math.random in draw)
+  if(T.knots){                                             // desert: rope knots at each rung end
+    ctx.fillStyle=T.knots;
+    for(let ry=y+8; ry<y+h-2; ry+=14){ ctx.beginPath(); ctx.arc(x+3,ry,2.4,0,7); ctx.arc(x+w-3,ry,2.4,0,7); ctx.fill(); }
+  }
+  if(T.frost){                                             // frozen: frost crust nubs down the rails
+    ctx.fillStyle=T.frost;
+    for(let ry=y+5; ry<y+h; ry+=11){ const j=((ry*13)%5)-2; ctx.fillRect(x+1+((ry%2)?0:w-6), ry+j, 5, 2); }
+  }
+  if(T.barnacle){                                          // beach: barnacle clusters on wet rigging
+    ctx.fillStyle=T.barnacle;
+    for(let ry=y+12; ry<y+h-4; ry+=22){ const side=((ry/22)|0)%2 ? x+w-4 : x+2; ctx.beginPath(); ctx.arc(side,ry,1.8,0,7); ctx.arc(side+2,ry+3,1.3,0,7); ctx.fill(); }
+  }
+  if(T.web){                                               // spooky: cobweb corner (original)
+    ctx.strokeStyle='rgba(210,210,225,0.18)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x+w*0.6,y+10); ctx.moveTo(x+w,y); ctx.lineTo(x+w*0.4,y+10); ctx.stroke();
+  }
+  if(T.glow){                                              // soft ambient glow (violet haunt / cyan frost)
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    const g=ctx.createLinearGradient(x,y,x+w,y);
+    if(theme==='frozen'){ g.addColorStop(0,'rgba(140,220,255,0)'); g.addColorStop(0.5,T.glow); g.addColorStop(1,'rgba(140,220,255,0)'); }
+    else { g.addColorStop(0,'rgba(150,90,210,0)'); g.addColorStop(0.5,T.glow+(0.10+0.05*Math.sin(t*2+p.x))+')'); g.addColorStop(1,'rgba(150,90,210,0)'); }
+    ctx.fillStyle=g; ctx.fillRect(x-2,y,w+4,h); ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -11223,7 +11302,36 @@ function updateOttoGen(){
 
 // ---- main per-level update (clone of updateLevel3) ----
 function updateLevel4(){ updateSwim(); }
-function updateLevel5(){ updateGen(); }
+function updateLevel5(){
+  updateGen();
+  // Sprint J: haunted flame hit detection (L5 pre-boss milk puzzle)
+  const lv5=LV[5];
+  if(lv5.hauntedFlame && lv5.hauntedFlame.active){
+    const fl=lv5.hauntedFlame;
+    fl.smokeT=(fl.smokeT||0)+1;
+    for(const pr of projectiles){
+      if(pr.life<=0) continue;
+      if(pr.type!=='milk') continue;
+      if(pr.x>fl.x&&pr.x<fl.x+fl.w&&pr.y>fl.y&&pr.y<fl.y+fl.h){
+        fl.hp--; pr.life=0;
+        if(fl.hp<=0){
+          fl.active=false;
+          for(let i=0;i<18;i++) particles.push({x:fl.x+fl.w/2,y:fl.y+fl.h/2,vx:(Math.random()-.5)*4,vy:Math.random()*-3-1,life:30,maxLife:30,type:'spark',color:i%2?'#FF6432':'#FFB040'});
+          shakeIntensity=Math.max(shakeIntensity,5);
+          sfx('win');
+          l5FlameWarnT=0; // clear any warning
+        }
+      }
+    }
+    // soft pushback at flame gate if flame still active
+    const s=sawyer;
+    const screenFlX = fl.x - cameraX;
+    if(fl.active && s.x+s.w > fl.x && s.x < fl.x+fl.w && s.y+s.h > fl.y && s.y < fl.y+fl.h+10){
+      s.x = fl.x - s.w - 2; s.vx = Math.min(s.vx, -1.4);
+      l5FlameWarnT = 80;
+    }
+  }
+}
 function updateLevel6(){ updateGen(); }
 function updateGen(){
   if(gameOver||won||levelPaused) return;
@@ -11463,8 +11571,8 @@ function updateGen(){
         const dx=ccx+Math.cos(dn.ang)*dr.orbitR, dy=ccy+Math.sin(dn.ang)*dr.orbitR;
         if(Math.abs(pr.x-dx)<16 && Math.abs(pr.y-dy)<16){
           if(pr.type!=='milk'){ pr.life=0; pr.vx*=-0.4; sfx('ball'); break; } // ball bounces off — drones are milk-only
-          dn.alive=false; dn.dieT=8; pr.life=0; score+=40; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie');
-          for(let i=0;i<12;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.523)*3.2,vy:Math.sin(i*0.523)*3.2,life:22,maxLife:22,type:'spark',color:bc.proj});
+          dn.alive=false; dn.dieT=8; pr.life=0; score+=40; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie'); ottoKillCount++;
+          for(let i=0;i<16;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.393)*3.8,vy:Math.sin(i*0.393)*3.8,life:26,maxLife:26,type:'spark',color:i%2?'#38F2E6':'#C0FFEE'});
           if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; sfx('shieldDown'); }
           break;
         }
@@ -11481,13 +11589,14 @@ function updateGen(){
           pr.life=0; boss.hitFlash=4; sfx('bossHit');
           if(pr.type==='milk' && boss.drones){ let best=null,bd=1e9; const ccx=boss.x+boss.w/2,ccy=boss.y+boss.h/2,dr=bc.drones;
             for(const dn of boss.drones){ if(!dn.alive)continue; const ex=ccx+Math.cos(dn.ang)*dr.orbitR-pr.x, ey=ccy+Math.sin(dn.ang)*dr.orbitR-pr.y; const q=ex*ex+ey*ey; if(q<bd){bd=q;best=dn;} }
-            if(best){ best.alive=false; best.dieT=8; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie');
+            if(best){ best.alive=false; best.dieT=8; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie'); ottoKillCount++;
               const dx=ccx+Math.cos(best.ang)*dr.orbitR,dy=ccy+Math.sin(best.ang)*dr.orbitR;
-              for(let i=0;i<12;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.523)*3.2,vy:Math.sin(i*0.523)*3.2,life:22,maxLife:22,type:'spark',color:bc.proj});
+              for(let i=0;i<16;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.393)*3.8,vy:Math.sin(i*0.393)*3.8,life:26,maxLife:26,type:'spark',color:i%2?'#38F2E6':'#C0FFEE'});
               if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; sfx('shieldDown'); } } }
           continue;
         }
         boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;
+        if(pr.type==='milk') globalOttoBossHits++;
         sfx('bossHit');pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         const half=Math.ceil(bc.hp/2);
         if(boss.hp<=half&&boss.phaseIndex===0){
@@ -11499,6 +11608,7 @@ function updateGen(){
             boss.drones=[]; const dc=bc.drones;
             for(let i=0;i<dc.count;i++) boss.drones.push({ang:boss.orbit + i*(6.283/dc.count), alive:true, dieT:0});
             shakeIntensity=18; hurtFlashTimer=22; sfx('bossSpit');
+            if(!l6DroneToastShown){ l6DroneToastShown=true; l6DroneToastT=160; }
           }
         }
         if(boss.hp<=0){ boss.alive=false;boss.dieTimer=(currentLevel===5?150:120);score+=1000;shakeIntensity=16;sfx('bossDie');
@@ -11867,7 +11977,12 @@ function updateGen(){
 // Self-contained swim engine for L4. L5/L6 stay on the platformer engine.
 const SWIM = { accel:0.62, drag:0.86, maxV:4.4, buoy:0.05, surfaceY:62 };
 let swimMurk = 0; // 0..1 visibility-reduction (boss phase 2 ink)
-let l4BossWarnT = 0; // Sprint G: "find the transponder" gate-nudge toast timer
+let l4BossWarnT = 0; // Sprint G
+let l5FlameWarnT = 0; // Sprint J: haunted flame warn toast
+let ottoKillCount = 0;    // Sprint J: drones destroyed by Otto's milk
+let globalOttoBossHits = 0; // Sprint J: boss hits by Otto's milk (all levels)
+let l6DroneToastT = 0;    // Sprint J: first-drone spawn toast timer
+let l6DroneToastShown = false;
 // Escape-vortex openness for generic levels (L4-6). Stays 0 until the boss is defeated,
 // then eases open — so the portal/vortex isn't visible before the fight is won.
 let genPortalOpen = 0;
@@ -12145,7 +12260,7 @@ function updateSwim(){
     }
     if(pr.life>0&&boss&&boss.active&&boss.alive){
       if(pr.x>boss.x&&pr.x<boss.x+boss.w&&pr.y>boss.y&&pr.y<boss.y+boss.h){
-        boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;sfx('bossHit');pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
+        boss.hp--;boss.hitFlash=8;shakeIntensity=5;score+=40;if(pr.type==='milk') globalOttoBossHits++; sfx('bossHit');pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
         const half=Math.ceil(bc.hp/2);
         if(boss.hp<=half&&boss.phaseIndex===0){ boss.phaseIndex=1;boss.spitTimer=bc.spit2;shakeIntensity=16;hurtFlashTimer=20;sfx('rattle'); }
         if(boss.hp<=0){ boss.alive=false;boss.dieTimer=120;score+=1000;shakeIntensity=16;sfx('bossDie');venom=[];
@@ -13381,7 +13496,7 @@ function drawGenPlatforms(){
   for(const p of lv.platforms){
     const sx=p.x-cameraX;
     if(sx+p.w<-20||sx>W+20)continue;
-    if(p.isLadder){ drawLadder(p,sx); continue; }
+    if(p.isLadder) continue;   // Sprint: vertical climb — ladders now drawn by drawLadders() per theme
     if(p.y===FLOOR){
       if(haus){
         ctx.fillStyle='#2A1E14'; ctx.fillRect(sx,p.y,p.w,H-p.y);
@@ -14233,6 +14348,57 @@ function baronRect(name,frame){
   const fi=a.frames[Math.min(frame,a.frames.length-1)];
   return arr[Math.min(fi,arr.length-1)];
 }
+function drawL6DroneToast(){
+  if(l6DroneToastT<=0) return;
+  l6DroneToastT--;
+  const a=Math.min(1,l6DroneToastT/30)*Math.min(1,(160-l6DroneToastT)/15);
+  ctx.save(); ctx.globalAlpha=a;
+  ctx.font='bold 16px system-ui,sans-serif'; ctx.textAlign='center';
+  ctx.fillStyle='#38F2E6'; ctx.shadowColor='rgba(0,40,80,0.9)'; ctx.shadowBlur=10;
+  ctx.fillText("OTTO'S MILK DESTROYS DRONES!", W/2, 88);
+  ctx.font='bold 11px system-ui,sans-serif'; ctx.fillStyle='#C0FFEE'; ctx.shadowBlur=5;
+  ctx.fillText('fire with [SPACE] — ball just bounces off', W/2, 104);
+  ctx.restore();
+}
+function drawL5HauntedFlame(){
+  if(currentLevel!==5) return;
+  const fl=LV[5].hauntedFlame; if(!fl||!fl.active) return;
+  const fx=fl.x-cameraX, fy=fl.y, fw=fl.w, fh=fl.h;
+  const t=fl.smokeT||0;
+  ctx.save();
+  // Outer glow
+  const rg=ctx.createRadialGradient(fx+fw/2,fy+fh*0.4,4,fx+fw/2,fy+fh*0.4,fw*1.4);
+  rg.addColorStop(0,'rgba(255,100,30,0.55)'); rg.addColorStop(1,'rgba(255,60,0,0)');
+  ctx.fillStyle=rg; ctx.fillRect(fx-fw,fy-fh*0.3,fw*3,fh*1.6);
+  // Core flame body (layered arcs)
+  for(let i=0;i<3;i++){
+    const w2=fw*(0.7-i*0.18), h2=fh*(0.9-i*0.2);
+    const wobX=Math.sin(t*0.13+i*2.1)*4;
+    const g=ctx.createLinearGradient(fx+fw/2,fy+fh,fx+fw/2,fy);
+    g.addColorStop(0,i===0?'rgba(255,40,0,0.9)':'rgba(255,100,0,0.7)');
+    g.addColorStop(0.5,i===0?'rgba(255,120,20,0.7)':'rgba(255,180,0,0.5)');
+    g.addColorStop(1,'rgba(255,220,100,0)');
+    ctx.fillStyle=g;
+    ctx.beginPath();
+    ctx.moveTo(fx+fw/2+wobX,fy-4);
+    ctx.bezierCurveTo(fx+fw/2+w2/2+wobX,fy+fh*0.25,fx+fw/2+w2*0.6,fy+fh*0.6,fx+fw/2,fy+fh);
+    ctx.bezierCurveTo(fx+fw/2-w2*0.6,fy+fh*0.6,fx+fw/2-w2/2-wobX,fy+fh*0.25,fx+fw/2+wobX,fy-4);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+function drawL5FlameWarning(){
+  if(l5FlameWarnT<=0) return;
+  l5FlameWarnT--;
+  const a=Math.min(1,l5FlameWarnT/24)*Math.min(1,(80-l5FlameWarnT)/10);
+  ctx.save(); ctx.globalAlpha=a;
+  ctx.font='bold 16px system-ui,sans-serif'; ctx.textAlign='center';
+  ctx.fillStyle='#FF8040'; ctx.shadowColor='rgba(80,20,0,0.9)'; ctx.shadowBlur=8;
+  ctx.fillText('CURSED FLAME BLOCKS THE PATH', W/2, 92);
+  ctx.font='bold 11px system-ui,sans-serif'; ctx.fillStyle='#FFCC80'; ctx.shadowBlur=5;
+  ctx.fillText('only Otto\'s milk can extinguish it', W/2, 108);
+  ctx.restore();
+}
 function drawBossHaus(boss,bc,flash){
   // Pure renderer: animation state (animName/animFrame) owned by updateGen. Blits from the packed atlas.
   // Enrage tinting is suppressed once he's dying — the dissolve frames should fade to the spectral
@@ -14383,7 +14549,10 @@ function buildLevelContent(n){
   else if(n===6){ buildLevel6(); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   initRelic(n); // Sprint G: hidden relic (skipped if already earned — getStars(n)&8)
+  buildLadders(n); // Sprint: vertical climb — rebuild ladder rects on every level (re)load
   buildBottles();
+  // Sprint J: reset per-session counters
+  ottoKillCount=0; globalOttoBossHits=0; l6DroneToastShown=false; l6DroneToastT=0; l5FlameWarnT=0;
 }
 // Patient black fade between levels: fade to black → load level → fade back in.
 // Holds full black for a beat so the cut never feels rushed.
