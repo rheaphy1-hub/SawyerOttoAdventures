@@ -15041,6 +15041,7 @@ function drawTransitPortal(){
   g.globalAlpha=1; g.restore();
 }
 function playIntroCutscene(onDone){
+  try{ getBus(); loadPortalBuf(); }catch(e){}   // decode portal.mp3 before first portal
   const vid   = document.getElementById('intro-cutscene');
   const black = document.getElementById('intro-black');
   const skip  = document.getElementById('intro-skip');
@@ -15073,7 +15074,7 @@ function playIntroCutscene(onDone){
     void transit.offsetWidth;
     startTransitFx();
     transit.style.opacity='1';
-    try{ introWhoosh(); }catch(e){}
+    try{ playPortalOpen(); }catch(e){}
     // Drop the video once the portal covers it.
     setTimeout(()=>{ try{ vid.pause(); vid.style.display='none'; }catch(e){} }, 900);
 
@@ -15101,8 +15102,8 @@ function playIntroCutscene(onDone){
       transit.style.pointerEvents='none';
       transit.removeEventListener('click', go);
       window.removeEventListener('keydown', onAdvKey, true);
-      // soft portal-release punctuation as the boys are flung through
-      try{ if(sfxOn){ beep(520,0.3,'sine',0.04,1400); noise(0.25,0.04); } }catch(e){}
+      // portal-open whoosh as the boys are flung through
+      try{ playPortalOpen(); }catch(e){}
       // Launch the level UNDER the portal, then dissolve it to reveal the entry
       // portal already yawning open — the boys are mid-tumble as it clears.
       cleanup();
