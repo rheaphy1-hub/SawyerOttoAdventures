@@ -595,7 +595,7 @@ const PHYS = {
 };
 // ---- Time-attack par thresholds (client-only). GENEROUS placeholders.
 //      A par = a competent-but-not-perfect clear, NOT a world record.
-const PAR_TIME  = {1:90000,2:105000,3:105000,4:120000,5:120000,6:135000}; // ms  // TODO tune par after real run data
+const PAR_TIME  = {1:90000,2:105000,3:110000,4:120000,5:125000,6:140000}; // ms — generous launch estimate, tune down later with telemetry
 const PAR_SCORE = {1:8000,2:9000,3:9000,4:9000,5:10000,6:12000};          // pts // TODO tune par after real run data
 let jumpBufferedAt = -1;   // Task 2a: simFrame of last ArrowUp press
 let simFrame = 0;          // Task 2a: monotonic fixed-step counter (incremented in loop())
