@@ -6921,7 +6921,7 @@ let _lastFrameT=0, _stepAccum=0;
 let _hudHit=[]; let _hudHover=-1;
 function drawTopControls(){
   const bw=30,bh=26,gap=6,n=3;
-  const totalW=n*bw+(n-1)*gap, x0=Math.round(W/2-totalW/2), y0=6;
+  const totalW=n*bw+(n-1)*gap, x0=92, y0=8;   // left-of-center gap: clear of left labels + centered item tray + right hearts/score
   const soundOn=(musicOn||sfxOn);
   const fns=[ ()=>restart(), ()=>togglePause(), ()=>toggleSound() ];
   _hudHit=[];
@@ -15008,7 +15008,7 @@ function playReturnHomeCutscene(onDone){
   const sfxBtn   = { x: MW-56,  y:10, w:48, h:42 };
   let musicHover = false, sfxHover = false;
   // How-to panel (portal-safe in-canvas help)
-  const howtoBtn  = { x: MW/2-90, y: MH-42, w:180, h:22 };
+  const howtoBtn  = { x: 14, y: 10, w:42, h:42 };   // top-left help (?), mirrors audio toggles
   const howtoBack = { x: MW/2-40, y: 274,   w:80,  h:34 };
   let howtoHover=false;
 
@@ -15361,15 +15361,15 @@ function playReturnHomeCutscene(onDone){
     if('letterSpacing' in c) c.letterSpacing='0px';
     c.restore();
 
-    // ── HOW TO PLAY button ──
+    // ── HELP ( ? ) button, top-left ──
     c.save(); c.textAlign='center';
-    c.fillStyle = howtoHover ? 'rgba(255,138,43,0.16)' : 'rgba(8,7,12,0.50)';
-    c.beginPath(); c.roundRect(howtoBtn.x,howtoBtn.y,howtoBtn.w,howtoBtn.h,6); c.fill();
-    c.lineWidth=1.5; c.strokeStyle = howtoHover ? '#FF8A2B' : 'rgba(255,138,43,0.55)';
-    c.beginPath(); c.roundRect(howtoBtn.x,howtoBtn.y,howtoBtn.w,howtoBtn.h,6); c.stroke();
+    c.fillStyle = howtoHover ? 'rgba(255,138,43,0.20)' : 'rgba(8,7,12,0.55)';
+    c.beginPath(); c.roundRect(howtoBtn.x,howtoBtn.y,howtoBtn.w,howtoBtn.h,8); c.fill();
+    c.lineWidth=2; c.strokeStyle = howtoHover ? '#FF8A2B' : 'rgba(255,138,43,0.6)';
+    c.beginPath(); c.roundRect(howtoBtn.x,howtoBtn.y,howtoBtn.w,howtoBtn.h,8); c.stroke();
     c.fillStyle = howtoHover ? '#FFD9A8' : '#E8C79A';
-    c.font='700 11px system-ui,sans-serif'; c.textBaseline='middle';
-    c.fillText('HOW TO PLAY', howtoBtn.x+howtoBtn.w/2, howtoBtn.y+howtoBtn.h/2+1);
+    c.font='700 22px system-ui,sans-serif'; c.textBaseline='middle';
+    c.fillText('?', howtoBtn.x+howtoBtn.w/2, howtoBtn.y+howtoBtn.h/2+1);
     c.restore();
 
     // ── Footer credit (neon sign, subtle flicker) ──
