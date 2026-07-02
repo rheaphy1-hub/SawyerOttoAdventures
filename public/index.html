@@ -299,9 +299,38 @@
   @media (orientation:landscape) and (max-height:560px){
     #menu-canvas{ width:min(calc(100vw - 8px), calc((100vh - 70px) * (680/360))); }
   }
+  /* ---- Rotate-to-landscape prompt (mobile portrait only) ---- */
+  #rotate-prompt{ display:none; position:fixed; inset:0; z-index:9999;
+    background:radial-gradient(120% 120% at 50% 40%,#171226 0%,#0a0712 70%,#060409 100%);
+    color:#F3E9FF; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:0 32px; font-family:Georgia,'Times New Roman',serif;
+    -webkit-user-select:none; user-select:none; }
+  @media (pointer:coarse) and (orientation:portrait){ #rotate-prompt{ display:flex; } }
+  #rotate-prompt .rp-phone{ width:74px; height:128px; border:4px solid #B79BFF;
+    border-radius:14px; position:relative; margin-bottom:34px;
+    box-shadow:0 0 26px rgba(170,120,255,0.5),inset 0 0 14px rgba(170,120,255,0.25);
+    animation:rp-rotate 2.4s ease-in-out infinite; }
+  #rotate-prompt .rp-phone::before{ content:''; position:absolute; left:50%; top:8px;
+    transform:translateX(-50%); width:22px; height:4px; border-radius:2px; background:#B79BFF; }
+  #rotate-prompt .rp-phone::after{ content:''; position:absolute; left:50%; bottom:7px;
+    transform:translateX(-50%); width:14px; height:14px; border-radius:50%;
+    border:2px solid #B79BFF; }
+  @keyframes rp-rotate{ 0%,18%{ transform:rotate(0deg); } 46%,72%{ transform:rotate(-90deg); }
+    100%{ transform:rotate(0deg); } }
+  #rotate-prompt h2{ margin:0 0 10px; font-size:22px; font-weight:900;
+    letter-spacing:.02em; text-shadow:0 0 18px rgba(170,120,255,0.55); }
+  #rotate-prompt p{ margin:0; font-size:15px; line-height:1.5; opacity:.82; max-width:280px; }
+  #rotate-prompt .rp-tag{ margin-top:26px; font-size:11px; letter-spacing:.18em;
+    text-transform:uppercase; opacity:.5; }
 </style>
 </head>
 <body>
+<div id="rotate-prompt" aria-hidden="true">
+  <div class="rp-phone"></div>
+  <h2>Rotate your device</h2>
+  <p>Sawyer &amp; Otto plays best in landscape. Turn your phone sideways to begin.</p>
+  <div class="rp-tag">Activities with Ryan</div>
+</div>
 <div class="menu-screen" id="menuScreen">
   <canvas id="menu-canvas" width="680" height="360"></canvas>
 </div>
@@ -596,6 +625,7 @@ const Portal = (()=>{
   }
   let poki=null, cg=null, adDepth=0, savM=true, savS=true, _gpActive=false;
   const syncAudio=()=>{ try{ if(!(musicOn&&sfxOn)) setPortalHum(0); }catch(e){}
+                        try{ if(!(musicOn&&sfxOn)&&thunderTrack){ thunderTrack.pause(); thunderTrack.currentTime=0; } }catch(e){}
                         try{ audioManager.syncVolume(); }catch(e){} };
   // save/restore the player's real mute prefs around an ad
   function adMute(on){
@@ -2034,9 +2064,13 @@ function sfx(name){ const b=SFXBANKS[currentLevel]; ((b&&b[name])||SFX[name]||((
 let portalBuf=null, _portalBufTried=false;
 function loadPortalBuf(){
   if(_portalBufTried || !audioCtx) return; _portalBufTried=true;
-  fetch('assets/portal.mp3').then(r=>{ if(!r.ok) throw 0; return r.arrayBuffer(); })
-    .then(a=>audioCtx.decodeAudioData(a)).then(b=>{ portalBuf=b; })
-    .catch(()=>{ portalBuf=null; });
+  const paths=['/audio/portal.mp3','assets/portal.mp3'];
+  (function tryNext(i){
+    if(i>=paths.length){ portalBuf=null; return; }
+    fetch(paths[i]).then(r=>{ if(!r.ok) throw 0; return r.arrayBuffer(); })
+      .then(a=>audioCtx.decodeAudioData(a)).then(b=>{ portalBuf=b; })
+      .catch(()=>tryNext(i+1));
+  })(0);
 }
 function playPortalOpen(){
   if(!sfxOn) return;
@@ -11650,11 +11684,13 @@ function updateGen(){
   if(currentLevel===5){
     thunderTimer--;
     if(thunderTimer<=0){
-      thunderTimer = 600 + Math.random()*600;
-      if(!thunderTrack) thunderTrack = new Audio('assets/thunder.mp3');
-      thunderTrack.currentTime=0;
-      thunderTrack.volume=0.35;   // turned down — was full volume
-      thunderTrack.play().catch(()=>{});
+      thunderTimer = 1800;   // every 30s @60fps
+      if(sfxOn && musicOn){   // respect mute button + ad-mute (Poki/CrazyGames)
+        if(!thunderTrack) thunderTrack = new Audio('assets/thunder.mp3');
+        thunderTrack.currentTime=0;
+        thunderTrack.volume=0.35;   // turned down — was full volume
+        thunderTrack.play().catch(()=>{});
+      }
     }
     if(lightT>0) lightT--;
     if(lightT<=0){ lightStrike=18; lightT=180+(Math.random()*240|0); }
@@ -15041,11 +15077,21 @@ function playIntroCutscene(onDone){
     // Drop the video once the portal covers it.
     setTimeout(()=>{ try{ vid.pause(); vid.style.display='none'; }catch(e){} }, 900);
 
-    const beats=[
-      'A portal appeared in their home, and two curious brothers leapt in.',
-      'The adventure turned to peril \u2014 only the transponder in each world opens the way back.'
+    // Two screens; each shows a lead line, then a second line fades in below it.
+    const screens=[
+      ['A portal opened in their home.','Two curious brothers jumped in.'],
+      ['Their adventure soon turned to peril.','Finding the portal transponder in each world is their only way home.']
     ];
-    const showBeat=(txt)=>{ if(ttext){ ttext.textContent=txt; void ttext.offsetWidth; ttext.style.opacity='1'; } };
+    const showScreen=(pair)=>{ if(!ttext) return;
+      ttext.innerHTML='<div style="display:flex;flex-direction:column;gap:16px;">'
+        +'<div class="ib-a" style="opacity:0;transition:opacity 1.4s ease;">'+pair[0]+'</div>'
+        +'<div class="ib-b" style="opacity:0;transition:opacity 1.4s ease;">'+pair[1]+'</div></div>';
+      void ttext.offsetWidth; ttext.style.opacity='1';
+      const a=ttext.querySelector('.ib-a'), b=ttext.querySelector('.ib-b');
+      requestAnimationFrame(()=>{ if(a) a.style.opacity='1'; });
+      timers.push(setTimeout(()=>{ if(b) b.style.opacity='1'; }, 1800));
+    };
+    const showBeat=showScreen;      // preserve name used below
     const hideBeat=()=>{ if(ttext) ttext.style.opacity='0'; };
     const timers=[];
 
@@ -15070,11 +15116,11 @@ function playIntroCutscene(onDone){
     transit.style.pointerEvents='auto';
     transit.addEventListener('click', go);
     window.addEventListener('keydown', onAdvKey, true);
-    timers.push(setTimeout(()=>showBeat(beats[0]), 1500));
-    timers.push(setTimeout(hideBeat,               4900));
-    timers.push(setTimeout(()=>showBeat(beats[1]), 6300));
-    timers.push(setTimeout(hideBeat,               9600));
-    timers.push(setTimeout(go,                     10800));
+    timers.push(setTimeout(()=>showBeat(screens[0]), 1500));
+    timers.push(setTimeout(hideBeat,                 6600));
+    timers.push(setTimeout(()=>showBeat(screens[1]), 8000));
+    timers.push(setTimeout(hideBeat,                 13400));
+    timers.push(setTimeout(go,                       14600));
   };
   const onEnded = ()=> end();
   const onErr   = ()=>{ cleanup(); onDone && onDone(); };
