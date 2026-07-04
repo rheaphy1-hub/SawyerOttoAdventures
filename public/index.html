@@ -59,12 +59,6 @@
     color:#FAEEDA; border-radius:6px; padding:4px 9px;
     font-size:13px; cursor:pointer; z-index:10; transition:background 0.2s; }
   #fs-btn:hover{ background:rgba(255,255,255,0.15); }
-  #privacy-btn{ position:fixed; top:8px; left:8px;
-    background:rgba(0,0,0,0.5); border:1px solid #5F5E5A;
-    color:#FAEEDA; border-radius:6px; padding:4px 9px;
-    font-size:13px; text-decoration:none; z-index:600;
-    transition:background 0.2s; }
-  #privacy-btn:hover{ background:rgba(255,255,255,0.15); }
   /* ---- On-screen touch controls (mobile / fullscreen landscape) ---- */
   #touch-controls{ display:none; position:absolute; inset:0; z-index:9; pointer-events:none;
     touch-action:none; }
@@ -453,8 +447,6 @@
     <div id="return-black" style="position:absolute;inset:0;background:#000;border-radius:10px;opacity:0;display:none;z-index:61;pointer-events:none;transition:opacity .5s ease;"></div>
     <div id="return-skip" style="position:absolute;bottom:14px;right:16px;z-index:62;display:none;color:#FAEEDA;font:600 13px system-ui,sans-serif;background:rgba(0,0,0,0.45);border:1px solid rgba(250,238,218,0.35);border-radius:20px;padding:6px 14px;cursor:pointer;user-select:none;letter-spacing:.04em;">Skip &#9654;&#9654;</div>
     <button id="fs-btn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
-    <a id="privacy-btn" href="https://sawyer-otto-adventures.vercel.app/privacy.html"
-       target="_blank" rel="noopener" title="Privacy Policy">&#x1F512;</a>
     <div id="touch-controls" aria-hidden="true">
       <div id="dpad">
         <button class="tcbtn" id="tc-up"    data-key="ArrowUp">&#9650;</button>
@@ -507,7 +499,7 @@
     <b>Goal:</b> grab collectibles for points, stomp or bonk enemies, and defeat each world's boss to advance.<br>
     <b>Power-ups:</b> collect <b>Baby Bottles</b> to shield Sawyer and unleash Otto's <b>Big Baby</b> rush.
   </div>
-  <div class="credit-line" style="text-align:center;padding:6px 0 2px;font-size:11px;color:#888;letter-spacing:0.04em;">A game by <b>Activities with Ryan</b></div>
+  <div class="credit-line" style="text-align:center;padding:6px 0 2px;font-size:11px;color:#888;letter-spacing:0.04em;">A game by <b>Activities with Ryan</b> &nbsp;&middot;&nbsp; <a href="https://sawyer-otto-adventures.vercel.app/privacy.html" target="_blank" rel="noopener" style="color:#888;text-decoration:underline;">Privacy</a></div>
 </div>
 
 <script>
