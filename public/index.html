@@ -138,6 +138,30 @@
   #canvas-container:fullscreen #revive-overlay-btn,
   #canvas-container:-webkit-full-screen #revive-overlay-btn{
     position:fixed; left:50%; top:54%; z-index:2147483647; }
+
+  /* ===== Whole-document fullscreen (the menu "capture" button fullscreens <html>,
+     so the menu AND the ensuing gameplay stay in one continuous session). Scale both
+     the menu canvas and the game canvas to fill the viewport, and hide page chrome
+     so screenshots/recordings are clean and truly full-screen. ===== */
+  html:fullscreen, html:-webkit-full-screen{ background:#111; }
+  html:fullscreen body, html:-webkit-full-screen body{ background:#111; }
+  /* hide title/level-buttons + footer legend during a fullscreen capture session */
+  html:fullscreen #game-header, html:-webkit-full-screen #game-header,
+  html:fullscreen #game-footer, html:-webkit-full-screen #game-footer,
+  html:fullscreen .legend,      html:-webkit-full-screen .legend{ display:none !important; }
+  /* menu screen fills the viewport, canvas scales up */
+  html:fullscreen #menuScreen, html:-webkit-full-screen #menuScreen{
+    background:#111; }
+  html:fullscreen #menu-canvas, html:-webkit-full-screen #menu-canvas{
+    width:auto; height:100vh; max-width:100vw; border-radius:0; }
+  /* gameplay fills the viewport, canvas scales up (mirrors #canvas-container:fullscreen) */
+  html:fullscreen #game-wrapper, html:-webkit-full-screen #game-wrapper{
+    padding:0; min-height:100vh; justify-content:center; }
+  html:fullscreen #canvas-container, html:-webkit-full-screen #canvas-container{
+    width:100vw; height:100vh; display:flex; align-items:center; justify-content:center; background:#111; }
+  html:fullscreen #canvas-container #game, html:-webkit-full-screen #canvas-container #game{
+    width:auto; height:100vh; max-width:100vw; border-radius:0; border:none; }
+
   
   /* ===== Level start window — translucent desert-highway neon sign ===== */
   .level-popup {
@@ -3326,21 +3350,27 @@ function respawnSpot(p){
     const plats=LV[6].platforms;
     const topLive=(pl)=> pl.y + astDriftY(pl) + (pl.giveY||0);   // matches resolveGen's topOf
     const probe=Math.max(0, Math.min((p.x!=null?p.x+p.w/2:cameraX+80), LV[6].worldW));
-    const camTop=cameraY-40, camBot=cameraY+H+40;
+    // Keep the landing rock well ABOVE the fall-death line so a bobbing rock can't dip
+    // Sawyer back off-screen the instant his i-frames end.
+    const camTop=cameraY-40, camBot=cameraY+H-60;
+    const minW=Math.max(56, p.w+34);                 // need real standing room on both sides of Sawyer
     const pick=(onScreenOnly)=>{
       let best=null, sc=Infinity;
       for(const pl of plats){
-        if(pl.w<40) continue;
+        if(pl.w<minW) continue;                      // skip rocks too narrow to center on safely
         const t=topLive(pl);
         if(onScreenOnly && (t<camTop || t>camBot)) continue;
-        const cxp=Math.max(pl.x+24, Math.min(pl.x+pl.w-24, probe));
-        const s=Math.abs(cxp-probe) - Math.min(pl.w,140)*0.25;   // nearest by X, nudge toward wider rocks
+        // score: nearest by X, but weight rock WIDTH heavily so we favour a roomy landing
+        const s=Math.abs(pl.x+pl.w/2-probe) - Math.min(pl.w,160)*0.6;
         if(s<sc){ sc=s; best=pl; }
       }
       return best;
     };
-    const best = pick(true) || pick(false) || plats[0];
-    const rx=Math.max(best.x+24, Math.min(best.x+best.w-24, probe));
+    const best = pick(true) || pick(false) || plats.filter(pl=>pl.w>=minW).sort((a,b)=>b.w-a.w)[0] || plats[0];
+    // Land near where Sawyer fell, but NEVER within `edge` px of a rim (rim landings are what
+    // slid him off during i-frames). On a rock too narrow to honor both margins, true-center him.
+    const edge=24, lo=best.x+edge, hi=best.x+best.w-edge-p.w;
+    const rx = (lo<=hi) ? Math.max(lo, Math.min(hi, probe-p.w/2)) : (best.x+best.w/2 - p.w/2);
     return {x:rx, y:topLive(best)-p.h, plat:best};
   }
   if(checkpoint) return {x:checkpoint.x, y:checkpoint.y-p.h};
