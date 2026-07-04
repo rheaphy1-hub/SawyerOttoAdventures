@@ -1220,7 +1220,7 @@ function initRelic(n){
   levelRelic = { x, y, w:20, h:26, got:false, bobT:Math.random()*6, level:n };
 }
 function updateRelic(){
-  const r=levelRelic; if(!r||r.got||r.level!==currentLevel) return;
+  const r=levelRelic; if(!r||r.got||r.hidden||r.level!==currentLevel) return;
   r.bobT+=0.06;
   const ry=r.y+Math.sin(r.bobT)*4;
   for(const p of [sawyer,otto]){
@@ -1237,7 +1237,7 @@ function updateRelic(){
   }
 }
 function drawRelic(){
-  const r=levelRelic; if(!r||r.got||r.level!==currentLevel) return;
+  const r=levelRelic; if(!r||r.got||r.hidden||r.level!==currentLevel) return;
   const sx=r.x-cameraX; if(sx<-60||sx>W+60) return;
   const d=RELIC_DEF[currentLevel], cx=sx+r.w/2, cy=r.y+Math.sin(r.bobT)*4+r.h/2;
   // TRULY HIDDEN: no radial beacon, no distance twinkle. The relic reads as a dim,
@@ -2637,6 +2637,7 @@ function resolve(p){
     }
   }
   p.standPlat = landed;
+  resolveCrates(p);
 }
 
 function groundAhead(p, dir){
@@ -2816,6 +2817,175 @@ function updateOtto(){
 //  08. MAIN UPDATE  (per-frame game logic)
 //      update(), respawn helpers, hurt()
 // =========================================================================
+// ══ CRATES — destructible solid props (Phase 1: Level 1 demo) ══════════════
+// Sawyer's fireballs shatter them; they're solid (jump on to clear hazards);
+// some hide a relic. Collision modeled on the L3 sea-worn barrel (land-on-top /
+// side-push). crates[] is empty on every non-L1 level, so all hooks no-op there.
+// ══ CRATES — destructible solid props (Phase 2: L1,2,3,5,6) ══════════════════
+// Sawyer's fireball shatters them; solid (jump on to clear hazards); some hide
+// loot (relic / heart / coins). Deterministic art per-level theme. Placement &
+// spread vary by level (config below). crates[] rebuilt per level; empty on L4.
+let crates = [];
+function buildCrates(){
+  crates = [];
+  const L=currentLevel;
+  const theme=({1:'wood',2:'ice',3:'driftwood',5:'darkcrate',6:'pod'})[L];
+  if(!theme) return;                                  // L4 (swim) + others: none
+  const mk=(x,y,hides,h)=>({x, y, w:32, h:h||32, hp:1, hides:hides||null, theme, ride:null, dead:false, flash:0});
+  const out=[];
+  if(L===1){
+    out.push(mk(560, FLOOR-30, 'coins', 30));
+    out.push(mk(560, FLOOR-60, null, 30));
+    out.push(mk(1120, FLOOR-32, 'relic'));
+    const onP=(px,h)=>{ const pl=platforms.find(p=>Math.abs(p.x-px)<2); if(pl) out.push(mk(pl.x+pl.w/2-16, pl.y-32, h)); };
+    onP(710,'heart'); onP(1210,'coins');
+  } else {
+    const plats = L===2?l2Platforms : L===3?l3Platforms : ((LV[L]&&LV[L].platforms)||[]);
+    const bad=p=>!p||p.bossPlatform||p.hidden||p.apex||p.artifactPerch||p.isLadder||(p.w||0)<70;
+    const moving=p=>!!(p.drift||p.dyn||p.floe||p.slide||p.kind==='slide');
+    const elevated=plats.filter(p=>!bad(p)&&p.y<FLOOR-40);
+    const ground  =plats.filter(p=>!bad(p)&&p.y>=FLOOR-4);
+    // per-level spread: distinct count / contents / placement mode
+    const CFG={
+      2:{n:3, mode:'high',       contents:['relic','heart','coins']},   // frozen: high-route reward
+      3:{n:4, mode:'lowcluster', contents:['coins','relic','coins','heart']}, // beach: clustered low loot
+      5:{n:3, mode:'spread',     contents:['relic','heart','coins']},   // haus: tucked, sparse
+      6:{n:3, mode:'high',       contents:['coins','relic','heart']}    // space: floating supply pods
+    }[L];
+    const mount=(pl,hides)=>{ const c=mk(pl.x+pl.w/2-16, pl.y-32, hides); if(moving(pl)) c.ride=pl; out.push(c); };
+    if(CFG.mode==='lowcluster' && ground.length){
+      for(let i=0;i<CFG.n;i++){
+        const seg=ground[Math.min(ground.length-1, 1+(i%Math.max(1,ground.length-1)))];
+        const off=Math.min(40+i*52, seg.w-40);
+        out.push(mk(seg.x+off, seg.y-32, CFG.contents[i]||''));
+      }
+    } else {
+      const pool=elevated.length?elevated:ground;
+      const used=new Set();
+      for(let i=0;i<CFG.n && pool.length;i++){
+        let idx=Math.floor(pool.length*(i+0.5)/CFG.n)%pool.length;   // even stride → spread out
+        let g=0; while(used.has(idx)&&g++<pool.length) idx=(idx+1)%pool.length;
+        used.add(idx); mount(pool[idx], CFG.contents[i]||'');
+      }
+    }
+  }
+  crates=out;
+  if(crates.some(c=>c.hides==='relic') && levelRelic && !levelRelic.got) levelRelic.hidden=true;
+}
+// Loot on shatter. Contents spawn on the crate's spot — never lost to a pit.
+function revealCrateContents(c){
+  const cx=c.x+c.w/2;
+  if(c.hides==='relic'){
+    if(levelRelic && levelRelic.hidden){ levelRelic.hidden=false; levelRelic.x=cx-levelRelic.w/2; levelRelic.y=c.y-2; levelRelic.bobT=0;
+      for(let i=0;i<12;i++) particles.push({x:cx,y:c.y,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:30,maxLife:30,type:'spark',color:'#C9B6FF'}); }
+  } else if(c.hides==='heart'){
+    heartSpawns++; hearts.push({ x:cx-7, y:c.y-14, bobT:0, pop:12, got:false });
+    for(let i=0;i<10;i++) particles.push({x:cx,y:c.y,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:24,maxLife:24,type:'heart'});
+  } else if(c.hides==='coins'){
+    score+=150; popPoints(cx,c.y-6,150,'#FFE08A');
+    for(let i=0;i<10;i++) particles.push({x:cx,y:c.y,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:24,maxLife:24,type:'spark',color:'#FFD27A'});
+  } else { score+=50; popPoints(cx,c.y-6,50,'#D8B37A'); }
+}
+// Solid collision — called at the tail of every ground engine's resolve(p).
+function resolveCrates(p){
+  for(const c of crates){
+    if(c.dead) continue;
+    if(c.ride){ c.x=c.ride.x+c.ride.w/2-16; c.y=c.ride.y-c.h; }   // ride moving ledges
+    const inX=p.x+p.w>c.x && p.x<c.x+c.w;
+    const wasAbove=(p.y+p.h-p.vy)<=c.y+2;
+    if(inX && wasAbove && p.y+p.h>=c.y && p.y+p.h<=c.y+c.h+10){
+      p.y=c.y-p.h; p.vy=0; p.onGround=true;
+    } else if(p.y+p.h>c.y+4 && p.y<c.y+c.h){
+      const fromLeft=(p.x+p.w/2)<(c.x+c.w/2);
+      if(fromLeft && p.x+p.w>c.x && p.x<c.x){ p.x=c.x-p.w; if(p.vx>0)p.vx=0; }
+      else if(!fromLeft && p.x<c.x+c.w && p.x+p.w>c.x+c.w){ p.x=c.x+c.w; if(p.vx<0)p.vx=0; }
+    }
+  }
+}
+// Shatter — only Sawyer's fireball breaks a crate. Returns true to consume the ball.
+function hitCrate(pr){
+  if(!(pr.owner && pr.owner.id==='sawyer' && pr.type==='ball')) return false;
+  for(const c of crates){
+    if(c.dead) continue;
+    if(pr.x>c.x-4 && pr.x<c.x+c.w+4 && pr.y>c.y-4 && pr.y<c.y+c.h+4){
+      c.flash=6;
+      if(--c.hp<=0){
+        c.dead=true; sfx('squash');
+        const dust = c.theme==='ice'?['#BFE6FF','#8CC8F0']: c.theme==='pod'?['#9AA0AA','#5A6470']: c.theme==='driftwood'?['#8A968F','#5E6A63']:['#8B5A2B','#C9975A'];
+        for(let i=0;i<16;i++){ const a=Math.random()*Math.PI*2, sp=1.5+Math.random()*4;
+          particles.push({x:c.x+c.w/2,y:c.y+c.h/2,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-2,life:26,maxLife:26,type:'dust',color:i%2?dust[0]:dust[1]}); }
+        revealCrateContents(c);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+// Themed crate art — deterministic (seed = world x). Three families: plank
+// (wood/driftwood/darkcrate), ice block, and metal supply pod. Whitens on hit.
+const CRATE_PAL={
+  wood:      {a:'#B98A4E',b:'#946434',c:'#63421F',seam:'rgba(50,32,14,0.6)',hi:'rgba(255,226,180,0.18)',grain:'rgba(60,38,16,0.30)',iron:['#6A645C','#33302B'],rivet:'#8A857C',rim:'rgba(255,236,196,0.22)'},
+  driftwood: {a:'#9AA6A0',b:'#6E7A74',c:'#454E49',seam:'rgba(30,38,34,0.6)',hi:'rgba(220,235,230,0.20)',grain:'rgba(40,50,46,0.35)',iron:['#6B7A72','#33403A'],rivet:'#C3D0CA',rim:'rgba(225,240,235,0.20)'},
+  darkcrate: {a:'#6E6660',b:'#4C463F',c:'#2E2A25',seam:'rgba(20,16,12,0.7)',hi:'rgba(180,168,150,0.16)',grain:'rgba(24,18,12,0.40)',iron:['#5A5048','#26201A'],rivet:'#9A8E7E',rim:'rgba(200,186,160,0.14)'}
+};
+function drawCrates(){
+  for(const c of crates){
+    if(c.dead) continue;
+    if(c.ride){ c.x=c.ride.x+c.ride.w/2-16; c.y=c.ride.y-c.h; }
+    const sx=c.x-cameraX, y=c.y, w=c.w, h=c.h; if(sx<-60||sx>W+60) continue;
+    if(c.flash>0) c.flash--;
+    const seed=(c.x*0.137)%1000;
+    ctx.save();
+    // contact shadow
+    ctx.fillStyle='rgba(0,0,0,0.30)'; ctx.beginPath(); ctx.ellipse(sx+w/2,y+h-1,w*0.55,5,0,0,Math.PI*2); ctx.fill();
+    if(c.theme==='ice'){
+      // translucent glacial block: cool gradient, internal cracks, frost rim, glint
+      const g=ctx.createLinearGradient(sx,y,sx,y+h); g.addColorStop(0,'#DCEFFF'); g.addColorStop(0.5,'#A9D4F2'); g.addColorStop(1,'#6FA8CE');
+      ctx.globalAlpha=0.92; ctx.fillStyle=g; ctx.fillRect(sx,y,w,h); ctx.globalAlpha=1;
+      ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=1.4; ctx.strokeRect(sx+1,y+1,w-2,h-2);
+      texCracks(sx+3,y+3,w-6,h-8,'rgba(255,255,255,0.5)',seed+3,3,0.8);
+      texCracks(sx+3,y+3,w-6,h-8,'rgba(120,170,210,0.45)',seed+9,2,0.6);
+      ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.moveTo(sx+5,y+4); ctx.lineTo(sx+11,y+4); ctx.lineTo(sx+7,y+9); ctx.closePath(); ctx.fill(); // glint
+      ctx.fillStyle='rgba(255,255,255,0.30)'; ctx.fillRect(sx+2,y+1,w-4,1.5);
+    } else if(c.theme==='pod'){
+      // metal supply pod: brushed panel, seam, corner bolts, status light
+      const g=ctx.createLinearGradient(sx,y,sx,y+h); g.addColorStop(0,'#8B929C'); g.addColorStop(0.5,'#666E78'); g.addColorStop(1,'#3C424B');
+      ctx.fillStyle=g; ctx.fillRect(sx,y,w,h);
+      ctx.strokeStyle='#2A2E34'; ctx.lineWidth=1.5; ctx.strokeRect(sx+1,y+1,w-2,h-2);
+      ctx.strokeStyle='rgba(200,210,222,0.35)'; ctx.lineWidth=1; ctx.strokeRect(sx+3,y+3,w-6,h-6);
+      ctx.strokeStyle='#2A2E34'; ctx.beginPath(); ctx.moveTo(sx+w/2,y+2); ctx.lineTo(sx+w/2,y+h-2); ctx.stroke(); // center seam
+      ctx.fillStyle='#B7C0CC'; for(const [bx,by] of [[sx+4,y+4],[sx+w-4,y+4],[sx+4,y+h-4],[sx+w-4,y+h-4]]){ ctx.beginPath(); ctx.arc(bx,by,1.3,0,Math.PI*2); ctx.fill(); }
+      const pulse=0.5+0.5*Math.sin(performance.now()*0.005+seed);
+      ctx.fillStyle='rgba(120,255,180,'+(0.5+pulse*0.5)+')'; ctx.beginPath(); ctx.arc(sx+w/2,y+h*0.5,2.2,0,Math.PI*2); ctx.fill(); // status light
+      ctx.fillStyle='rgba(230,240,255,0.20)'; ctx.fillRect(sx+2,y+1,w-4,1.5);
+    } else {
+      // PLANK family (wood / driftwood / darkcrate) — vertical planks, grain, iron
+      const P=CRATE_PAL[c.theme]||CRATE_PAL.wood;
+      const bg=ctx.createLinearGradient(sx,y,sx,y+h); bg.addColorStop(0,P.a); bg.addColorStop(0.5,P.b); bg.addColorStop(1,P.c);
+      ctx.fillStyle=bg; ctx.fillRect(sx,y,w,h);
+      const planks=3, pw=w/planks;
+      for(let i=1;i<planks;i++){ const px=sx+pw*i;
+        ctx.strokeStyle=P.seam; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(px,y+2); ctx.lineTo(px,y+h-2); ctx.stroke();
+        ctx.strokeStyle=P.hi; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(px+1,y+2); ctx.lineTo(px+1,y+h-2); ctx.stroke(); }
+      for(let i=0;i<planks;i++){ const px=sx+pw*i; ctx.strokeStyle=P.grain; ctx.lineWidth=0.6;
+        for(let gk=0;gk<2;gk++){ const gx=px+pw*(0.32+0.4*gk)+(tRand(seed+i*3+gk)-0.5)*3; ctx.beginPath();
+          for(let yy=y+2;yy<=y+h-2;yy+=5){ const off=Math.sin(yy*0.16+seed+i+gk*2)*1.3; yy===y+2?ctx.moveTo(gx+off,yy):ctx.lineTo(gx+off,yy); } ctx.stroke(); } }
+      texSpeckle(sx+2,y+2,w-4,h-4, 18, 'rgba(30,22,14,0.26)', seed+11, 1.0);
+      const bs=Math.min(9,w*0.28);
+      for(const [bx,by] of [[sx,y],[sx+w-bs,y],[sx,y+h-bs],[sx+w-bs,y+h-bs]]){
+        const bgr=ctx.createLinearGradient(bx,by,bx+bs,by+bs); bgr.addColorStop(0,P.iron[0]); bgr.addColorStop(1,P.iron[1]);
+        ctx.fillStyle=bgr; ctx.fillRect(bx,by,bs,3); ctx.fillRect(bx,by,3,bs);
+        ctx.fillStyle=P.rivet; ctx.beginPath(); ctx.arc(bx+1.6,by+1.6,1.1,0,Math.PI*2); ctx.fill(); }
+      const by2=y+h*0.5-2; const bgr2=ctx.createLinearGradient(sx,by2,sx,by2+5); bgr2.addColorStop(0,P.iron[0]); bgr2.addColorStop(1,P.iron[1]);
+      ctx.fillStyle=bgr2; ctx.fillRect(sx,by2,w,4);
+      ctx.fillStyle=P.rivet; for(let rx=sx+3;rx<sx+w-2;rx+=8){ ctx.beginPath(); ctx.arc(rx,by2+2,0.9,0,Math.PI*2); ctx.fill(); }
+      ctx.fillStyle=P.rim; ctx.fillRect(sx+2,y+1,w-4,1.5);
+    }
+    if(c.flash>0){ ctx.globalAlpha=c.flash/6*0.7; ctx.fillStyle='#fff'; ctx.fillRect(sx,y,w,h); ctx.globalAlpha=1; }
+    ctx.restore();
+  }
+}
+
 function update(){
   if (gameOver||won||levelPaused) return;
   const speed=3.1, s=sawyer;
@@ -3078,6 +3248,7 @@ function update(){
   for (const pr of projectiles){
     if (pr.type==='ball'){ pr.vy+=0.32; pr.spin+=0.4; }
     pr.x+=pr.vx; pr.y+=pr.vy; pr.life--;
+    if(hitCrate(pr)) continue;
     if (pr.type==='ball' && pr.y+pr.r>=FLOOR){ pr.y=FLOOR-pr.r; pr.vy*=-0.5; pr.vx*=0.7; }
     for (const e of enemies){
       if (!e.alive) continue;
@@ -7396,7 +7567,7 @@ function loop(){
   
   if(currentLevel===2){
     drawL2Bg(); cosmicGlow(); drawL2Platforms(); drawLadders('frozen'); drawL2Flag(); drawL2Rocks(); drawEmberStone(); drawL2Artifact();
-    drawL2Enemies(); drawIcicles(); drawRelic(); drawRelicToast(); drawCheckpoint();
+    drawL2Enemies(); drawIcicles(); drawCrates(); drawRelic(); drawRelicToast(); drawCheckpoint();
     if(snowWall>0.01) drawSnowWall();
     // Yeti + his combat FX render AFTER the whiteout so the blizzard never washes the boss out.
     drawYeti(); drawL2Boulders(); drawL2Shockwaves(); drawL2Stals(); drawProjectiles();
@@ -7404,16 +7575,16 @@ function loop(){
   } else if(currentLevel===3){
     drawL3BgFar(); cosmicGlow(); drawL3BgNear(); drawL3Platforms(); drawLadders('beach'); drawL3Flag(); drawL3Rocks();
     drawL3Artifact();
-    drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawRelic(); drawRelicToast(); drawCheckpoint();
+    drawL3Enemies(); drawL3Waves(); drawL3Arena(); drawL3SeaSwallow(); drawL3Shockwaves(); drawKingCrab(); drawVenom(); drawProjectiles(); drawCrates(); drawRelic(); drawRelicToast(); drawCheckpoint();
     drawL3BossWarning();
   } else if(currentLevel===4){
     drawSwimBg(); cosmicGlow(); drawSwimCurrents(); drawSwimTerrain(); drawSwimHazards(); drawSwimExit(); drawSwimPearls(); drawSwimClam(); drawRelic(); drawRelicToast();
     drawSwimEnemies(); drawSwimBossLyra(); drawSwimInk(); drawSwimMurk(); drawProjectiles(); drawRelicToast(); drawCheckpoint(); drawSwimBossWarning();
   } else if(currentLevel>=5&&currentLevel<=6){
     drawGenBg(); cosmicGlow(); drawGenPlatforms(); if(currentLevel===5)drawLadders('spooky'); if(currentLevel===6)drawBoostPads(); drawGenFlag(); drawGenRocks(); if(currentLevel===6){drawGenRings(); drawSpaceTransponder();}
-    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); drawL5HauntedFlame(); } drawRelic(); drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5){ drawL5TransponderWarning(); drawL5FlameWarning(); } if(currentLevel===6){ drawL6DroneToast(); } drawRelicToast();
+    drawGenEnemies(); drawGenBoss(); if(currentLevel===5){ drawHausAtticProps(); drawBratwurst(); drawL5Transponder(); drawL5HauntedFlame(); } drawCrates(); drawRelic(); drawVenom(); drawProjectiles(); drawCheckpoint(); if(currentLevel===5){ drawL5TransponderWarning(); drawL5FlameWarning(); } if(currentLevel===6){ drawL6DroneToast(); } drawRelicToast();
   } else {
-    drawBg(); cosmicGlow(); drawPlatforms(); drawLadders('desert'); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact();
+    drawBg(); cosmicGlow(); drawPlatforms(); drawLadders('desert'); drawBarrier(); drawTumbleweeds(); drawEscapePortal(FLAG.x - cameraX + 24, FLOOR-50, 34, portal.open, performance.now()*0.004); drawRocks(); drawArtifact(); drawCrates();
     drawEnemies(); drawBoss(); drawVenom(); drawProjectiles(); drawRelic(); drawRelicToast(); drawCheckpoint(); drawBossWind(); drawBossWarning();
   }
   
@@ -8483,6 +8654,7 @@ function updateLevel2(){
   for(const pr of projectiles){
     if(pr.type==='ball'){pr.vy+=0.32;pr.spin+=0.4;}
     pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
+    if(hitCrate(pr)) continue;
     if(pr.flame){
       // streaming ember trail + heat-shimmer sparks
       for(let q=0;q<2;q++) particles.push({x:pr.x-pr.vx*(0.3+q*0.4),y:pr.y-pr.vy*(0.3+q*0.4),vx:(Math.random()-.5)*1.4-pr.vx*0.12,vy:(Math.random()-.5)*1.4-pr.vy*0.12-0.3,life:16+Math.random()*8,maxLife:24,type:'spark',color:Math.random()<0.5?'#FF8A2A':(Math.random()<0.5?'#FFD27A':'#FF5018')});
@@ -8777,6 +8949,7 @@ function resolveL2(p){
       if(pl.kind==='crumble' && pl.state==='solid'){ pl.state='shaking'; pl.crackT=0; }
     }
   }
+  resolveCrates(p);
 }
 
 function groundAheadL2(p,dir){
@@ -9330,6 +9503,7 @@ function updateLevel3(){
   for(const pr of projectiles){
     if(pr.type==='ball'){pr.vy+=0.32;pr.spin=(pr.spin||0)+0.4;}
     pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
+    if(hitCrate(pr)) continue;
     if(pr.type==='ball'&&pr.y+pr.r>=FLOOR){pr.y=FLOOR-pr.r;pr.vy*=-0.5;pr.vx*=0.7;}
     for(const e of l3Enemies){
       if(!e.alive)continue;
@@ -9604,6 +9778,7 @@ function resolveL3(p){
       p.x+=pl.dx; p.y+=pl.dy;            // ride the raft's drift/bob
     }
   }
+  resolveCrates(p);
 }
 
 function groundAheadL3(p,dir){
@@ -11743,6 +11918,7 @@ function resolveGen(p){
       p.vy=0;p.onGround=true; p._standPlat=pl; if(giveOn) p._gp=pl;   // remember the rock we're riding
     }
   }
+  resolveCrates(p);
 }
 function groundAheadGen(p,dir){
   const probeX=p.x+p.w/2+dir*26, footY=p.y+p.h;
@@ -12062,6 +12238,7 @@ function updateGen(){
   for(const pr of projectiles){
     if(pr.type==='ball'){pr.vy+=0.32;pr.spin=(pr.spin||0)+0.4;}
     pr.x+=pr.vx;pr.y+=pr.vy;pr.life--;
+    if(hitCrate(pr)) continue;
     if(pr.type==='ball'&&pr.y+pr.r>=FLOOR){pr.y=FLOOR-pr.r;pr.vy*=-0.5;pr.vx*=0.7;}
     for(const e of lv.enemies){
       if(!e.alive)continue;
@@ -15075,6 +15252,7 @@ function buildLevelContent(n){
   else if(n===6){ buildLevel6(); }
   else { buildEnemies(); buildRocks(); buildBoss(); }
   initRelic(n); // Sprint G: hidden relic (skipped if already earned — getStars(n)&8)
+  buildCrates(); // Phase 1: destructible crates (L1)
   buildLadders(n); // Sprint: vertical climb — rebuild ladder rects on every level (re)load
   buildBottles();
   // Sprint J: reset per-session counters
