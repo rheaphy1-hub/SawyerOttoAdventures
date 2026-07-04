@@ -3343,11 +3343,21 @@ function safeRespawnX(){
 
 function respawnSpot(p){
   if(currentLevel===6){
+    const plats=LV[6].platforms;
+    // ── Boss-arena simplicity: once Sawyer is on/at the boss deck, always respawn him on
+    //    solid ground at the near (left) edge of the arena. No drifting-rock guesswork. ──
+    const deck=plats.filter(pl=>pl.y===FLOOR).sort((a,b)=>b.w-a.w)[0];   // widest floor plat = boss deck
+    const onDeck = deck && p.x!=null && (p.x + (p.w||0)/2) >= deck.x;
+    if(deck && onDeck){
+      const spires=plats.filter(pl=>pl.arenaRock).sort((a,b)=>a.x-b.x);
+      const edgeX = spires.length ? spires[0].x - 70 : deck.x + 60;   // just left of the first spire
+      const rx = Math.max(deck.x + 30, Math.min(edgeX, deck.x + deck.w - p.w - 30));
+      return {x:rx, y:FLOOR - p.h, plat:deck};
+    }
     // Asteroids DRIFT (astDriftY) and give under low-g, and the camera scrolls vertically.
     // Old code placed Sawyer at a rock's *raw* y from a fixed cameraX+80 probe, so respawn
     // often dropped him mid-air beside a narrow moving rock -> he slid off -> lost a 2nd heart.
     // Now: probe at Sawyer's real X, use each rock's LIVE top, and prefer on-screen, wide rocks.
-    const plats=LV[6].platforms;
     const topLive=(pl)=> pl.y + astDriftY(pl) + (pl.giveY||0);   // matches resolveGen's topOf
     const probe=Math.max(0, Math.min((p.x!=null?p.x+p.w/2:cameraX+80), LV[6].worldW));
     // Keep the landing rock well ABOVE the fall-death line so a bobbing rock can't dip
@@ -11151,9 +11161,9 @@ const LV = {
           primary:'#00FF00', secondary:'#00CCFF', tertiary:'#FFFF00',
           r1:'#FFD700', r2:'#00CCFF', r3:'#FFFF00', pit:'#000008' },
     boss:{ name:'Nexus Nine', tag:'🛰 NEXUS NINE', rage:'🛰 NEXUS NINE — OVERCLOCKED',
-           hp:18, vx1:2.0, vx2:2.9, spit1:50, spit2:35, n1:3, n2:5,
+           hp:18, vx1:2.0, vx2:2.9, spit1:50, spit2:35, n1:3, n2:4,
            drones:{ count:4, orbitR:78, orbitSpd:0.03 },
-           beam:{ chargeWarn:78, sweepDur:82, sweepArc:Math.PI*0.6, width:14, dmg:true, cooldown:255, safeSide:true },
+           beam:{ chargeWarn:104, sweepDur:104, sweepArc:Math.PI*0.48, width:11, dmg:true, cooldown:330, safeSide:true, reach:340 },
            proj:'#FFFF00', body:'#00CCFF', limb:'#FFD700', eye:'#00FFFF', aura:'rgba(0,204,255,0.35)' },
     audio:'audio/L6probed.mp3'
   }
@@ -12268,12 +12278,12 @@ function updateGen(){
         if(!boss.casting && boss.animName!=='sword'){ boss.casting=true; boss.castFired=false; boss.animName='magic'; boss.animFrame=0; boss.animAcc=0; }
         else if(boss.animName==='sword'){ boss.actionTimer=20; } };  // retry shortly after the swing resolves
       const doPlasma=()=>{
-        const l6=currentLevel===6, spd=l6?6.8:5.4;
+        const l6=currentLevel===6, spd=l6?5.8:5.4;
         const cnt=(boss.phaseIndex?bc.n2:bc.n1);
         const sx=boss.x+boss.w/2, sy=boss.y+boss.h*0.4;
         const baseA=Math.atan2((s.y+s.h/2)-sy,(s.x+s.w/2)-sx);
         for(let k=0;k<cnt;k++){
-          const spread=(cnt>1)?((k-(cnt-1)/2)*(l6?0.10:0.18)):0;
+          const spread=(cnt>1)?((k-(cnt-1)/2)*(l6?0.16:0.18)):0;
           const a=baseA+spread;
           const b={x:sx,y:sy,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd+(l6?0:-1.0),life:l6?90:120,r:6,col:bc.proj};
           if(l6){ b.plasma=true; if(boss.phaseIndex===1&&(k===0||k===cnt-1)) b.ricochet=true; }  // outer bolts ricochet in P2
@@ -12318,7 +12328,7 @@ function updateGen(){
                     boss.beamDir  = onRight ? 1 : -1;
                     sfx('beamCharge'); }):doPlasma}];  // beam busy → plasma
           }
-          boss.actionTimer=boss.phaseIndex?40+Math.random()*25:55+Math.random()*35;
+          boss.actionTimer=boss.phaseIndex?(currentLevel===6?58:40)+Math.random()*25:55+Math.random()*35;
         }
         bossDecide(boss,list);
       }
@@ -12379,7 +12389,7 @@ function updateGen(){
             if(bm.dmg && s.invincible===0 && !boss.beamHit){
               const pdx=(s.x+s.w/2)-ccx, pdy=(s.y+s.h/2)-ccy;
               const along=pdx*Math.cos(ang)+pdy*Math.sin(ang);
-              if(along>0){ const perp=Math.abs(-pdx*Math.sin(ang)+pdy*Math.cos(ang));
+              if(along>0 && along<(bm.reach||1e9)){ const perp=Math.abs(-pdx*Math.sin(ang)+pdy*Math.cos(ang));
                 if(perp<bm.width){ hurt(s); boss.beamHit=true; } }
             }
             boss.beamTimer--;
@@ -14552,7 +14562,7 @@ function drawGenBoss(){
     }
     // ── L6 NEXUS overclock beam: reserved telegraph + sweeping scream-of-light ──
     if(currentLevel===6 && boss.alive && boss.active && boss.overclock){
-      const bm=lv.boss.beam, ccx=bx+boss.w/2, ccy=by+boss.h/2, LEN=760;
+      const bm=lv.boss.beam, ccx=bx+boss.w/2, ccy=by+boss.h/2, LEN=(bm.reach||760);
       if(boss.beamState==='charge'){
         const t=1-(boss.beamTimer/bm.chargeWarn), a0=boss.beamAng0, dir=(boss.beamDir||1), a1=a0+dir*bm.sweepArc;
         const pulse=0.4+0.6*Math.abs(Math.sin(performance.now()*0.02));
