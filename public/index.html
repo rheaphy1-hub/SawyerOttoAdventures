@@ -2877,7 +2877,7 @@ function update(){
     if (bikeEscape.timer <= 0){
       victoryActive = true;
       victoryTimer = 300;
-      sawyer.cheer=180; otto.cheer=180;
+      
       recordLevelClear(currentLevel);
       bikeEscape.active = false;
       bikeEscape.phase = 'idle';
@@ -3279,7 +3279,7 @@ function update(){
   // win at flag (L1) — only once the portal is open enough to step through
   if (!victoryActive && portal.open>0.55 && s.x+s.w > FLAG.x+10 && s.x < FLAG.x+90 && s.y+s.h >= FLOOR-10){
     if (!boss || !boss.alive){
-      victoryActive = true; victoryTimer = 360; sawyer.cheer=180; otto.cheer=180;
+      victoryActive = true; victoryTimer = 360; 
       recordLevelClear(currentLevel);
       s.vx = 0; s.vy = 0; s.facing = 1;
       otto.vx = 0; otto.vy = 0; otto.facing = 1;
@@ -3898,36 +3898,6 @@ function drawPlayer(p){
       if (p.onGround) drawY += Math.sin(t / 900) * 0.8;
     }
 
-    // ── SPRINT H+I: victory cheer — both brothers celebrate on-level.
-    //    1.2x scale about the feet, bobbing, arms raised, periodic star-burst. ──
-    if (p.cheer > 8){
-      p.cheer--;
-      drawY = py - 3 - Math.abs(Math.sin(p.cheer*0.3))*4;
-      const fcx = px + p.w/2, fcy = py + p.h;
-      ctx.save();
-      ctx.translate(fcx, fcy); ctx.scale(1.2, 1.2); ctx.translate(-fcx, -fcy);
-      if(!drawCharSprite(p, drawY)){ p.baby ? drawBaby(px, drawY, p) : drawBoy(px, drawY, p); }
-      // raised arms
-      ctx.strokeStyle = p.skin || '#E8B98A'; ctx.lineWidth = p.baby?3:4; ctx.lineCap='round';
-      ctx.beginPath(); ctx.moveTo(px+4, drawY+(p.baby?14:20)); ctx.lineTo(px-3, drawY+(p.baby?4:6)); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(px+p.w-4, drawY+(p.baby?14:20)); ctx.lineTo(px+p.w+3, drawY+(p.baby?4:6)); ctx.stroke();
-      ctx.restore();
-      // star-burst every ~12 frames
-      if (p.cheer % 12 === 0){
-        ctx.save(); ctx.fillStyle='#FFD700'; ctx.globalAlpha=0.9;
-        for(let i=0;i<5;i++){
-          const a=(p.cheer*0.5)+i*1.257, r=16+(i%2)*7;
-          const sx=fcx+Math.cos(a)*r, sy=drawY-6+Math.sin(a)*r*0.6;
-          ctx.beginPath();
-          for(let k=0;k<5;k++){ const sa=k*1.257-1.57+a; const sr=k%2?1.2:3;
-            ctx.lineTo(sx+Math.cos(sa)*sr, sy+Math.sin(sa)*sr); }
-          ctx.closePath(); ctx.fill();
-        }
-        ctx.restore();
-      }
-      ctx.globalAlpha = 1;
-      return;
-    }
     // Cheer bounce for Otto (kill-hop, cheer<=8)
     if (p.baby && otto.cheer > 0){
       const cheerProg = 1 - (otto.cheer / 8);
@@ -8364,7 +8334,7 @@ function updateLevel2(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L2_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; 
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -8732,7 +8702,7 @@ function updateLevel2(){
   if(!victoryActive && l2Portal.open>0.55 && s.x+s.w>L2_FLAG.x+10 && s.x<L2_FLAG.x+90 && s.y+s.h>=FLOOR-10){
     if(!yeti || !yeti.alive){
       saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
-      victoryActive = true; victoryTimer = 360; sawyer.cheer=180; otto.cheer=180;
+      victoryActive = true; victoryTimer = 360; 
       s.vx=0; s.vy=0; s.facing=1;
       otto.vx=0; otto.vy=0; otto.facing=1;
       sfx('portalEnter'); sfx('win');
@@ -9234,7 +9204,7 @@ function updateLevel3(){
       cameraX=Math.max(0,Math.min(bikeEscape.x-W/3,L3_WORLD_W-W));
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; 
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -9555,7 +9525,7 @@ function updateLevel3(){
   if(!victoryActive&&s.x+s.w>L3_FLAG.x+10&&s.x<L3_FLAG.x+90&&s.y+s.h>=FLOOR-10){
     if(!kingCrab||!kingCrab.alive){
       saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
-      victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
+      victoryActive=true; victoryTimer=360; 
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
       sfx('portalEnter'); sfx('win');
@@ -11931,7 +11901,7 @@ function updateGen(){
       }
     }
     if(bikeEscape.timer<=0){
-      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
+      saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; 
       bikeEscape.active=false; bikeEscape.phase='idle';
     }
     document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
@@ -12514,7 +12484,7 @@ function updateGen(){
   if(!victoryActive&&s.x+s.w>flagX+10&&s.x<flagX+90&&s.y+s.h>=FLOOR-10){
     if(!boss||!boss.alive){
       saveBestScore(currentLevel,score); recordLevelClear(currentLevel);
-      victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180;
+      victoryActive=true; victoryTimer=360; 
       s.vx=0;s.vy=0;s.facing=1;
       o.vx=0;o.vy=0;o.facing=1;
       sfx('portalEnter'); sfx('win');
@@ -12969,7 +12939,7 @@ function updateSwim(){
   // ---- Exit beacon / win ----
   const exitX=lv.worldW-120;
   if(!victoryActive && s.x+s.w>exitX-30 && (!boss||!boss.alive)){
-    saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360; sawyer.cheer=180; otto.cheer=180; sfx('portalEnter'); sfx('win');
+    saveBestScore(currentLevel,score); recordLevelClear(currentLevel); victoryActive=true; victoryTimer=360;  sfx('portalEnter'); sfx('win');
     for(let i=0;i<24;i++) particles.push({x:exitX,y:SY+40+Math.random()*120,vx:(Math.random()-.5)*2,vy:-1-Math.random()*2,life:40,maxLife:40,type:'spark',color:lv.pal.secondary});
   }
   document.getElementById('score-display').innerHTML='Score: '+score+' &nbsp;|&nbsp; &#10084;&#65039; '+lives;
