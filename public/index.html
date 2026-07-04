@@ -521,7 +521,7 @@
     <span id="score-display">Score: 0 &nbsp;|&nbsp; &#10084;&#65039; 5</span>
     <span class="ctrls">
       <kbd>&larr;</kbd><kbd>&rarr;</kbd> Move &nbsp; <kbd>&uarr;</kbd> Jump &nbsp;
-      <kbd>&darr;</kbd> Dive &nbsp; <kbd>Space</kbd> Throw ball
+      <kbd>&darr;</kbd> Dive &nbsp; <kbd>Space</kbd> Throw ball &nbsp; <kbd>X</kbd> Big Baby
     </span>
   </div>
 
@@ -529,7 +529,7 @@
     <b>You are Sawyer</b> &mdash; run, jump, and throw to clear each world. You start with 5 hearts; lose them all and it's game over.<br>
     <b>Otto, your baby brother,</b> follows on his own, hops along behind you, and spits milk at any critter that gets close. He can't be hurt &mdash; only Sawyer loses hearts.<br>
     <b>Goal:</b> grab collectibles for points, stomp or bonk enemies, and defeat each world's boss to advance.<br>
-    <b>Power-ups:</b> collect <b>Baby Bottles</b> to shield Sawyer and unleash Otto's <b>Big Baby</b> rush.
+    <b>Power-ups:</b> collect <b>Baby Bottles</b> to shield Sawyer. Scoring (bonking enemies, grabbing collectibles) charges Otto's <b>Big Baby</b> meter under the hearts &mdash; when it's full, press <b>X</b> (or the <b>&#128165;</b> button on touch) to unleash a screen-clearing rush that plows through enemies and hazards.
   </div>
   <div class="credit-line" style="text-align:center;padding:6px 0 2px;font-size:11px;color:#888;letter-spacing:0.04em;">A game by <b>Activities with Ryan</b> &nbsp;&middot;&nbsp; <a href="https://sawyer-otto-adventures.vercel.app/privacy.html" target="_blank" rel="noopener" style="color:#888;text-decoration:underline;">Privacy</a></div>
 </div>
@@ -6760,7 +6760,7 @@ function drawHUD(){
       c.textAlign='right'; c.font='800 10px system-ui,-apple-system,sans-serif';
       c.fillStyle=`rgba(255,225,120,${0.6+0.4*pulse})`;
       c.shadowColor='rgba(255,200,80,0.6)'; c.shadowBlur=6;
-      c.fillText(hint, rightX, by+bh+11);
+      c.fillText(hint, bx-6, by+bh);   // LEFT of the bar, on the meter's row — clear of SCORE below
       c.shadowBlur=0;
     }
   }
@@ -6776,19 +6776,26 @@ function drawHUD(){
   c.fillText(txt, rightX, sy);
   // Live time-attack timer — small/secondary, only while a level is actively running
   if(gameRunning && !levelPaused && !victoryActive && !cutsceneActive && !finishCardActive && !nameEntryActive){
-    const _tms=Math.max(0,simFrame-levelStartFrame)/60*1000, _tt=fmtTime(_tms), _ty=sy+18;
+    // Interpolate the fractional progress toward the next sim step so centiseconds advance
+    // evenly every rendered frame instead of jumping by whole sim-frame increments.
+    const _sub=Math.max(0,Math.min(1,_stepAccum/STEP_MS));
+    const _tms=Math.max(0,(simFrame-levelStartFrame)+_sub)/60*1000, _tt=fmtTime(_tms), _ty=sy+18;
+    // Monospaced (tabular) figures keep the digits at a fixed width so the number doesn't
+    // wobble horizontally frame-to-frame as fast-changing digits change glyph widths.
+    const _monoT='800 12px ui-monospace,"SF Mono",Menlo,Consolas,monospace';
+    const _monoP='800 10px ui-monospace,"SF Mono",Menlo,Consolas,monospace';
     c.shadowBlur=0; c.textAlign='right'; c.lineWidth=3; c.lineJoin='round'; c.strokeStyle='rgba(6,4,18,0.9)';
     // Task 2b: PAR readout — subordinate to timer; level accent while under par, 45% gray once exceeded
     const _par=PAR_TIME[currentLevel]||0; let _pw=0;
     if(_par){
       const _ps=' / PAR '+fmtTimeShort(_par);
-      c.font='800 10px system-ui,-apple-system,sans-serif';
+      c.font=_monoP;
       _pw=c.measureText(_ps).width;
       c.strokeText(_ps, rightX, _ty);
       c.fillStyle=(_tms<=_par) ? ((LEVEL_META[currentLevel]||{}).accent||'#FFD700') : 'rgba(150,150,150,0.45)';
       c.fillText(_ps, rightX, _ty);
     }
-    c.font='800 12px system-ui,-apple-system,sans-serif';
+    c.font=_monoT;
     c.strokeText(_tt, rightX-_pw, _ty);
     c.fillStyle='rgba(222,212,255,0.92)'; c.fillText(_tt, rightX-_pw, _ty);
   }
@@ -7642,14 +7649,14 @@ function loop(){
   ctx.fillText('SAWYER', 12, 30);
   ctx.font = '12px system-ui,sans-serif';
   ctx.fillStyle = '#5A8FC7';
-  ctx.fillText('the explorer', 12, 45);
+  ctx.fillText('Big Brother', 12, 45);
   
   ctx.font = 'bold 14px system-ui,sans-serif';
   ctx.fillStyle = '#B5D4F4';
   ctx.fillText('+ OTTO', 12, 65);
   ctx.font = '12px system-ui,sans-serif';
   ctx.fillStyle = '#8BA8C7';
-  ctx.fillText('baby buddy', 12, 80);
+  ctx.fillText('Baby Bro', 12, 80);
   
   ctx.restore();
   drawHUD();
