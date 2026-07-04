@@ -3347,8 +3347,9 @@ function respawnSpot(p){
     // ── Boss-arena simplicity: once Sawyer is on/at the boss deck, always respawn him on
     //    solid ground at the near (left) edge of the arena. No drifting-rock guesswork. ──
     const deck=plats.filter(pl=>pl.y===FLOOR).sort((a,b)=>b.w-a.w)[0];   // widest floor plat = boss deck
+    const bossFight = (typeof boss!=='undefined' && boss && boss.active);
     const onDeck = deck && p.x!=null && (p.x + (p.w||0)/2) >= deck.x;
-    if(deck && onDeck){
+    if(deck && (bossFight || onDeck)){
       const spires=plats.filter(pl=>pl.arenaRock).sort((a,b)=>a.x-b.x);
       const edgeX = spires.length ? spires[0].x - 70 : deck.x + 60;   // just left of the first spire
       const rx = Math.max(deck.x + 30, Math.min(edgeX, deck.x + deck.w - p.w - 30));
