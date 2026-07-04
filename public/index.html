@@ -2888,6 +2888,18 @@ function revealCrateContents(c){
     for(let i=0;i<10;i++) particles.push({x:cx,y:c.y,vx:(Math.random()-.5)*4,vy:-2-Math.random()*3,life:24,maxLife:24,type:'spark',color:'#FFD27A'});
   } else { score+=50; popPoints(cx,c.y-6,50,'#D8B37A'); }
 }
+// Ground-enemy vs crate: crates are solid obstacles for enemies too — turn around
+// on contact instead of clipping through. Called once per enemy per frame.
+function blockEnemyByCrates(e){
+  for(const c of crates){
+    if(c.dead) continue;
+    if(e.y+e.h<=c.y+2 || e.y>=c.y+c.h-2) continue;      // not vertically overlapping the block
+    if(e.x+e.w>c.x && e.x<c.x+c.w){
+      if(e.x < c.x){ e.x=c.x-e.w; e.facing=-1; if(e.vx>0) e.vx=-Math.abs(e.vx); }
+      else { e.x=c.x+c.w; e.facing=1; if(e.vx<0) e.vx=Math.abs(e.vx); }
+    }
+  }
+}
 // Solid collision — called at the tail of every ground engine's resolve(p).
 function resolveCrates(p){
   for(const c of crates){
@@ -8683,6 +8695,7 @@ function updateLevel2(){
     } else {
       if(e.x<e.plat.x||e.x+e.w>e.plat.x+e.plat.w){e.facing*=-1;e.vx*=-1;e.x=Math.max(e.plat.x,Math.min(e.x,e.plat.x+e.plat.w-e.w));}
     }
+    blockEnemyByCrates(e);
 
     if(s.invincible===0&&s.x+s.w-4>e.x&&s.x+4<e.x+e.w&&s.y+s.h-4>e.y&&s.y+4<e.y+e.h){
       if(s.vy>1&&s.y+s.h-s.vy<=e.y+8){
