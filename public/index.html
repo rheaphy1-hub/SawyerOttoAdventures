@@ -59,6 +59,13 @@
     color:#FAEEDA; border-radius:6px; padding:4px 9px;
     font-size:13px; cursor:pointer; z-index:10; transition:background 0.2s; }
   #fs-btn:hover{ background:rgba(255,255,255,0.15); }
+  /* Title-menu fullscreen (capture/screenshots); hidden in portal embed like #fs-btn */
+  body.embed-mode #menu-fs-btn{ display:none; }
+  #menu-fs-btn{ position:absolute; top:14px; right:14px;
+    background:rgba(0,0,0,0.5); border:1px solid #5F5E5A;
+    color:#FAEEDA; border-radius:6px; padding:5px 11px;
+    font-size:15px; line-height:1; cursor:pointer; z-index:20; transition:background 0.2s; }
+  #menu-fs-btn:hover{ background:rgba(255,255,255,0.15); }
   /* ---- On-screen touch controls (mobile / fullscreen landscape) ---- */
   #touch-controls{ display:none; position:absolute; inset:0; z-index:9; pointer-events:none;
     touch-action:none; }
@@ -343,6 +350,7 @@
 </div>
 <div class="menu-screen" id="menuScreen">
   <canvas id="menu-canvas" width="680" height="360"></canvas>
+  <button id="menu-fs-btn" onclick="toggleMenuFullscreen()" title="Fullscreen (for capture)" aria-label="Fullscreen">&#x26F6;</button>
 </div>
 <div id="level-popup" class="level-popup" style="display:none">
   <div class="popup-content theme-desert">
@@ -2233,13 +2241,24 @@ function toggleFullscreen(){
     btn.innerHTML = '&#x26F6;';
   }
 }
+// Title-menu fullscreen: fullscreens the whole page so the menu AND ensuing gameplay
+// stay captured in one continuous fullscreen session (for screenshots / recording).
+function toggleMenuFullscreen(){
+  const el = document.documentElement;
+  const btn = document.getElementById('menu-fs-btn');
+  const active = document.fullscreenElement || document.webkitFullscreenElement;
+  try{
+    if(!active){ (el.requestFullscreen||el.webkitRequestFullscreen).call(el); if(btn)btn.innerHTML='&#x2715;'; }
+    else { (document.exitFullscreen||document.webkitExitFullscreen).call(document); if(btn)btn.innerHTML='&#x26F6;'; }
+  }catch(e){}
+}
 document.addEventListener('fullscreenchange', () => {
-  const btn = document.getElementById('fs-btn');
-  if (!document.fullscreenElement) btn.innerHTML = '&#x26F6;';
+  const btn = document.getElementById('fs-btn'); if(btn && !document.fullscreenElement) btn.innerHTML = '&#x26F6;';
+  const mb = document.getElementById('menu-fs-btn'); if(mb && !document.fullscreenElement) mb.innerHTML = '&#x26F6;';
 });
 document.addEventListener('webkitfullscreenchange', () => {
-  const btn = document.getElementById('fs-btn');
-  if (!document.webkitFullscreenElement) btn.innerHTML = '&#x26F6;';
+  const btn = document.getElementById('fs-btn'); if(btn && !document.webkitFullscreenElement) btn.innerHTML = '&#x26F6;';
+  const mb = document.getElementById('menu-fs-btn'); if(mb && !document.webkitFullscreenElement) mb.innerHTML = '&#x26F6;';
 });
 
 function closeLevelPopup(){
@@ -3300,11 +3319,29 @@ function safeRespawnX(){
 
 function respawnSpot(p){
   if(currentLevel===6){
-    const plats=LV[6].platforms.slice().sort((a,b)=>a.x-b.x);
-    const probe=cameraX+80; let best=plats[0], bd=Infinity;
-    for(const pl of plats){ if(pl.w<40)continue; const cxp=Math.max(pl.x+24,Math.min(pl.x+pl.w-24,probe)); const d=Math.abs(cxp-probe); if(d<bd){bd=d;best=pl;} }
-    const rx=Math.max(best.x+24,Math.min(best.x+best.w-24,probe));
-    return {x:rx, y:best.y-p.h-4};
+    // Asteroids DRIFT (astDriftY) and give under low-g, and the camera scrolls vertically.
+    // Old code placed Sawyer at a rock's *raw* y from a fixed cameraX+80 probe, so respawn
+    // often dropped him mid-air beside a narrow moving rock -> he slid off -> lost a 2nd heart.
+    // Now: probe at Sawyer's real X, use each rock's LIVE top, and prefer on-screen, wide rocks.
+    const plats=LV[6].platforms;
+    const topLive=(pl)=> pl.y + astDriftY(pl) + (pl.giveY||0);   // matches resolveGen's topOf
+    const probe=Math.max(0, Math.min((p.x!=null?p.x+p.w/2:cameraX+80), LV[6].worldW));
+    const camTop=cameraY-40, camBot=cameraY+H+40;
+    const pick=(onScreenOnly)=>{
+      let best=null, sc=Infinity;
+      for(const pl of plats){
+        if(pl.w<40) continue;
+        const t=topLive(pl);
+        if(onScreenOnly && (t<camTop || t>camBot)) continue;
+        const cxp=Math.max(pl.x+24, Math.min(pl.x+pl.w-24, probe));
+        const s=Math.abs(cxp-probe) - Math.min(pl.w,140)*0.25;   // nearest by X, nudge toward wider rocks
+        if(s<sc){ sc=s; best=pl; }
+      }
+      return best;
+    };
+    const best = pick(true) || pick(false) || plats[0];
+    const rx=Math.max(best.x+24, Math.min(best.x+best.w-24, probe));
+    return {x:rx, y:topLive(best)-p.h, plat:best};
   }
   if(checkpoint) return {x:checkpoint.x, y:checkpoint.y-p.h};
   return {x:safeRespawnX(), y:FLOOR-p.h-4};
@@ -3334,6 +3371,11 @@ function hurt(p, reposition){
     // Fall/pit death — relocate to checkpoint or nearest safe ground.
     const sp = respawnSpot(p);
     p.x=sp.x; p.y=sp.y; p.vx=0; p.vy=-4;
+    if(currentLevel===6 && sp.plat){
+      // Land squarely ON the drifting asteroid and grab it, no upward bounce that would
+      // carry Sawyer off a narrow moving rock and immediately cost a second heart.
+      p.vy=0; p.onGround=true; p._gp=sp.plat; p._standPlat=sp.plat;
+    }
   } else {
     // Enemy/projectile hit — stay put, small knockback away from facing.
     p.vx = -p.facing * 3.2; p.vy = -3.2;
