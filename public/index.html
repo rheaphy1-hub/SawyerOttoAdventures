@@ -12329,7 +12329,7 @@ function updateGen(){
                     boss.beamDir  = onRight ? 1 : -1;
                     sfx('beamCharge'); }):doPlasma}];  // beam busy → plasma
           }
-          boss.actionTimer=boss.phaseIndex?(currentLevel===6?58:40)+Math.random()*25:55+Math.random()*35;
+          boss.actionTimer=(currentLevel===6)?((boss.phaseIndex?90:78)+Math.random()*30):(boss.phaseIndex?40+Math.random()*25:55+Math.random()*35);
         }
         bossDecide(boss,list);
       }
