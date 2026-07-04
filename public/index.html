@@ -35,12 +35,22 @@
     #canvas-container{ width:min(calc(100vw - 8px), calc((100vh - 70px) * (680/360))); }
   }
   body{ -webkit-user-select:none; -moz-user-select:none; -ms-user-select:none; user-select:none; }
-  body.embed-mode #game-wrapper{ padding:0; }
+  body.embed-mode #game-wrapper{ padding:0; display:flex; align-items:center; justify-content:center; min-height:100vh; }
   body.embed-mode #game-header,
   body.embed-mode #game-footer,
   body.embed-mode .legend,
   body.embed-mode .credit-line{ display:none !important; }
-  body.embed-mode #canvas-container{ width:100vw; height:100vh; max-width:none; border-radius:0; }
+  body.embed-mode #canvas-container{
+    width:min(100vw, calc(100vh * (680/360)));
+    aspect-ratio:680/360; height:auto; max-width:none; border-radius:0; }
+  /* Embed-only: unmissable intro skip, prominent + top-right, above all intro layers. */
+  #intro-skip.skip-embed{
+    top:12px !important; right:12px !important; bottom:auto !important; z-index:70 !important;
+    font:700 17px system-ui,sans-serif !important; letter-spacing:.04em;
+    padding:10px 20px !important; border-radius:22px !important;
+    color:#FFF6E2 !important; background:rgba(8,4,15,0.86) !important;
+    border:2px solid #FFD86B !important; box-shadow:0 0 14px rgba(255,216,107,0.5);
+  }
   body.embed-mode #menu-canvas,
   body.embed-mode #game{ border-radius:0; border:none; }
   body.embed-mode #fs-btn{ display:none; }
@@ -556,30 +566,46 @@ canvas.addEventListener('mousemove', function(e){
 });
 const W = canvas.width, H = canvas.height;
 let RENDER_SCALE = 2;
+let RES_TARGET = 2;
+// Adaptive render-resolution target. Windowed stays 1:1 crisp at 2x; fullscreen may
+// climb to 3x on 1080p+ displays. 2 is the hard floor (== today's build).
+function pickResTarget(){
+  const fs = document.fullscreenElement || document.webkitFullscreenElement;
+  if(!fs){ RES_TARGET = 2; return RES_TARGET; }
+  const dpr = window.devicePixelRatio || 1;
+  const cand = Math.round((screen.width * dpr) / W);
+  RES_TARGET = Math.max(2, Math.min(3, cand));
+  return RES_TARGET;
+}
+// One-way downscale governor state (module scope). Deliberately separate from the
+// physics accumulator's _lastFrameT so governance never perturbs the fixed-step clock.
+let _govLastT = 0, _govDtEMA = 16.7, _govSlow = 0, _govWarmup = 0;
+const _perfOverlay = new URLSearchParams(location.search).get('perf')==='1';
+function applyResTarget(){ pickResTarget(); RENDER_SCALE = RES_TARGET; setupHiDPI(); _govWarmup = 45; }
 function setupHiDPI(){
   const dpr = window.devicePixelRatio || 1;
   // The sprite atlas is authored at 2x the logical size, so 2x IS its native resolution.
   // Render the backing store at exactly 2x, then cap the on-screen size so one backing
   // pixel maps to one device pixel -> crisp (like a fixed 680px display), yet still responsive.
-  RENDER_SCALE = 2;
-  if (canvas.width !== W * 2){ canvas.width = W * 2; canvas.height = H * 2; }
+  const _bw = W * RENDER_SCALE, _bh = H * RENDER_SCALE;
+  if (canvas.width !== _bw || canvas.height !== _bh){ canvas.width = _bw; canvas.height = _bh; }
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   const cont = document.getElementById('canvas-container');
   if (cont){
     const fs = document.fullscreenElement || document.webkitFullscreenElement;
-    cont.style.maxWidth    = fs ? 'none' : (Math.round((W * 2) / dpr) + 'px');
+    cont.style.maxWidth    = fs ? 'none' : (Math.round((W * RENDER_SCALE) / dpr) + 'px');
     cont.style.marginLeft  = 'auto';
     cont.style.marginRight = 'auto';
   }
 }
-setupHiDPI();
-requestAnimationFrame(setupHiDPI);
-setTimeout(setupHiDPI, 400);
-window.addEventListener('resize', setupHiDPI);
-document.addEventListener('fullscreenchange', setupHiDPI);
-document.addEventListener('webkitfullscreenchange', setupHiDPI);
-window.addEventListener('orientationchange', ()=>setTimeout(setupHiDPI,200));
+applyResTarget();
+requestAnimationFrame(applyResTarget);
+setTimeout(applyResTarget, 400);
+window.addEventListener('resize', applyResTarget);
+document.addEventListener('fullscreenchange', applyResTarget);
+document.addEventListener('webkitfullscreenchange', applyResTarget);
+window.addEventListener('orientationchange', ()=>setTimeout(applyResTarget,200));
 const ottoConfidentImg = new Image(); ottoConfidentImg.src = 'assets/otto_confident.webp';
 const transponderImg = new Image(); transponderImg.src = 'assets/transponder.webp';
 const GRAVITY = 0.55, FLOOR = H - 56;
@@ -595,11 +621,13 @@ const PHYS = {
 };
 // ---- Time-attack par thresholds (client-only). GENEROUS placeholders.
 //      A par = a competent-but-not-perfect clear, NOT a world record.
-const PAR_TIME  = {1:90000,2:105000,3:110000,4:120000,5:125000,6:140000}; // ms — generous launch estimate, tune down later with telemetry
+const PAR_TIME  = {1:90000,2:105000,3:105000,4:120000,5:120000,6:135000}; // ms  // TODO tune par after real run data
 const PAR_SCORE = {1:8000,2:9000,3:9000,4:9000,5:10000,6:12000};          // pts // TODO tune par after real run data
 let jumpBufferedAt = -1;   // Task 2a: simFrame of last ArrowUp press
 let simFrame = 0;          // Task 2a: monotonic fixed-step counter (incremented in loop())
 let runStartMs = Date.now(); // Task 4: wall-clock start of the current run
+// Build override: set to 'crazygames' in the CrazyGames upload; null = auto-detect (personal build).
+const FORCE_PORTAL = null;
 // ── Portal embed mode detection (Poki / CrazyGames) ──
 const EMBED = (()=>{ try{
   const q=new URLSearchParams(location.search).get('embed');
@@ -623,6 +651,7 @@ const Portal = (()=>{
     if(/crazygames\./i.test(ref)) which='crazygames';
     else if(/poki\./i.test(ref)) which='poki';
   }
+  if(FORCE_PORTAL) which=FORCE_PORTAL;  // build override wins unconditionally
   let poki=null, cg=null, adDepth=0, savM=true, savS=true, _gpActive=false;
   let _lastAdAt=0; const AD_MIN_MS=90000;
   const syncAudio=()=>{ try{ if(!(musicOn&&sfxOn)) setPortalHum(0); }catch(e){}
@@ -878,6 +907,18 @@ function countAcquiredRelics(){ let n=0; for(let i=1;i<=6;i++) if(getStars(i)&8)
 function getStars(level){
   try{ return parseInt(localStorage.getItem('sawyer_stars_'+level)||'0',10); }catch(e){ return 0; }
 }
+function hasAnyProgress(){
+  try{
+    for(let n=1;n<=6;n++){ if(localStorage.getItem('sawyer_stars_'+n)) return true; }
+    return false;
+  }catch(e){ return false; }
+}
+// Hoisted from the menu IIFE so the embed autostart path can also use it.
+function lvlUnlocked(n){ return n===1 || (getStars(n-1)&1)!==0 || DEV; }
+function furthestUnlockedLevel(){
+  for(let n=6;n>=1;n--){ if(lvlUnlocked(n)) return n; }
+  return 1;
+}
 function setStars(level, mask){
   try{ const cur=getStars(level); localStorage.setItem('sawyer_stars_'+level, cur|mask); }catch(e){} // OR-merge: never downgrade earned stars
 }
@@ -1051,6 +1092,30 @@ const audioManager = {
     if (this.next) this.next.volume = 0; // crossfade will ramp it
   }
 };
+
+// One-time audio-unlock retry: some browsers reject autoplay .play() calls made
+// before any user gesture. On the first pointer/key input, retry any paused
+// music elements; detach once everything resumed cleanly.
+function armAudioUnlock(){
+  let done = false;
+  const tryResume = () => {
+    if (done) return;
+    let ok = true;
+    [audioManager.current, audioManager.next, audioManager.titleAudio].forEach(a=>{
+      if (a && a.paused) {
+        const p = a.play();
+        if (p && p.catch) p.catch(()=>{ ok = false; });
+      }
+    });
+    if (ok) {
+      done = true;
+      window.removeEventListener('pointerdown', tryResume, true);
+      window.removeEventListener('keydown', tryResume, true);
+    }
+  };
+  window.addEventListener('pointerdown', tryResume, true);
+  window.addEventListener('keydown', tryResume, true);
+}
 
 // Screen shake
 
@@ -1733,7 +1798,6 @@ document.addEventListener('keydown', e => {
   // While the leaderboard name box is open, let the input handle typing.
   if (nameEntryActive || (e.target && e.target.id === 'ne-input')) return;
   if (e.code==='KeyP'){ togglePause(); e.preventDefault(); return; }
-  if (e.code==='Escape'){ togglePause(); e.preventDefault(); return; }
   if (e.code==='KeyM'){ toggleSound(); e.preventDefault(); return; }
   keys[e.code] = true;
   if (victoryActive && victoryTimer<=0 && (e.code==='Enter'||e.code==='NumpadEnter'||e.code==='Space')) vicContinue = true; // advance victory screen
@@ -7202,6 +7266,14 @@ function drawTopControls(){
   c.restore();
 }
 function loop(){
+  // --- Adaptive-resolution governor (one-way downscale; never raises within a session) ---
+  const _gn = performance.now();
+  if(_govLastT){ const _gd = _gn - _govLastT; if(_gd < 100){ _govDtEMA += (_gd - _govDtEMA) * 0.1; } }
+  _govLastT = _gn;
+  if(_govWarmup > 0){ _govWarmup--; }
+  else if(RENDER_SCALE > 2 && _govDtEMA > 20){
+    if(++_govSlow >= 45){ RENDER_SCALE = Math.max(2, RENDER_SCALE - 0.5); setupHiDPI(); _govWarmup = 45; _govSlow = 0; }
+  } else { _govSlow = 0; }
   pollGamepad();
   if(gamePaused){
     // Draw a simple pause overlay so the screen isn't frozen with no feedback
@@ -7551,6 +7623,16 @@ function loop(){
     ctx.restore();
   }
   
+  if(_perfOverlay){
+    ctx.save();
+    ctx.font = '11px ui-monospace,monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(6, H-20, 92, 14);
+    ctx.fillStyle = '#9EFFA0';
+    ctx.fillText(Math.round(1000/_govDtEMA) + 'fps  ' + RENDER_SCALE + 'x', 10, H-9);
+    ctx.restore();
+  }
   requestAnimationFrame(loop);
 }
 
@@ -11239,7 +11321,11 @@ function handleClimb(s){
   for(const e of levelLadders){ const pl=ladderRect(e);
     if(s.x+s.w>pl.x+2 && s.x<pl.x+pl.w-2 && s.y+s.h>pl.y-2 && s.y<pl.y+pl.h+4){ lad=pl; break; } }
   if(!s.climbing){
-    if(lad && (keys['ArrowUp']||keys['ArrowDown'])){ s.climbing=true; s.vx=0; s.vy=0; if(typeof sfx==='function') sfx('creak'); }
+    if(lad && (keys['ArrowUp']||keys['ArrowDown'])){ s.climbing=true; s.vx=0; s.vy=0;
+      // Creak on grab, but gate it: at the ladder top/bottom the climb unlatches while
+      // Up/Down is still held (lines below), so the next frame re-latches and re-fires the
+      // SFX every frame -> machine-gun glitch. Cap to ~4/sec so a real grab still creaks.
+      const _t=performance.now(); if(_t-(s._climbCreak||0)>250){ if(typeof sfx==='function') sfx('creak'); s._climbCreak=_t; } }
     else return false;
   }
   if(!lad){ s.climbing=false; return false; }
@@ -14994,6 +15080,7 @@ function goToLevel(n){
   buildPlayers();
   buildLevelContent(n);
   audioManager.play(n);
+  _govWarmup = 45;   // don't govern across the load hitch
   try{ Portal.gameplayStart(); }catch(e){}
 }
 
@@ -15105,6 +15192,31 @@ function playIntroCutscene(onDone){
   // If the video element/file is unavailable, just proceed.
   if(!vid || !black){ onDone && onDone(); return; }
 
+  // Embed-only: track which phase is active so a single skip handler can jump correctly.
+  //   'pre'=before video, 'video'=video playing, 'transit'=text crawl.
+  let introPhase = 'pre';
+  const embedSkip = ()=>{
+    if(introPhase==='transit' && typeof goRef==='function'){ goRef(); return; }
+    // pre/video: skip the whole intro straight into Level 1 (bypass the transit crawl).
+    if(finished) return; finished=true;
+    cleanup();
+    onDone && onDone();
+  };
+  if(EMBED){
+    try{
+      skip.classList.add('skip-embed');
+      skip.style.display='block';           // visible from the very first frame
+      skip.addEventListener('click', embedSkip);
+    }catch(e){}
+    // Click/tap anywhere during the video phase also skips.
+    const onDocDown=(e)=>{ if(introPhase==='video'){ e.preventDefault(); embedSkip(); } };
+    document.addEventListener('pointerdown', onDocDown, true);
+    // Remove the doc listener when the intro tears down.
+    var _embedDocDown = onDocDown;
+  }
+  // Forward-declared so embedSkip can reach the transit advance handler.
+  var goRef = null;
+
   let finished = false;
   const cleanup = ()=>{
     try{ vid.pause(); }catch(e){}
@@ -15112,6 +15224,11 @@ function playIntroCutscene(onDone){
     vid.removeEventListener('error', onErr);
     skip.removeEventListener('click', doSkip);
     window.removeEventListener('keydown', onKey, true);
+    if(EMBED){
+      try{ skip.removeEventListener('click', embedSkip); }catch(e){}
+      try{ document.removeEventListener('pointerdown', _embedDocDown, true); }catch(e){}
+      try{ skip.classList.remove('skip-embed'); }catch(e){}
+    }
     vid.style.display='none'; black.style.display='none'; skip.style.display='none';
     black.style.opacity='0';
   };
@@ -15125,7 +15242,7 @@ function playIntroCutscene(onDone){
       setTimeout(()=>{ cleanup(); onDone && onDone(); }, 1300);
       return;
     }
-    try{ skip.style.display='none'; }catch(e){}
+    if(!EMBED){ try{ skip.style.display='none'; }catch(e){} }  // embed: keep skip visible through transit
     // Match-cut: swell the living purple portal up off the flash, start its FX.
     transit.style.display='block';
     void transit.offsetWidth;
@@ -15169,8 +15286,9 @@ function playIntroCutscene(onDone){
       transit.style.opacity='0';
       setTimeout(()=>{ transit.style.display='none'; stopTransitFx(); }, 1400);
     };
-    const onAdvKey=(e)=>{ if(e.key==='Escape'||e.key===' '||e.key==='Enter'){ e.preventDefault(); go(); } };
+    const onAdvKey=(e)=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); go(); } };
     // Let the two lines breathe (~10s); allow an early skip via click/key.
+    if(EMBED){ introPhase='transit'; goRef=go; }
     transit.style.pointerEvents='auto';
     transit.addEventListener('click', go);
     window.addEventListener('keydown', onAdvKey, true);
@@ -15183,7 +15301,7 @@ function playIntroCutscene(onDone){
   const onEnded = ()=> end();
   const onErr   = ()=>{ cleanup(); onDone && onDone(); };
   const doSkip  = ()=> end();
-  const onKey   = (e)=>{ if(e.key==='Escape'||e.key===' '||e.key==='Enter'){ e.preventDefault(); doSkip(); } };
+  const onKey   = (e)=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); doSkip(); } };
 
   // Beat 1: black in
   black.style.transition='opacity 1.2s ease';
@@ -15193,14 +15311,15 @@ function playIntroCutscene(onDone){
   black.style.opacity='1';
 
   setTimeout(()=>{
+    if(finished) return;                 // intro already skipped/torn down — abort
     // Beat 2: reveal & play video under the black, then fade black out
     vid.style.display='block';
     vid.muted = !( (typeof sfxOn!=='undefined' && sfxOn) || (typeof musicOn!=='undefined' && musicOn) );
     vid.currentTime = 0;
-    skip.style.display='block';
+    if(EMBED){ introPhase='video'; }        // enable click-anywhere skip during video
+    else { skip.style.display='block'; skip.addEventListener('click', doSkip); }
     vid.addEventListener('ended', onEnded);
     vid.addEventListener('error', onErr);
-    skip.addEventListener('click', doSkip);
     window.addEventListener('keydown', onKey, true);
     const p = vid.play();
     if(p && p.catch) p.catch(()=>{ /* autoplay blocked */ vid.muted=true; vid.play().catch(onErr); });
@@ -15240,7 +15359,7 @@ function playReturnHomeCutscene(onDone){
   const onEnded = ()=> end();
   const onErr   = ()=>{ cleanup(); onDone && onDone(); };
   const doSkip  = ()=> end();
-  const onKey   = (e)=>{ if(e.key==='Escape'||e.key===' '||e.key==='Enter'){ e.preventDefault(); doSkip(); } };
+  const onKey   = (e)=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); doSkip(); } };
 
   // Beat 1: black in over the frozen arena
   black.style.transition='opacity 1.2s ease';
@@ -15277,6 +15396,23 @@ function playReturnHomeCutscene(onDone){
   mCtx.setTransform(_mdpr,0,0,_mdpr,0,0);
   mCtx.imageSmoothingEnabled = true; mCtx.imageSmoothingQuality = 'high';
   let mT = 0, menuRunning = true;
+  // Shared PLAY launch path (used by the PLAY button and, in embed mode, autostart).
+  function startPortalPlay(){
+    menuRunning=false;
+    audioManager.stopTitle();
+    mScreen.style.transition='opacity 1.2s ease';
+    mScreen.style.opacity='0';
+    mScreen.style.pointerEvents='none';
+    setTimeout(()=>{ mScreen.style.display='none'; }, 1250);
+    const launch=()=>{
+      skipNextLevelPopup=true;
+      restart(true);
+      setupHiDPI();
+      if(!gameRunning){ gameRunning=true; loop(); }
+    };
+    if(!introPlayed){ introPlayed=true; playIntroCutscene(launch); }
+    else { launch(); }
+  }
   let menuMode='title'; // Task 1: 'title' | 'levels' | 'howto'
 
   // Characters drawn at 5x scale, positioned in lower-center of canvas
@@ -15313,7 +15449,6 @@ function playReturnHomeCutscene(onDone){
     tileRects[n]={x:gridX+(i%3)*(TILE_W+TILE_G), y:gridY+Math.floor(i/3)*(TILE_H+TILE_G), w:TILE_W, h:TILE_H}; }
   const backBtn = { x:14, y:12, w:86, h:34 };
   let hoverTile=0, backHover=false;
-  function lvlUnlocked(n){ return n===1 || (getStars(n-1)&1)!==0 || DEV; }
   // Independent audio toggles (top-right)
   const musicBtn = { x: MW-112, y:10, w:48, h:42 };
   const sfxBtn   = { x: MW-56,  y:10, w:48, h:42 };
@@ -15767,39 +15902,47 @@ function playReturnHomeCutscene(onDone){
     if(inR(howtoBtn)){ menuMode='howto'; if(sfxOn) beep(620,0.05,'square',0.06); return; }
     if(inR(lvlBtn)){ menuMode='levels'; if(sfxOn) beep(620,0.05,'square',0.06); return; } // Task 1a
     if(inR(btn)){
-      menuRunning=false;
-      audioManager.stopTitle();
-      mScreen.style.transition='opacity 1.2s ease';
-      mScreen.style.opacity='0';
-      mScreen.style.pointerEvents='none';
-      setTimeout(()=>{ mScreen.style.display='none'; }, 1250);
-      const launch=()=>{
-        skipNextLevelPopup=true;
-        restart(true);
-        setupHiDPI();
-        if(!gameRunning){ gameRunning=true; loop(); }
-      };
-      if(!introPlayed){ introPlayed=true; playIntroCutscene(launch); }
-      else { launch(); }
+      startPortalPlay();
     }
   });
 
-  // Start title screen music — retry on first interaction (autoplay policy)
-  audioManager.playTitle();
-  const _resumeTitle = () => {
-    if (audioManager.titleAudio) {
-      audioManager.titleAudio.play().catch(()=>{});
+  if(EMBED){
+    // Portal/embed: no title menu — hide it and autostart straight into the cutscene.
+    menuRunning=false;
+    mScreen.style.display='none';
+    mScreen.style.pointerEvents='none';
+    let _autoStarted=false;
+    if(!_autoStarted){
+      _autoStarted=true;
+      if(hasAnyProgress()){
+        introPlayed = true;                 // skip cutscene for returning players
+        const lvl = furthestUnlockedLevel();
+        jumpToLevel(lvl);                   // shows that level's popup, Play-gated
+        setupHiDPI();
+      } else {
+        startPortalPlay();                  // unchanged first-time path
+      }
     }
-    window.removeEventListener('pointerdown', _resumeTitle);
-    window.removeEventListener('keydown', _resumeTitle);
-  };
-  window.addEventListener('pointerdown', _resumeTitle);
-  window.addEventListener('keydown', _resumeTitle);
-  menuLoop();
+  } else {
+    // Standalone: existing title-screen path, menu visible.
+    // Start title screen music — retry on first interaction (autoplay policy)
+    audioManager.playTitle();
+    const _resumeTitle = () => {
+      if (audioManager.titleAudio) {
+        audioManager.titleAudio.play().catch(()=>{});
+      }
+      window.removeEventListener('pointerdown', _resumeTitle);
+      window.removeEventListener('keydown', _resumeTitle);
+    };
+    window.addEventListener('pointerdown', _resumeTitle);
+    window.addEventListener('keydown', _resumeTitle);
+    menuLoop();
+  }
 })();
 
 // Portal SDK boot: load the selected SDK, then signal the menu is ready to play.
 try{ Portal.init().then(()=>Portal.loadingFinished()).catch(()=>{}); }catch(e){}
+armAudioUnlock();
 
 // game started by menu button above
 </script>
