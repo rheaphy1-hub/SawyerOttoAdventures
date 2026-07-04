@@ -2829,7 +2829,7 @@ let crates = [];
 function buildCrates(){
   crates = [];
   const L=currentLevel;
-  const theme=({1:'wood',2:'ice',3:'driftwood',5:'darkcrate',6:'pod'})[L];
+  const theme=({1:'wood',2:'ice',3:'barrel',5:'darkcrate',6:'pod'})[L];
   if(!theme) return;                                  // L4 (swim) + others: none
   const mk=(x,y,hides,h)=>({x, y, w:32, h:h||32, hp:1, hides:hides||null, theme, ride:null, dead:false, flash:0});
   const out=[];
@@ -2848,7 +2848,7 @@ function buildCrates(){
     // per-level spread: distinct count / contents / placement mode
     const CFG={
       2:{n:3, mode:'high',       contents:['relic','heart','coins']},   // frozen: high-route reward
-      3:{n:4, mode:'lowcluster', contents:['coins','relic','coins','heart']}, // beach: clustered low loot
+      3:{n:4, mode:'lowcluster', contents:['coins','coins','heart','coins']}, // beach: barrels (loot only; relic stays original)
       5:{n:3, mode:'spread',     contents:['relic','heart','coins']},   // haus: tucked, sparse
       6:{n:3, mode:'high',       contents:['coins','relic','heart']}    // space: floating supply pods
     }[L];
@@ -2911,7 +2911,7 @@ function hitCrate(pr){
       c.flash=6;
       if(--c.hp<=0){
         c.dead=true; sfx('squash');
-        const dust = c.theme==='ice'?['#BFE6FF','#8CC8F0']: c.theme==='pod'?['#9AA0AA','#5A6470']: c.theme==='driftwood'?['#8A968F','#5E6A63']:['#8B5A2B','#C9975A'];
+        const dust = c.theme==='ice'?['#BFE6FF','#8CC8F0']: c.theme==='pod'?['#9AA0AA','#5A6470']: c.theme==='barrel'?['#6E4E34','#4A3526']:['#8B5A2B','#C9975A'];
         for(let i=0;i<16;i++){ const a=Math.random()*Math.PI*2, sp=1.5+Math.random()*4;
           particles.push({x:c.x+c.w/2,y:c.y+c.h/2,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp-2,life:26,maxLife:26,type:'dust',color:i%2?dust[0]:dust[1]}); }
         revealCrateContents(c);
@@ -2947,6 +2947,24 @@ function drawCrates(){
       texCracks(sx+3,y+3,w-6,h-8,'rgba(120,170,210,0.45)',seed+9,2,0.6);
       ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.beginPath(); ctx.moveTo(sx+5,y+4); ctx.lineTo(sx+11,y+4); ctx.lineTo(sx+7,y+9); ctx.closePath(); ctx.fill(); // glint
       ctx.fillStyle='rgba(255,255,255,0.30)'; ctx.fillRect(sx+2,y+1,w-4,1.5);
+    } else if(c.theme==='barrel'){
+      // Original L3 sea-worn barrel look: curved staved body, rusted bands, algae, barnacles.
+      const bxl=sx, byT=y, bw=w, bh=h;
+      const bodyGrad=ctx.createLinearGradient(bxl,0,bxl+bw,0);
+      bodyGrad.addColorStop(0,'#4A3526'); bodyGrad.addColorStop(0.5,'#6E4E34'); bodyGrad.addColorStop(1,'#3E2C1F');
+      ctx.fillStyle=bodyGrad; ctx.beginPath();
+      ctx.moveTo(bxl+4, byT+2);
+      ctx.quadraticCurveTo(bxl-4, byT+bh*0.5, bxl+4, byT+bh-2);
+      ctx.lineTo(bxl+bw-4, byT+bh-2);
+      ctx.quadraticCurveTo(bxl+bw+4, byT+bh*0.5, bxl+bw-4, byT+2);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle='rgba(30,20,12,0.55)'; ctx.lineWidth=1.5;
+      for(let i=1;i<5;i++){ const stx=bxl+4+(bw-8)*i/5; ctx.beginPath(); ctx.moveTo(stx, byT+3); ctx.lineTo(stx, byT+bh-3); ctx.stroke(); }
+      ctx.fillStyle='#5B5048';
+      for(const bandY of [byT+7, byT+bh*0.5-3, byT+bh-11]){ ctx.fillRect(bxl-2, bandY, bw+4, 5); }
+      ctx.fillStyle='rgba(120,150,140,0.25)'; ctx.fillRect(bxl+6, byT+10, 4, bh-18); ctx.fillRect(bxl+bw-12, byT+14, 3, bh-22);
+      ctx.fillStyle='rgba(220,210,195,0.7)';
+      for(let i=0;i<5;i++){ const px=bxl+6+((i*97)%(bw-12)); const py=byT+10+((i*53)%(bh-18)); ctx.beginPath(); ctx.arc(px,py,1.6,0,Math.PI*2); ctx.fill(); }
     } else if(c.theme==='pod'){
       // metal supply pod: brushed panel, seam, corner bolts, status light
       const g=ctx.createLinearGradient(sx,y,sx,y+h); g.addColorStop(0,'#8B929C'); g.addColorStop(0.5,'#666E78'); g.addColorStop(1,'#3C424B');
