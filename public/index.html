@@ -1566,6 +1566,7 @@ let nameEntryActive = false;       // showing the name-entry overlay
 let nameEntryDone = false;         // submitted/skipped this run
 let leaderboardData = null;        // cached top-N once fetched
 let lbToken = null;                 // opaque server-issued session token (Task 4)
+let lbSubmitOk = null;              // null=not yet, true=saved, false=failed (surfaced on credits)
 let leaderboardLoading = false;
 let leaderboardError = false;
 const LB_API = 'https://sawyer-otto-adventures.vercel.app';
@@ -1613,14 +1614,15 @@ async function submitScore(name){
       const tr=await fetch(LB_API+'/api/top');
       if(tr.ok){ const td=await tr.json(); token=td&&td.token; if(td){ leaderboardData=normalizeBoard(td); } }
     }
-    if(!token) return;   // board offline / legacy server: skip silently, credits still play
+    if(!token){ lbSubmitOk=false; return; }   // board offline / legacy server
     lbToken=null;        // tokens are one-time-use; force a fresh mint next run
     const hmac=await hmacHex(token, `${name}|${score0}|${level0}|${runMs0}`);
-    await fetch(LB_API+'/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},
+    const _sr=await fetch(LB_API+'/api/submit',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({name, score:score0, level:level0, runMs:runMs0, token, hmac,
         relicsFound:countAcquiredRelics(), ottoBossHits:globalOttoBossHits,
         ottoDroneKills:(currentLevel===6?ottoKillCount:0)})});
-  }catch(e){ /* offline: silently skip, credits still play */ }
+    lbSubmitOk = !!(_sr && _sr.ok);
+  }catch(e){ lbSubmitOk=false; /* offline: credits still play */ }
 }
 // Coerce whatever /api/top returns into a clean [{name, score}] list. Handles: array of
 // {name,score} or {member,score}; {top:[...]} wrapper; Upstash flat WITHSCORES arrays
@@ -3343,47 +3345,16 @@ function safeRespawnX(){
 
 function respawnSpot(p){
   if(currentLevel===6){
+    // ── ALWAYS respawn on the solid boss-arena deck floor (never a drifting asteroid). ──
     const plats=LV[6].platforms;
-    // ── Boss-arena simplicity: once Sawyer is on/at the boss deck, always respawn him on
-    //    solid ground at the near (left) edge of the arena. No drifting-rock guesswork. ──
     const deck=plats.filter(pl=>pl.y===FLOOR).sort((a,b)=>b.w-a.w)[0];   // widest floor plat = boss deck
-    const _bo = (LV[6] && LV[6].bossObj);          // L6 boss lives in LV[6].bossObj (global `boss` is null here)
-    const bossFight = !!(_bo && _bo.active);
-    const onDeck = deck && p.x!=null && (p.x + (p.w||0)/2) >= deck.x;
-    if(deck && (bossFight || onDeck)){
+    if(deck){
       const spires=plats.filter(pl=>pl.arenaRock).sort((a,b)=>a.x-b.x);
-      const edgeX = spires.length ? spires[0].x - 70 : deck.x + 60;   // just left of the first spire
+      const edgeX = spires.length ? spires[0].x - 70 : deck.x + 60;      // just left of the first spire
       const rx = Math.max(deck.x + 30, Math.min(edgeX, deck.x + deck.w - p.w - 30));
       return {x:rx, y:FLOOR - p.h, plat:deck};
     }
-    // Asteroids DRIFT (astDriftY) and give under low-g, and the camera scrolls vertically.
-    // Old code placed Sawyer at a rock's *raw* y from a fixed cameraX+80 probe, so respawn
-    // often dropped him mid-air beside a narrow moving rock -> he slid off -> lost a 2nd heart.
-    // Now: probe at Sawyer's real X, use each rock's LIVE top, and prefer on-screen, wide rocks.
-    const topLive=(pl)=> pl.y + astDriftY(pl) + (pl.giveY||0);   // matches resolveGen's topOf
-    const probe=Math.max(0, Math.min((p.x!=null?p.x+p.w/2:cameraX+80), LV[6].worldW));
-    // Keep the landing rock well ABOVE the fall-death line so a bobbing rock can't dip
-    // Sawyer back off-screen the instant his i-frames end.
-    const camTop=cameraY-40, camBot=cameraY+H-60;
-    const minW=Math.max(56, p.w+34);                 // need real standing room on both sides of Sawyer
-    const pick=(onScreenOnly)=>{
-      let best=null, sc=Infinity;
-      for(const pl of plats){
-        if(pl.w<minW) continue;                      // skip rocks too narrow to center on safely
-        const t=topLive(pl);
-        if(onScreenOnly && (t<camTop || t>camBot)) continue;
-        // score: nearest by X, but weight rock WIDTH heavily so we favour a roomy landing
-        const s=Math.abs(pl.x+pl.w/2-probe) - Math.min(pl.w,160)*0.6;
-        if(s<sc){ sc=s; best=pl; }
-      }
-      return best;
-    };
-    const best = pick(true) || pick(false) || plats.filter(pl=>pl.w>=minW).sort((a,b)=>b.w-a.w)[0] || plats[0];
-    // Land near where Sawyer fell, but NEVER within `edge` px of a rim (rim landings are what
-    // slid him off during i-frames). On a rock too narrow to honor both margins, true-center him.
-    const edge=24, lo=best.x+edge, hi=best.x+best.w-edge-p.w;
-    const rx = (lo<=hi) ? Math.max(lo, Math.min(hi, probe-p.w/2)) : (best.x+best.w/2 - p.w/2);
-    return {x:rx, y:topLive(best)-p.h, plat:best};
+    return {x:120, y:FLOOR - p.h};   // defensive fallback
   }
   if(checkpoint) return {x:checkpoint.x, y:checkpoint.y-p.h};
   return {x:safeRespawnX(), y:FLOOR-p.h-4};
@@ -7008,7 +6979,7 @@ function drawLeaderboardPanel(c, t){
     c.fillStyle = i===0?'#FFD700' : i===1?'#D8D8E8' : i===2?'#E6A86B' : 'rgba(255,255,255,0.82)';
     if(mine){ c.fillStyle='#7CFFC4'; }
     c.fillText((i+1)+'.', x0, ry);
-    const nm=(e.name||'???').slice(0,14);
+    const nm=(e.name||'???').slice(0,20);
     c.fillText(nm, x0+22, ry);
     c.textAlign='right';
     c.fillText(String(e.score), x1, ry);
@@ -7022,6 +6993,10 @@ function drawLeaderboardPanel(c, t){
       if(extras.length) c.fillText(extras.join(' '), x0+22, ry+9);
       c.font='700 12px system-ui,sans-serif';
     }
+  }
+  if(lbSubmitOk===false){
+    c.textAlign='center'; c.font='600 10px system-ui,sans-serif'; c.fillStyle='rgba(255,170,170,0.85)';
+    c.fillText('Your score could not be saved (offline) — this run isn\u2019t on the board', W/2, py+ph-10);
   }
   c.restore();
 }
@@ -7202,7 +7177,7 @@ function resetRunState(lvl, opts){
   opts = opts||{};
   resetAllGameState();
   score=0; levelStartScore=0; lives=5; gameOver=false; won=false; cameraX=0;
-  nameEntryActive=false; nameEntryDone=false; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
+  nameEntryActive=false; nameEntryDone=false; lbSubmitOk=null; leaderboardData=null; returnHomeStarted=false; returnHomeDone=false; { const v=document.getElementById('return-cutscene'),b=document.getElementById('return-black'),k=document.getElementById('return-skip'); if(v){try{v.pause();}catch(e){} v.style.display='none';} if(b){b.style.display='none';b.style.opacity='0';} if(k)k.style.display='none'; }
   projectiles=[]; venom=[]; particles=[]; killCombo=0; healthBarFlash=0; hurtFlashTimer=0; acquiredItems=[]; relicToast={t:0,label:'',color:'#fff',n:0};
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0; _reviveUsedThisRun=false; bigBabyMeter=0;
