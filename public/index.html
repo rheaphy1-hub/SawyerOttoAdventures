@@ -436,7 +436,7 @@
     <div class="popup-badge">🌌</div>
     <div class="popup-kicker">Final Level</div>
     <h2>SPACE VOID</h2>
-    <p>THE VOID — Nexus Nine is pulling Otto toward it. The drones are everywhere — and only Otto's milk destroys them. Fight together and bring him home!</p>
+    <p>THE VOID — Nexus Nine is pulling Otto toward it. Its drones shield it — smash them with your ball (Otto's milk helps too), then finish it off and bring him home!</p>
     <p class="popup-scoring">Collect cells (75–250 pts), banish void entities (100–150 pts), beat the final boss (+1 000)!</p>
     <p class="popup-par">🎯 Par time: <span data-par="6"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -3347,7 +3347,8 @@ function respawnSpot(p){
     // ── Boss-arena simplicity: once Sawyer is on/at the boss deck, always respawn him on
     //    solid ground at the near (left) edge of the arena. No drifting-rock guesswork. ──
     const deck=plats.filter(pl=>pl.y===FLOOR).sort((a,b)=>b.w-a.w)[0];   // widest floor plat = boss deck
-    const bossFight = (typeof boss!=='undefined' && boss && boss.active);
+    const _bo = (LV[6] && LV[6].bossObj);          // L6 boss lives in LV[6].bossObj (global `boss` is null here)
+    const bossFight = !!(_bo && _bo.active);
     const onDeck = deck && p.x!=null && (p.x + (p.w||0)/2) >= deck.x;
     if(deck && (bossFight || onDeck)){
       const spires=plats.filter(pl=>pl.arenaRock).sort((a,b)=>a.x-b.x);
@@ -11162,7 +11163,7 @@ const LV = {
           primary:'#00FF00', secondary:'#00CCFF', tertiary:'#FFFF00',
           r1:'#FFD700', r2:'#00CCFF', r3:'#FFFF00', pit:'#000008' },
     boss:{ name:'Nexus Nine', tag:'🛰 NEXUS NINE', rage:'🛰 NEXUS NINE — OVERCLOCKED',
-           hp:18, vx1:2.0, vx2:2.9, spit1:50, spit2:35, n1:3, n2:4,
+           hp:14, vx1:2.0, vx2:2.9, spit1:50, spit2:35, n1:3, n2:4,
            drones:{ count:4, orbitR:78, orbitSpd:0.03 },
            beam:{ chargeWarn:104, sweepDur:104, sweepArc:Math.PI*0.48, width:11, dmg:true, cooldown:330, safeSide:true, reach:340 },
            proj:'#FFFF00', body:'#00CCFF', limb:'#FFD700', eye:'#00FFFF', aura:'rgba(0,204,255,0.35)' },
@@ -12095,16 +12096,18 @@ function updateGen(){
         pr.life=0;sfx('bossHit');break;
       }
     }
-    // ── L6 NEXUS drone shield: Otto's milk one-shots the orbiting eye-nodes to drop the shield.
-    //    Sawyer's soccer ball bounces off drones harmlessly — milk is the specialist key here. ──
+    // ── L6 NEXUS drone shield: Sawyer's ball OR Otto's milk destroys the orbiting eye-nodes.
+    //    Each downed drone also chips the core, so the shield phase always shows progress. ──
     if(pr.life>0 && currentLevel===6 && boss && boss.active && boss.alive && boss.shielded && boss.drones){
       const ccx=boss.x+boss.w/2, ccy=boss.y+boss.h/2, dr=bc.drones;
       for(const dn of boss.drones){
         if(!dn.alive) continue;
         const dx=ccx+Math.cos(dn.ang)*dr.orbitR, dy=ccy+Math.sin(dn.ang)*dr.orbitR;
         if(Math.abs(pr.x-dx)<16 && Math.abs(pr.y-dy)<16){
-          if(pr.type!=='milk'){ pr.life=0; pr.vx*=-0.4; sfx('ball'); break; } // ball bounces off — drones are milk-only
+          // Sawyer's ball AND Otto's milk both destroy drones; each kill also chips the core.
           dn.alive=false; dn.dieT=8; pr.life=0; score+=40; shakeIntensity=Math.max(shakeIntensity,6); sfx('droneDie'); ottoKillCount++;
+          if(pr.type==='milk') globalOttoBossHits++;
+          boss.hp=Math.max(1, boss.hp-1); boss.hitFlash=6;   // progress always visible while the shield is up
           for(let i=0;i<16;i++) particles.push({x:dx,y:dy,vx:Math.cos(i*0.393)*3.8,vy:Math.sin(i*0.393)*3.8,life:26,maxLife:26,type:'spark',color:i%2?'#38F2E6':'#C0FFEE'});
           if(boss.drones.every(d=>!d.alive)){ boss.shielded=false; boss.overclock=true; boss.beamState='idle'; boss.beamCooldown=90; shakeIntensity=14; hurtFlashTimer=16; sfx('shieldDown'); }
           break;
@@ -14903,9 +14906,9 @@ function drawL6DroneToast(){
   ctx.save(); ctx.globalAlpha=a;
   ctx.font='bold 16px system-ui,sans-serif'; ctx.textAlign='center';
   ctx.fillStyle='#38F2E6'; ctx.shadowColor='rgba(0,40,80,0.9)'; ctx.shadowBlur=10;
-  ctx.fillText("OTTO'S MILK DESTROYS DRONES!", W/2, 88);
+  ctx.fillText("SMASH THE DRONES TO DROP THE SHIELD!", W/2, 88);
   ctx.font='bold 11px system-ui,sans-serif'; ctx.fillStyle='#C0FFEE'; ctx.shadowBlur=5;
-  ctx.fillText('fire with [SPACE] — ball just bounces off', W/2, 104);
+  ctx.fillText('throw with [SPACE] — each drone chips its armor', W/2, 104);
   ctx.restore();
 }
 function drawL5HauntedFlame(){
