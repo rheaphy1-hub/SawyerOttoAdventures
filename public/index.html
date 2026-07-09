@@ -1895,6 +1895,7 @@ function pollGamepad(){
     if(_gpEdge('oskA', A))     oskPress();
     if(_gpEdge('oskBk', LT||RT)) oskBackspace();
     if(_gpEdge('oskStart', START)) finishNameEntry(true);
+    if(_gpEdge('oskB', B)) finishNameEntry(false);   // B = Skip (matches on-screen Skip button)
     // Clear gameplay keys so the hero doesn't move during entry
     keys['ArrowLeft']=keys['ArrowRight']=keys['ArrowUp']=keys['ArrowDown']=keys['Space']=false;
     return;
@@ -1916,7 +1917,8 @@ function pollGamepad(){
   keys['Space']      = LT || RT;    // triggers = throw ball
 
   if(_gpEdge('pause', START)) togglePause();
-  if(_gpEdge('restart', B) && (gameOver || won)) restartCurrentLevel();
+  if(_gpEdge('vicA', A) && victoryActive && victoryTimer<=0) vicContinue = true;   // A = Continue on victory screen
+  if((_gpEdge('restart', B) || _gpEdge('restartA', A)) && (gameOver || won)) restartCurrentLevel();
   if(_gpEdge('smash', gp.buttons[3]?.pressed)) unleashBigBaby();
 }
 
@@ -3527,20 +3529,7 @@ function update(){
     victoryTimer--;
     if (victoryTimer <= 0 && vicContinue){
       victoryActive = false; won = false;
-      fadeThenBuild(()=>{
-        currentLevel = 2;
-        cameraX = 0; projectiles = []; venom = []; particles = []; killCombo = 0;
-        cutsceneActive = false;
-        buildPlayers();
-        buildLevel2Enemies();
-        buildLevel2Rocks();
-        buildYeti();
-        buildIcicles();
-        buildEmberStone();
-        snowWall=0; l2BossEnrage=0; l2Arena={active:false,spawnT:0,deathBurst:0};
-        for(const pl of l2Platforms){if(pl.bossPlatform){pl.hidden=true;pl.x=pl.baseX;pl.y=pl.baseY;pl.dx=0;pl.dy=0;}}
-        audioManager.play(2);
-      });
+      fadeToLevel(2);   // unified path: full reset (items tray, crates, ladders, relic) via goToLevel
     }
     // Lock Sawyer in place during victory
     s.vx = 0;
@@ -3584,7 +3573,6 @@ function respawnSpot(p){
     }
     return {x:120, y:FLOOR - p.h};   // defensive fallback
   }
-  if(checkpoint) return {x:checkpoint.x, y:checkpoint.y-p.h};
   return {x:safeRespawnX(), y:FLOOR-p.h-4};
 }
 function hurt(p, reposition){
@@ -3597,15 +3585,7 @@ function hurt(p, reposition){
   // Knockback burst particles
   for(let i=0;i<10;i++) particles.push({x:p.x+p.w/2,y:p.y+p.h/2,vx:(Math.random()-0.5)*6,vy:-2-Math.random()*3,life:18,maxLife:18,type:'spark',color:'#FF4444'});
   if (lives<=0){
-    // If a transponder was acquired this run (L1/L2/L3), remember its location so a level
-    // restart resumes on the perch/plateau. This is GAME-OVER-only — per-hit deaths above
-    // still respawn normally (near-camera ground); we do NOT touch `checkpoint` here.
-    // If the transponder was collected this run, resume past the acquisition point on
-    // restart. The anchor holds sawyer's exact valid position at pickup, keyed by level,
-    // so any level (1–6; L4's clam transponder included as of Sprint G) resumes correctly.
-    transponderRespawn = (transponderAnchor && transponderAnchor.level===currentLevel)
-      ? { level:currentLevel, x:transponderAnchor.x, y:transponderAnchor.y }
-      : null;
+    // Checkpoints removed: game over always restarts the level from the beginning.
     gameOver=true; saveBestScore(currentLevel,score); SFX.over(); try{ Portal.gameplayStop(); }catch(e){} return;
   }
   if (reposition){
@@ -7410,39 +7390,17 @@ function resetRunState(lvl, opts){
   cutsceneActive=false; victoryActive=false; shakeIntensity=0; vicReset();
   ottoPower=0; ottoPowerTimer=0; ottoRibbonT=0; giantOttoPhase='idle'; giantOttoTimer=0; _reviveUsedThisRun=false; bigBabyMeter=0;
   shockwaves=[]; icicles=[]; l3Waves=[]; finishCardActive=false; finishCardTimer=0;
-  checkpoint=null; // cleared here; the transponder resume block below re-arms it when applicable
+  checkpoint=null; // checkpoints removed — always null; retained only so legacy draw guards stay inert
   currentLevel=lvl;
   bikeEscape = { active: false, x: 0, phase: 'idle', timer: 0, wheelSpin: 0 };
   buildPlayers();
   buildLevelContent(currentLevel); // dispatches all levels 1–6 and calls buildBottles()
-  // Resume on the transponder checkpoint if it was held at game over: restore the per-level
-  // artifact-collected state, re-arm the checkpoint, and drop the heroes there (skip the re-fetch).
-  if(opts.keepTransponderResume && transponderRespawn && transponderRespawn.level===currentLevel){
-    const cp={x:transponderRespawn.x, y:transponderRespawn.y};
-    checkpoint=cp;
-    if(currentLevel===1){ if(artifact){artifact.got=true;} artifactCollected=true; if(barrier) barrier.sealed=false; acquireItem('transponder'); }
-    else if(currentLevel===2){ if(l2Artifact){l2Artifact.got=true; l2Artifact.freed=true;} l2ArtifactCollected=true; acquireItem('transponder'); }
-    else if(currentLevel===3){ if(l3Artifact){l3Artifact.got=true;} l3ArtifactCollected=true; acquireItem('transponder'); }
-    else if(currentLevel===4||currentLevel===5||currentLevel===6){ const lv=LV[currentLevel];
-      if(lv.transponder){ lv.transponder.got=true; lv.transponder.locked=false;
-        if(currentLevel===4){ lv.transponder.clamHp=0; lv.transponder.open=1; } }  // clam already cracked open on resume
-      lv.transponderTaken=true; acquireItem('transponder'); }
-    const wWorld = currentLevel===2 ? L2_WORLD_W : currentLevel===3 ? L3_WORLD_W : (currentLevel>=4&&LV[currentLevel]) ? LV[currentLevel].worldW : WORLD_W;
-    sawyer.x=cp.x; sawyer.y=cp.y-sawyer.h; sawyer.vx=0; sawyer.vy=0; sawyer.invincible=90;
-    otto.x=cp.x-26; otto.y=cp.y-otto.h; otto.vx=0; otto.vy=0;
-    if(currentLevel===4){ // swim resume: keep both heroes inside the water column
-      sawyer.y=Math.max(SWIM.surfaceY, Math.min(swimFloorY()-sawyer.h, sawyer.y));
-      otto.y  =Math.max(SWIM.surfaceY, Math.min(swimFloorY()-otto.h,   otto.y));
-    }
-    cameraX=Math.max(0, Math.min(cp.x - W/3, wWorld - W));
-    transponderAnchor={ level:currentLevel, x:cp.x, y:cp.y }; // re-arm for repeat deaths
-  }
-  transponderRespawn=null;
+  // Checkpoints removed: no transponder resume — every restart begins at the level start.
 }
 function restartCurrentLevel(){
   try{ Portal.gameplayStop(); }catch(e){}   // death -> retry: stop gameplay, offer an ad, then rebuild
   const _rebuild = ()=>{
-    resetRunState(currentLevel||1, {keepTransponderResume:true});
+    resetRunState(currentLevel||1, {});
     audioManager.stop();
     audioManager.play(currentLevel);
     const popupTitles={1:'DESERT DASH',2:'FROZEN PEAKS',3:'MOONLIGHT BAY',4:'THE ABYSS',5:'HAUNTED HAUS',6:'SPACE VOID'};
@@ -8939,17 +8897,7 @@ function updateLevel2(){
     victoryTimer--;
     if(victoryTimer<=0 && vicContinue){
       victoryActive=false; won=false;
-      currentLevel=3;
-      cameraX=0; projectiles=[]; venom=[]; particles=[]; killCombo=0;
-      cutsceneActive=false;
-      buildPlayers();
-      buildLevel3Enemies();
-      buildLevel3Rocks();
-      buildKingCrab();
-      buildL3Waves();
-      buildL3Arena();
-      buildL3Artifact();
-      audioManager.play(3);
+      fadeToLevel(3);   // unified path: full reset (items tray, crates, ladders, relic) via goToLevel
     }
     s.vx=0;
   }
@@ -11587,11 +11535,12 @@ function carryL5(p){ const sp=p&&p._standPlat; if(p&&p.onGround&&sp&&sp.kind==='
 function ladderRect(e){ return e.plat ? {x:e.plat.x, y:e.plat.y, w:e.w, h:e.plat.h} : e; }
 function handleClimb(s){
   if(!levelLadders.length) return false;
+  if(s._climbCd>0) s._climbCd--;   // re-latch cooldown: stops top-exit/unlatch oscillation
   let lad=null;
   for(const e of levelLadders){ const pl=ladderRect(e);
     if(s.x+s.w>pl.x+2 && s.x<pl.x+pl.w-2 && s.y+s.h>pl.y-2 && s.y<pl.y+pl.h+4){ lad=pl; break; } }
   if(!s.climbing){
-    if(lad && (keys['ArrowUp']||keys['ArrowDown'])){ s.climbing=true; s.vx=0; s.vy=0;
+    if(!s._climbCd && lad && (keys['ArrowUp']||keys['ArrowDown'])){ s.climbing=true; s.vx=0; s.vy=0;
       // Creak on grab, but gate it: at the ladder top/bottom the climb unlatches while
       // Up/Down is still held (lines below), so the next frame re-latches and re-fires the
       // SFX every frame -> machine-gun glitch. Cap to ~4/sec so a real grab still creaks.
@@ -11599,13 +11548,13 @@ function handleClimb(s){
     else return false;
   }
   if(!lad){ s.climbing=false; return false; }
-  if(keys['ArrowLeft']||keys['ArrowRight']){ s.climbing=false; return false; }   // unlatch sideways
+  if(keys['ArrowLeft']||keys['ArrowRight']){ s.climbing=false; s._climbCd=10; return false; }   // unlatch sideways
   s.vx=0; s.vy=0; s.onGround=false;
   const cx=lad.x+lad.w/2; s.x += ((cx-s.w/2)-s.x)*0.4;                            // ease to ladder centre
   const CL=2.2;
   if(keys['ArrowUp']) s.y-=CL; else if(keys['ArrowDown']) s.y+=CL;
-  if(s.y+s.h <= lad.y+4){ s.y=lad.y-s.h; s.climbing=false; s.onGround=true; s.vy=0; return false; }  // step onto deck above
-  if(s.y+s.h >= lad.y+lad.h){ s.y=lad.y+lad.h-s.h; if(keys['ArrowDown']){ s.climbing=false; return false; } } // hit the bottom
+  if(s.y+s.h <= lad.y+4 && !keys['ArrowDown']){ s.y=lad.y-s.h; s.climbing=false; s.onGround=true; s.vy=0; s._climbCd=10; return false; }  // step onto deck above (unless descending)
+  if(s.y+s.h >= lad.y+lad.h){ s.y=lad.y+lad.h-s.h; if(keys['ArrowDown']){ s.climbing=false; s._climbCd=10; return false; } } // hit the bottom
   return true;
 }
 
@@ -15493,7 +15442,17 @@ function playIntroCutscene(onDone){
   var goRef = null;
 
   let finished = false;
+  // Gamepad: A/B/START skips the intro. Prime the latch so a button still held
+  // from the menu press that launched the intro can't insta-skip.
+  _gpLatch['introSkip'] = true;
+  const _padSkipIv = setInterval(()=>{
+    let pads=[]; try{ pads=navigator.getGamepads?navigator.getGamepads():[]; }catch(e){ return; }
+    let gp=null; for(const p of pads){ if(p){ gp=p; break; } }
+    const hit = !!gp && (gp.buttons[0]?.pressed || gp.buttons[1]?.pressed || gp.buttons[9]?.pressed);
+    if(_gpEdge('introSkip', hit)){ try{ skip.click(); }catch(e){} }
+  }, 100);
   const cleanup = ()=>{
+    clearInterval(_padSkipIv);
     try{ vid.pause(); }catch(e){}
     vid.removeEventListener('ended', onEnded);
     vid.removeEventListener('error', onErr);
@@ -15732,6 +15691,89 @@ function playReturnHomeCutscene(onDone){
   const howtoBtn  = { x: 14, y: 10, w:42, h:42 };   // top-left help (?), mirrors audio toggles
   const howtoBack = { x: MW/2-40, y: 274,   w:80,  h:34 };
   let howtoHover=false;
+
+  // ── Bluetooth/USB controller support for the whole menu ──────────────────
+  // D-pad / left stick moves focus, A activates, B backs out, START = play.
+  // Focus reuses the existing hover flags so every button lights up natively.
+  function _sndLabel(){ const sb=document.getElementById('snd'); if(sb) sb.innerHTML='&#128266; Sound: '+((musicOn||sfxOn)?'on':'off'); }
+  // Replicate PLAY teardown, then jump straight into level n (no intro cutscene).
+  function launchTile(n){
+    _gpLatch['menuA'] = true;   // prime: the A press that chose the tile must not also press the popup's Play
+    menuRunning=false;
+    audioManager.stopTitle();
+    mScreen.style.transition='opacity 1.2s ease';
+    mScreen.style.opacity='0';
+    mScreen.style.pointerEvents='none';
+    setTimeout(()=>{ mScreen.style.display='none'; }, 1250);
+    jumpToLevel(n);
+    setupHiDPI();
+  }
+  const TITLE_FOCUS=['start','levels','howto','music','sfx'];
+  let mFocus=-1;   // -1 until the first pad input, so mouse-only users never see a focus ring
+  function _menuSyncHover(){
+    btnHover=false; lvlBtnHover=false; howtoHover=false; musicHover=false; sfxHover=false; backHover=false; hoverTile=0;
+    if(mFocus<0) return;
+    if(menuMode==='title'){
+      const f=TITLE_FOCUS[mFocus];
+      btnHover=f==='start'; lvlBtnHover=f==='levels'; howtoHover=f==='howto';
+      musicHover=f==='music'; sfxHover=f==='sfx';
+    } else if(menuMode==='levels'){
+      if(mFocus===0) backHover=true; else hoverTile=mFocus;
+    } else if(menuMode==='howto'){ howtoHover=true; }   // howtoHover doubles as the BACK highlight in howto mode
+  }
+  function _menuNav(dx,dy){
+    if(mFocus<0){ mFocus=0; _menuSyncHover(); return; }
+    if(menuMode==='title'){
+      const d=(dy||dx);
+      mFocus=(mFocus+d+TITLE_FOCUS.length)%TITLE_FOCUS.length;
+    } else if(menuMode==='levels'){
+      if(dx){
+        if(mFocus===0) mFocus=1;
+        else { const r=Math.floor((mFocus-1)/3); const c=((mFocus-1)%3+dx+3)%3; mFocus=r*3+c+1; }
+      }
+      if(dy<0) mFocus = mFocus>3 ? mFocus-3 : 0;               // up: bottom row -> top row -> BACK
+      if(dy>0) mFocus = mFocus===0 ? 1 : (mFocus<=3 ? mFocus+3 : mFocus);
+    }
+    if(sfxOn) beep(480,0.03,'square',0.04);
+    _menuSyncHover();
+  }
+  function _menuActivate(){
+    if(mFocus<0){ mFocus=0; _menuSyncHover(); return; }
+    if(menuMode==='title'){
+      const f=TITLE_FOCUS[mFocus];
+      if(f==='start'){ startPortalPlay(); return; }
+      if(f==='levels'){ menuMode='levels'; mFocus=1; if(sfxOn) beep(620,0.05,'square',0.06); }
+      else if(f==='howto'){ menuMode='howto'; mFocus=0; if(sfxOn) beep(620,0.05,'square',0.06); }
+      else if(f==='music'){ musicOn=!musicOn; audioManager.syncVolume(); _sndLabel(); }
+      else if(f==='sfx'){ sfxOn=!sfxOn; _sndLabel(); if(sfxOn) beep(680,0.07,'square',0.08); }
+    } else if(menuMode==='levels'){
+      if(mFocus===0){ menuMode='title'; mFocus=1; if(sfxOn) beep(520,0.05,'square',0.06); }
+      else if(!lvlUnlocked(mFocus)){ if(sfxOn) beep(180,0.08,'square',0.05); }
+      else { launchTile(mFocus); return; }
+    } else if(menuMode==='howto'){ menuMode='title'; mFocus=2; if(sfxOn) beep(520,0.05,'square',0.06); }
+    _menuSyncHover();
+  }
+  function _menuBack(){
+    if(menuMode==='levels'){ menuMode='title'; mFocus=1; if(sfxOn) beep(520,0.05,'square',0.06); }
+    else if(menuMode==='howto'){ menuMode='title'; mFocus=2; if(sfxOn) beep(520,0.05,'square',0.06); }
+    _menuSyncHover();
+  }
+  function pollMenuPad(){
+    let pads=[]; try{ pads=navigator.getGamepads?navigator.getGamepads():[]; }catch(e){ return; }
+    let gp=null; for(const p of pads){ if(p){ gp=p; break; } }
+    if(!gp) return;
+    const A=gp.buttons[0]?.pressed, B=gp.buttons[1]?.pressed, START=gp.buttons[9]?.pressed;
+    const ax=gp.axes[0]||0, ay=gp.axes[1]||0, DZ=0.5;
+    const L=gp.buttons[14]?.pressed||ax<-DZ, R=gp.buttons[15]?.pressed||ax>DZ;
+    const U=gp.buttons[12]?.pressed||ay<-DZ, D=gp.buttons[13]?.pressed||ay>DZ;
+    if(_gpEdge('mnuL',L)) _menuNav(-1,0);
+    if(_gpEdge('mnuR',R)) _menuNav( 1,0);
+    if(_gpEdge('mnuU',U)) _menuNav(0,-1);
+    if(_gpEdge('mnuD',D)) _menuNav(0, 1);
+    if(_gpEdge('mnuA',A)) _menuActivate();
+    if(_gpEdge('mnuStart',START)){ if(menuMode==='title') startPortalPlay(); else _menuActivate(); }
+    if(_gpEdge('mnuB',B)) _menuBack();
+  }
 
   function drawToggleBtn(r, kind, on, hover){
     const c = mCtx;
@@ -16112,6 +16154,7 @@ function playReturnHomeCutscene(onDone){
 
   function menuLoop(){
     if(!menuRunning) return;
+    pollMenuPad();
     mT++;
     const cycle = mT % 240;
     sawyerWave = (cycle>30 && cycle<90) ? 1 : 0;
@@ -16156,15 +16199,7 @@ function playReturnHomeCutscene(onDone){
       for(let n=1;n<=6;n++){
         if(inR(tileRects[n])){
           if(!lvlUnlocked(n)){ if(sfxOn) beep(180,0.08,'square',0.05); return; } // locked: no-op
-          // Replicate PLAY teardown, then jump straight in (no intro cutscene)
-          menuRunning=false;
-          audioManager.stopTitle();
-          mScreen.style.transition='opacity 1.2s ease';
-          mScreen.style.opacity='0';
-          mScreen.style.pointerEvents='none';
-          setTimeout(()=>{ mScreen.style.display='none'; }, 1250);
-          jumpToLevel(n);
-          setupHiDPI();
+          launchTile(n);
           return;
         }
       }
