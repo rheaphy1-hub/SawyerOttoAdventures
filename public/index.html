@@ -1380,8 +1380,11 @@ function updateGiantOttoCharge(curEnemies){
     // BIG BABY sweeps away all spawned projectiles/hazards it plows through
     clearHazards();
     // ...and deals damage to the boss if the giant body overlaps it
-    const _bb = (typeof boss!=='undefined' && boss && boss.alive) ? boss
-              : (typeof yeti!=='undefined' && yeti && yeti.alive) ? yeti : null;
+    let _bb = null;   // resolve the CURRENT level's boss explicitly (globals from earlier levels linger)
+    if(currentLevel===2)      _bb = (typeof yeti    !=='undefined' && yeti    && yeti.alive)    ? yeti    : null;
+    else if(currentLevel===3) _bb = (typeof kingCrab!=='undefined' && kingCrab&& kingCrab.alive)? kingCrab: null;
+    else if(currentLevel>=4&&currentLevel<=6){ const bo=LV[currentLevel].bossObj; _bb=(bo&&bo.alive)?bo:null; }
+    else                      _bb = (typeof boss!=='undefined' && boss && boss.alive) ? boss : null;
     if(_bb && _bb.active && !otto._bbHitBoss){
       if(gx+gw>_bb.x && gx<_bb.x+_bb.w && gy+gh>_bb.y && gy<_bb.y+_bb.h){
         otto._bbHitBoss=true;                 // one boss-hit per charge (not per frame)
@@ -11290,8 +11293,8 @@ const LV = {
        enemies:'buildLevel3Enemies', rocks:'buildLevel3Rocks', bg:'drawBg', boss:'buildKingCrab' },
   4: {
     worldW:4200, bossGate:3400, next:5,   // last traversal content ends ~2560 → long dark runway → isolated arena
-    pal:{ skyT:'#0A1428', skyM:'#1B3A5A', skyL:'#2E5A7A', ground:'#1A3A4A',
-          edge:'#2A5A6A', plat:'#4A7A8A', glow:'#6ABAAA',
+    pal:{ skyT:'#020810', skyM:'#0A1C30', skyL:'#123048', ground:'#081820',
+          edge:'#0E2836', plat:'#4A7A8A', glow:'#6ABAAA',
           primary:'#00FF88', secondary:'#00FFFF', tertiary:'#FF00FF',
           r1:'#FFD700', r2:'#00FFFF', r3:'#FF00FF', pit:'#06101E' },
     boss:{ name:'The Leviathan', tag:'🦑 THE LEVIATHAN', rage:'🦑 THE LEVIATHAN — ENRAGED',
@@ -13139,25 +13142,39 @@ function drawSwimBg(){
   const g=ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,pal.skyL); g.addColorStop(0.5,pal.skyM); g.addColorStop(1,pal.skyT);
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-  // surface shimmer
-  ctx.fillStyle='rgba(140,220,230,0.18)'; ctx.fillRect(0,0,W,SY);
-  ctx.strokeStyle='rgba(180,240,250,0.25)'; ctx.lineWidth=2;
-  for(let i=0;i<8;i++){ const x=((i*120-cameraX*0.2)%(W+140)+W+140)%(W+140)-70; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+18,SY); ctx.stroke(); }
-  // god rays (parallax)
-  ctx.save(); ctx.globalAlpha=0.10;
+  // Abyss: no visible surface — only the faintest light filters down from far above
+  // god rays (parallax, barely-there)
+  ctx.save(); ctx.globalAlpha=0.045;
   for(let i=0;i<5;i++){ const x=((i*260-cameraX*0.12)%(W+320)+W+320)%(W+320)-160; ctx.fillStyle=pal.glow;
     ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x+60,0); ctx.lineTo(x+150,H); ctx.lineTo(x-30,H); ctx.closePath(); ctx.fill(); }
   ctx.restore();
   // distant coral silhouettes (far parallax)
-  ctx.fillStyle='rgba(10,30,45,0.55)';
+  ctx.fillStyle='rgba(3,10,18,0.6)';
   for(let i=0;i<7;i++){ const x=((i*230-cameraX*0.3)%(W+300)+W+300)%(W+300)-150; const bh=40+(i%3)*22;
     ctx.beginPath(); ctx.moveTo(x,FY); ctx.quadraticCurveTo(x+10,FY-bh,x+24,FY-bh*0.6); ctx.quadraticCurveTo(x+34,FY-bh,x+48,FY); ctx.closePath(); ctx.fill(); }
-  // drifting motes
-  ctx.fillStyle='rgba(150,220,230,0.18)';
+  // drifting motes (dim marine snow)
+  ctx.fillStyle='rgba(110,170,190,0.10)';
   for(let i=0;i<26;i++){ const x=((i*97-cameraX*0.5)%(W+40)+W+40)%(W+40)-20; const y=(SY+ (i*53 + Date.now()*0.02*(1+i%3))%(FY-SY)); ctx.beginPath(); ctx.arc(x,y,1.6,0,7); ctx.fill(); }
-  // seafloor
-  ctx.fillStyle=pal.ground; ctx.fillRect(0,FY,W,H-FY);
-  ctx.fillStyle=pal.edge; ctx.fillRect(0,FY,W,5);
+  // ── Abyssal ocean floor: black sediment gradient + deterministic silhouetted ridges ──
+  const fg=ctx.createLinearGradient(0,FY-10,0,H);
+  fg.addColorStop(0,'#0A1A24'); fg.addColorStop(0.4,'#04101A'); fg.addColorStop(1,'#010509');
+  ctx.fillStyle=fg; ctx.fillRect(0,FY,W,H-FY);
+  // low dune/ridge silhouette rising slightly above the physics floor (world-x seeded — no shimmer)
+  ctx.fillStyle='#050F18';
+  ctx.beginPath(); ctx.moveTo(-2,H); ctx.lineTo(-2,FY+2);
+  for(let sx=0;sx<=W+16;sx+=16){
+    const wx=Math.floor((sx+cameraX)/16);
+    ctx.lineTo(sx, FY+2 - tRand(wx*13.7)*9);
+  }
+  ctx.lineTo(W+2,FY+2); ctx.lineTo(W+2,H); ctx.closePath(); ctx.fill();
+  // sparse pale sediment specks on the floor band (deterministic)
+  ctx.fillStyle='rgba(140,190,200,0.08)';
+  for(let i=0;i<14;i++){
+    const wx=Math.floor(cameraX/48)*48 + i*48;
+    const x=wx-cameraX + tRand(wx*3.1)*40;
+    if(x<-4||x>W+4) continue;
+    ctx.beginPath(); ctx.arc(x, FY+8+tRand(wx*1.7)*(H-FY-14), 1.4, 0, 7); ctx.fill();
+  }
 }
 function drawSwimCurrents(){
   const lv=curLV(); const t=Date.now()*0.004;
@@ -13191,6 +13208,13 @@ function drawSwimTerrain(){
     const dir  = ceil?1:-1;
     const rootY= ceil ? s.y+s.h : s.y;   // fronds emerge from the rock surface facing open water
     // --- textured reef base: faceted rock + coral growths (flora stems from this) ---
+    if(ceil){ // abyss: no surface line — fade the overhang's root up into the dark water above
+      const rg=ctx.createLinearGradient(x,0,x,s.y+8);
+      rg.addColorStop(0,'rgba(4,12,20,0)'); rg.addColorStop(0.55,'#081C28'); rg.addColorStop(1,'#0C2634');
+      ctx.fillStyle=rg;
+      ctx.beginPath(); ctx.moveTo(x+s.w*0.18,0); ctx.lineTo(x+s.w*0.82,0);
+      ctx.lineTo(x+s.w*0.95,s.y+8); ctx.lineTo(x+s.w*0.05,s.y+8); ctx.closePath(); ctx.fill();
+    }
     const cx0=x+s.w/2, cyc=s.y+s.h/2, rxB=s.w*0.6, ryB=s.h*0.6;
     // 1) faceted rock body
     const rpts=[]; const np=9;
@@ -13669,10 +13693,10 @@ function drawSwimDepth(){
   const onset=lv.bossGate-780, span=700;
   const d=Math.max(0, Math.min(1, (sawyer.x-onset)/span));
   if(d<=0.01) return;
-  const a=d*0.55;
+  const a=d*0.45;
   const g=ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'rgba(2,8,18,'+(a*0.75).toFixed(3)+')');   // faint light still filters from the surface
-  g.addColorStop(1,'rgba(0,3,10,'+a.toFixed(3)+')');           // abyssal floor
+  g.addColorStop(0,'rgba(1,5,12,'+(a*0.75).toFixed(3)+')');   // near-lightless water column
+  g.addColorStop(1,'rgba(0,2,7,'+a.toFixed(3)+')');            // abyssal floor
   ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 }
 function drawSwimMurk(){
