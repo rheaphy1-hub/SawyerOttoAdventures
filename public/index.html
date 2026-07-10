@@ -414,7 +414,7 @@
     <div class="popup-badge">🌊</div>
     <div class="popup-kicker">Level 4</div>
     <h2>THE ABYSS</h2>
-    <p>LEVIATHAN'S TRENCH — Otto is trapped in a giant clam on the ocean floor. Only his milk can crack it open. Dive in and free him before The Leviathan finds him first!</p>
+    <p>LEVIATHAN'S TRENCH — A monstrous Lantern Fish swallowed the portal transponder. Hunt it down in the dark, defeat it, and reclaim the transponder before The Leviathan finds you!</p>
     <p class="popup-scoring">Collect pearls (75–250 pts), strike sea creatures (100–150 pts), beat the boss (+1 000)!</p>
     <p class="popup-par">🎯 Par time: <span data-par="4"></span> &nbsp;·&nbsp; Beat it (or score big) for the ★ Under Par star</p>
     <button class="play-btn" onclick="closeLevelPopup()">▶ Play</button>
@@ -2738,12 +2738,12 @@ function ottoTryAttack(enemyList, bossObj){
     const d=Math.abs(e.x-o.x);
     if(d<td && Math.sign(e.x-s.x)===s.facing){ td=d; tgt=e; }
   }
-  // 2) the L4 sealed clam counts as a valid target (Otto can auto-crack it)
+  // 2) the L4 Lantern Fish mini-boss counts as a valid target (Otto helps take it down)
   try{
     const lv=curLV();
-    if(lv && lv.transponder && !lv.transponder.got && lv.transponder.clamHp>0){
-      const d=Math.abs(lv.transponder.x-o.x);
-      if(d<td && Math.sign(lv.transponder.x-s.x)===s.facing){ td=d; tgt=lv.transponder; }
+    if(currentLevel===4 && lv && lv.miniBoss && lv.miniBoss.alive){   // L5's miniBoss has its own mechanics — don't target it
+      const d=Math.abs(lv.miniBoss.x-o.x);
+      if(d<td && Math.sign(lv.miniBoss.x-s.x)===s.facing){ td=d; tgt=lv.miniBoss; }
     }
   }catch(e){}
   // 3) the active boss — Otto protects Sawyer from bosses too
@@ -7385,6 +7385,9 @@ function resetRunState(lvl, opts){
   // Checkpoints removed: no transponder resume — every restart begins at the level start.
 }
 function restartCurrentLevel(){
+  // Post-credits replay: the game is finished — "Play Again" means a fresh run from Level 1,
+  // not another lap of Space Void. All other callers (death/mid-game retry) behave as before.
+  if(won && currentLevel===6 && returnHomeDone){ currentLevel=1; }
   try{ Portal.gameplayStop(); }catch(e){}   // death -> retry: stop gameplay, offer an ad, then rebuild
   const _rebuild = ()=>{
     resetRunState(currentLevel||1, {});
@@ -12735,9 +12738,12 @@ function buildSwimLevel(){
     lv.rocks.push({x, y, got:false, rarity, points, swim:true, phase:Math.random()*6});
   });
 
-  // ── SPRINT G: the transponder is sealed inside a giant clam on the golden path.
-  //    Otto-only objective: 3 milk hits crack it open; Sawyer's soccer ball bounces off. ──
-  lv.transponder = { x:1904, y:swimFloorY()-34, w:34, h:28, got:false, clamHp:3, open:0, hitFlash:0, phase:0 };
+  // ── THE LANTERN FISH mini-boss swallowed the transponder. Defeat it to release it.
+  //    (Replaces the Sprint G giant clam — both Sawyer's ball AND Otto's milk hurt it.) ──
+  lv.miniBoss = { x:1880, y:FY-130, w:70, h:58, hp:6, maxHp:6, alive:true, aggro:false,
+                  vx:0, vy:0, facing:-1, phase:Math.random()*6, hitFlash:0, shootTimer:80,
+                  dieTimer:0, lo:1660, hi:2180 };
+  lv.transponder = { x:1904, y:swimFloorY()-34, w:34, h:28, got:false, released:false, open:0, hitFlash:0, phase:0 };
   lv.transponderTaken = false;
 
   lv.pitMobs = []; lv.pitTimer = 9999; // pits unused underwater
@@ -12938,14 +12944,22 @@ function updateSwim(){
         pr.life=0;sfx('squash');break;
       }
     }
-    // ── SPRINT G: giant clam — only Otto's milk cracks it (3 hits); Sawyer's soccer ball bounces off ──
-    if(pr.life>0 && lv.transponder && !lv.transponder.got && lv.transponder.clamHp>0){
-      const tp=lv.transponder;
-      if(pr.x>tp.x-4&&pr.x<tp.x+tp.w+4&&pr.y>tp.y-6&&pr.y<tp.y+tp.h+4){
-        if(pr.type==='milk'){
-          tp.clamHp--; tp.hitFlash=8; sfx('bossHit'); pr.life=0;
-          for(let i=0;i<10;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*5,vy:-1-Math.random()*3,life:20,maxLife:20,type:'spark',color:'#BFEFFF'});
-        } else { pr.vx*=-0.6; pr.x+=pr.vx*2; sfx('ball'); } // Otto-only objective by design
+    // ── LANTERN FISH mini-boss: ball AND milk both damage it ──
+    const mb=lv.miniBoss;
+    if(pr.life>0 && mb && mb.alive){
+      if(pr.x>mb.x&&pr.x<mb.x+mb.w&&pr.y>mb.y&&pr.y<mb.y+mb.h){
+        mb.hp--; mb.hitFlash=8; mb.aggro=true; score+=40; sfx('bossHit'); pr.life=pr.type==='milk'?Math.min(pr.life,2):0;
+        for(let i=0;i<8;i++) particles.push({x:mb.x+mb.w/2,y:mb.y+mb.h/2,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,life:18,maxLife:18,type:'spark',color:'#CFFFE0'});
+        if(mb.hp<=0){
+          mb.alive=false; mb.dieTimer=90; score+=500; shakeIntensity=12; sfx('bossDie');
+          popPoints(mb.x+mb.w/2, mb.y-8, 500, '#CFFFE0');
+          for(let i=0;i<22;i++) particles.push({x:mb.x+mb.w/2,y:mb.y+mb.h/2,vx:(Math.random()-.5)*7,vy:(Math.random()-.5)*7,life:36,maxLife:36,type:'spark',color:i%2?'#CFFFE0':'#00FF88'});
+          // it coughs up the transponder — released where the fish fell (clamped to its den)
+          const tp=lv.transponder;
+          tp.released=true;
+          tp.x=Math.max(mb.lo+20, Math.min(mb.hi-40, mb.x+mb.w/2-tp.w/2));
+          tp.y=swimFloorY()-34;
+        }
       }
     }
     if(pr.life>0&&boss&&boss.active&&boss.alive){
@@ -12973,11 +12987,11 @@ function updateSwim(){
     }
   }
 
-  // ── SPRINT G: cracked clam eases open; the transponder inside is Sawyer's to take ──
+  // ── The freed transponder beacons open; Sawyer's to take ──
   if(lv.transponder && !lv.transponder.got){
     const tp=lv.transponder;
     tp.phase+=0.05; if(tp.hitFlash>0)tp.hitFlash--;
-    if(tp.clamHp<=0){
+    if(tp.released){
       tp.open += (1-tp.open)*0.08;
       if(tp.open>0.7){
         const pcx=s.x+s.w/2, pcy=s.y+s.h/2;
@@ -12987,6 +13001,46 @@ function updateSwim(){
           for(let i=0;i<28;i++) particles.push({x:tp.x+tp.w/2,y:tp.y+tp.h/2,vx:(Math.random()-.5)*7,vy:-2-Math.random()*5,life:34,maxLife:34,type:'spark',color:i%2?'#9FD8FF':'#BFEFFF'});
         }
       }
+    }
+  }
+
+  // ---- Mini-boss: THE LANTERN FISH (territorial lurker guarding the transponder) ----
+  {
+    const mb=lv.miniBoss;
+    if(mb && mb.alive){
+      mb.phase+=0.05; if(mb.hitFlash>0)mb.hitFlash--;
+      const scx=s.x+s.w/2, mcx=mb.x+mb.w/2;
+      if(!mb.aggro && Math.abs(scx-mcx)<260) mb.aggro=true;   // lure spotted you
+      if(mb.aggro){
+        mb.facing = scx<mcx ? -1 : 1;
+        // slow relentless pursuit within its den
+        const tdx=scx-mcx, tdy=(s.y+s.h/2)-(mb.y+mb.h/2), td=Math.hypot(tdx,tdy)||1;
+        mb.vx+=(tdx/td)*0.08; mb.vy+=(tdy/td)*0.08;
+        mb.vx*=0.93; mb.vy*=0.93;
+        const cap=1.9;
+        mb.vx=Math.max(-cap,Math.min(cap,mb.vx)); mb.vy=Math.max(-cap,Math.min(cap,mb.vy));
+        mb.x+=mb.vx; mb.y+=mb.vy+Math.sin(mb.phase)*0.5;
+        if(mb.x<mb.lo){mb.x=mb.lo;mb.vx*=-0.5;} if(mb.x>mb.hi-mb.w){mb.x=mb.hi-mb.w;mb.vx*=-0.5;}
+        if(mb.y<SY+10){mb.y=SY+10;mb.vy=0;} if(mb.y>FY-mb.h){mb.y=FY-mb.h;mb.vy=0;}
+        // aimed lure-bolts
+        mb.shootTimer--;
+        if(mb.shootTimer<=0){
+          mb.shootTimer=110;
+          const sx0=mb.x+mb.w/2, sy0=mb.y+mb.h*0.45;
+          const dx=scx-sx0, dy=(s.y+s.h/2)-sy0, d=Math.hypot(dx,dy)||1;
+          venom.push({x:sx0,y:sy0,vx:dx/d*3.2,vy:dy/d*3.2,life:130,r:6,col:'#CFFFE0'});
+          sfx('bossSpit');
+        }
+        // contact damage
+        if(s.invincible===0 && s.x+s.w>mb.x+6 && s.x<mb.x+mb.w-6 && s.y+s.h>mb.y+6 && s.y<mb.y+mb.h-6) hurt(s);
+      } else {
+        // lurking: gentle bob in place, lure pulsing in the dark
+        mb.y+=Math.sin(mb.phase)*0.35;
+        if(mb.y>FY-mb.h)mb.y=FY-mb.h;
+      }
+    } else if(mb && !mb.alive && mb.dieTimer>0){
+      mb.dieTimer--;
+      if(mb.dieTimer%8===0) particles.push({x:mb.x+mb.w/2+(Math.random()-.5)*30,y:mb.y+mb.h/2,vx:(Math.random()-.5)*2,vy:-1,life:24,maxLife:24,type:'spark',color:'#CFFFE0'});
     }
   }
 
@@ -13509,72 +13563,75 @@ function drawSwimInk(){
 
 // ── SPRINT G: giant clam holding the L4 transponder ──
 function drawSwimClam(){
-  const lv=LV[4], tp=lv&&lv.transponder; if(!tp||tp.got) return;
-  const x=tp.x-cameraX; if(x<-80||x>W+80) return;
-  const cx=x+tp.w/2, baseY=tp.y+tp.h, t=tp.phase;
-  const breathe=Math.sin(t*1.6)*0.04;                       // slight breathing wobble
+  // THE LANTERN FISH mini-boss (scaled-up lantern-maw) + the transponder beacon it releases.
+  // Function name kept so the L4 draw chain is untouched.
+  const lv=LV[4], tp=lv&&lv.transponder, mb=lv&&lv.miniBoss;
+  // ── freed transponder: cyan beacon column + hovering transponder (reads across the dark) ──
+  if(tp && !tp.got && tp.released){
+    const x=tp.x-cameraX;
+    if(!(x<-80||x>W+80)){
+      const cx=x+tp.w/2, baseY=tp.y+tp.h, t=tp.phase;
+      if(tp.open>0.4){
+        ctx.save(); ctx.globalCompositeOperation='lighter';
+        const pulse=0.5+0.5*Math.sin(t*3);
+        const bg=ctx.createLinearGradient(cx,baseY-200,cx,baseY);
+        bg.addColorStop(0,'rgba(159,216,255,0)'); bg.addColorStop(1,'rgba(159,216,255,'+((0.20+0.14*pulse)*tp.open).toFixed(3)+')');
+        ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(cx-7,baseY); ctx.lineTo(cx+7,baseY); ctx.lineTo(cx+3,baseY-200); ctx.lineTo(cx-3,baseY-200); ctx.closePath(); ctx.fill();
+        ctx.restore();
+        const ty=tp.y-4-tp.open*10+Math.sin(t*2)*2;
+        if(transponderImg.complete && transponderImg.naturalWidth){
+          const ih=18, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
+          ctx.save(); ctx.shadowColor='rgba(159,216,255,0.8)'; ctx.shadowBlur=12;
+          ctx.imageSmoothingEnabled=true; ctx.drawImage(transponderImg, cx-iw/2, ty-ih/2, iw, ih); ctx.restore();
+        } else { ctx.fillStyle='#9FD8FF'; ctx.fillRect(cx-8,ty-5,16,10); }
+      }
+    }
+  }
+  // ── the fish itself ──
+  if(!mb || (!mb.alive && mb.dieTimer<=0)) return;
+  const bx=mb.x-cameraX; if(bx+mb.w<-100||bx>W+100) return;
+  const W2=mb.w, H2=mb.h, ph=mb.phase;
+  const flash=mb.hitFlash>0&&Math.floor(mb.hitFlash/2)%2===0;
   ctx.save();
-  // once open: cyan beacon column + transponder hovering inside (reads across the murk)
-  if(tp.open>0.4){
-    ctx.save(); ctx.globalCompositeOperation='lighter';
-    const pulse=0.5+0.5*Math.sin(t*3);
-    const bg=ctx.createLinearGradient(cx,baseY-200,cx,baseY);
-    bg.addColorStop(0,'rgba(159,216,255,0)'); bg.addColorStop(1,'rgba(159,216,255,'+((0.20+0.14*pulse)*tp.open).toFixed(3)+')');
-    ctx.fillStyle=bg; ctx.beginPath(); ctx.moveTo(cx-7,baseY); ctx.lineTo(cx+7,baseY); ctx.lineTo(cx+3,baseY-200); ctx.lineTo(cx-3,baseY-200); ctx.closePath(); ctx.fill();
-    ctx.restore();
-    const ty=tp.y-4-tp.open*10+Math.sin(t*2)*2;
-    if(transponderImg.complete && transponderImg.naturalWidth){
-      const ih=18, iw=transponderImg.naturalWidth*ih/transponderImg.naturalHeight;
-      ctx.save(); ctx.shadowColor='rgba(159,216,255,0.8)'; ctx.shadowBlur=12;
-      ctx.imageSmoothingEnabled=true; ctx.drawImage(transponderImg, cx-iw/2, ty-ih/2, iw, ih); ctx.restore();
-    } else { ctx.fillStyle='#9FD8FF'; ctx.fillRect(cx-8,ty-5,16,10); }
-  }
-  // ── SPRINT H+I: sealed-state LOCK GLYPH — big, pulsing, readable across the murk.
-  //    Removed the instant clamHp hits 0; the open beacon takes over as the visual. ──
-  if(tp.clamHp>0){
-    try{
-      const glow=(lv.pal&&lv.pal.glow)||'#7FE8FF';
-      const lx=cx, ly=tp.y-34;                       // centered above the clam
-      const pulse=0.55+0.4*Math.sin(t*2);            // higher floor so it never dips out of view
-      ctx.save();
-      ctx.globalCompositeOperation='lighter';        // cuts through the murk overlay
-      // soft halo behind the glyph so it reads at distance
-      const halo=ctx.createRadialGradient(lx,ly+4,0,lx,ly+4,22);
-      halo.addColorStop(0,'rgba(127,232,255,'+(0.28*pulse).toFixed(3)+')');
-      halo.addColorStop(1,'rgba(127,232,255,0)');
-      ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(lx,ly+4,22,0,7); ctx.fill();
-      ctx.globalAlpha=pulse;
-      ctx.strokeStyle=glow; ctx.lineWidth=2.5; ctx.lineCap='round';
-      ctx.shadowColor=glow; ctx.shadowBlur=12;
-      // shackle: arc of two-circle geometry (open U over the body)
-      ctx.beginPath(); ctx.arc(lx, ly-4, 7, Math.PI, 0); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(lx-7, ly-4); ctx.lineTo(lx-7, ly+1); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(lx+7, ly-4); ctx.lineTo(lx+7, ly+1); ctx.stroke();
-      // lock body: vertical rect (locked position) + bottom bar
-      ctx.strokeRect(lx-10, ly+1, 20, 13);
-      ctx.beginPath(); ctx.moveTo(lx-10, ly+14); ctx.lineTo(lx+10, ly+14); ctx.stroke();
-      // keyhole dot
-      ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(lx, ly+7, 2.2, 0, 7); ctx.fill();
-      ctx.restore();
-    }catch(e){}
-  }
-  // two ridged shell halves rotating apart around the base hinge
-  const shellCol = tp.hitFlash>0 ? '#EAF6FF' : lv.pal.plat;
-  for(const dir of [-1,1]){
-    ctx.save(); ctx.translate(cx,baseY); ctx.rotate(dir*(0.10+breathe+tp.open*1.05));
-    ctx.fillStyle=shellCol; ctx.strokeStyle=lv.pal.glow; ctx.lineWidth=1.4;
-    ctx.beginPath(); ctx.moveTo(0,0);
-    ctx.quadraticCurveTo(dir*4, -tp.h-6, dir*(tp.w/2+3), -tp.h*0.55);
-    ctx.quadraticCurveTo(dir*(tp.w/2+5), -4, 0, 0);
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.strokeStyle='rgba(255,255,255,0.22)'; ctx.lineWidth=0.8;   // scallop ridges
-    for(let k=1;k<=3;k++){ ctx.beginPath(); ctx.moveTo(0,-2);
-      ctx.quadraticCurveTo(dir*3*k, -(tp.h-2)*k/3-3, dir*(tp.w/2)*k/3.4, -(tp.h*0.5)*k/3); ctx.stroke(); }
-    ctx.restore();
-  }
-  // remaining-HP pips while still sealed
-  if(tp.clamHp>0) for(let i=0;i<3;i++){ ctx.fillStyle=i<tp.clamHp?'#BFEFFF':'rgba(40,80,100,0.6)'; ctx.fillRect(cx-10+i*8, tp.y-14, 5, 3); }
+  if(!mb.alive){ ctx.globalAlpha=Math.max(0,mb.dieTimer/90); }
+  ctx.translate(bx+W2/2,mb.y+H2/2); ctx.scale(mb.facing<0?1:-1,1); ctx.translate(-W2/2,-H2/2);
+  const cx=W2*0.52, cy=H2*0.52;
+  // dangling lure — the only light in the dark until it lunges
+  ctx.strokeStyle='#1A2A30'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(W2*0.5,H2*0.14); ctx.quadraticCurveTo(W2*0.10,H2*-0.30,W2*-0.02,H2*0.02); ctx.stroke();
+  const lg=5+Math.sin(ph*2)*2;
+  _aGlow(W2*-0.02,H2*0.02,lg+9,'#CFFFE0',0.75);
+  ctx.fillStyle=flash?'#FFFFFF':'#DFFFE8'; ctx.beginPath(); ctx.arc(W2*-0.02,H2*0.02,lg,0,7); ctx.fill();
+  // body: eyeless black sac with sickly green rim-light
+  _aGlow(cx,cy,W2*0.55,mb.aggro?'rgba(0,90,50,1)':'rgba(0,60,40,1)',mb.aggro?0.34:0.24);
+  ctx.fillStyle=flash?'#EAFFF2':'#06120E'; ctx.beginPath(); ctx.ellipse(cx,cy,W2*0.46,H2*0.46,0,0,7); ctx.fill();
+  _aRim(cx,cy,W2*0.46,H2*0.46,'rgba(0,255,150,0.55)');
+  // dorsal spines
+  ctx.strokeStyle='rgba(0,255,150,0.4)'; ctx.lineWidth=1.6; ctx.lineCap='round';
+  for(let i=0;i<4;i++){ const a=-1.9+i*0.34;
+    ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*W2*0.42,cy+Math.sin(a)*H2*0.42);
+    ctx.lineTo(cx+Math.cos(a)*W2*0.60,cy+Math.sin(a)*H2*0.62); ctx.stroke(); }
+  // ringed lamprey maw — flares red when aggro
+  const mR=W2*0.27+Math.sin(ph*2)*2;
+  ctx.fillStyle='#1A0008'; ctx.beginPath(); ctx.arc(cx,cy+H2*0.06,mR,0,7); ctx.fill();
+  _aGlow(cx,cy+H2*0.06,W2*0.22,mb.aggro?'#FF2A4A':'#8A1030',mb.aggro?0.6:0.35);
+  ctx.fillStyle='#E8E8E8';
+  for(let ring=0;ring<2;ring++){ const rr2=W2*(0.25-ring*0.09);
+    for(let i=0;i<16;i++){ const a=i*Math.PI/8+ring*0.2+ph*0.06;
+      ctx.beginPath(); ctx.moveTo(cx+Math.cos(a)*rr2,cy+H2*0.06+Math.sin(a)*rr2);
+      ctx.lineTo(cx+Math.cos(a)*rr2*0.6,cy+H2*0.06+Math.sin(a)*rr2*0.6);
+      ctx.lineTo(cx+Math.cos(a+0.16)*rr2*0.8,cy+H2*0.06+Math.sin(a+0.16)*rr2*0.8); ctx.closePath(); ctx.fill(); } }
+  // trailing fin drips
+  _aDrip(cx,cy+H2*0.46,H2*0.5,'rgba(120,255,180,0.55)',ph+1);
+  _aDrip(cx+W2*0.2,cy+H2*0.42,H2*0.4,'rgba(120,255,180,0.4)',ph+2.4);
   ctx.restore();
+  // HP pips (screen-space, above the fish)
+  if(mb.alive){
+    for(let i=0;i<mb.maxHp;i++){
+      ctx.fillStyle=i<mb.hp?'#CFFFE0':'rgba(30,70,50,0.6)';
+      ctx.fillRect(bx+W2/2-(mb.maxHp*7)/2+i*7, mb.y-14, 5, 4);
+    }
+  }
 }
 // Boss-gate nudge: fires when the player reaches Lyra's gate without the transponder
 function drawSwimBossWarning(){
@@ -13585,7 +13642,7 @@ function drawSwimBossWarning(){
   ctx.fillStyle='#7FE8FF'; ctx.shadowColor='rgba(10,60,90,0.9)'; ctx.shadowBlur=8;
   ctx.fillText('FIND THE TRANSPONDER', cx, cy);
   ctx.font='bold 12px system-ui,sans-serif'; ctx.fillStyle='#CFE6FF'; ctx.shadowBlur=5;
-  ctx.fillText('crack open the giant clam \u2014 only Otto\'s milk can do it', cx, cy+18);
+  ctx.fillText('defeat THE LANTERN FISH prowling the reef \u2014 it swallowed the transponder', cx, cy+18);
   ctx.restore();
 }
 
