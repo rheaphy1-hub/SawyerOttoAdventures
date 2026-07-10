@@ -5861,39 +5861,23 @@ const cosmicGlow = (function(){
 
   // L4 — under the sea: dramatic abyss + glowing surface + god-ray shafts
   function gradeSea(){
+    // TRUE ABYSS: no sky, no surface, no moon, no horizon band, no light shafts.
+    // A heavy near-black grade over the whole frame; terrain, enemies and heroes draw
+    // AFTER this, so their bioluminescence reads as the only light in a lightless sea.
     const SY=SWIM.surfaceY, FY=swimFloorY();
     ctx.save();
-    // deepen the abyss downward so all the coral/kelp glow pops
-    let g=ctx.createLinearGradient(0,SY,0,H);
-    g.addColorStop(0,'rgba(2,18,40,0.25)'); g.addColorStop(1,'rgba(0,4,16,0.74)');
-    ctx.fillStyle=g; ctx.fillRect(0,SY,W,H-SY);
-    // above-water sky: STARRY NIGHT
-    g=ctx.createLinearGradient(0,0,0,SY+4);
-    g.addColorStop(0,'rgba(4,8,28,0.96)'); g.addColorStop(0.7,'rgba(10,20,52,0.9)'); g.addColorStop(1,'rgba(20,60,90,0.5)');
-    ctx.fillStyle=g; ctx.fillRect(0,0,W,SY+4);
-    if(stars){ ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,SY); ctx.clip();
-      ctx.globalAlpha=0.85; let ssx=(-(cameraX*0.04))%W; if(ssx>0)ssx-=W;
-      ctx.drawImage(stars,ssx,0); ctx.drawImage(stars,ssx+W,0); ctx.globalAlpha=1; ctx.restore(); }
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'rgba(1,6,14,0.86)');
+    g.addColorStop(0.55,'rgba(1,4,10,0.90)');
+    g.addColorStop(1,'rgba(0,1,5,0.95)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    // drifting bioluminescent motes — sparse living light against the void
     ctx.globalCompositeOperation='lighter';
-    // low moon over the water
-    { const mmx=W*0.18, mmy=SY*0.42, mms=72; ctx.globalAlpha=0.5; ctx.drawImage(gMoon, mmx-mms/2, mmy-mms/2, mms, mms);
-      ctx.globalAlpha=1; ctx.fillStyle='rgba(222,234,255,0.95)'; ctx.beginPath(); ctx.arc(mmx,mmy,11,0,7); ctx.fill(); }
-    // bright caustic band right at the water surface (the WOW horizon)
-    g=ctx.createLinearGradient(0,SY-20,0,SY+12);
-    g.addColorStop(0,'rgba(120,240,255,0)'); g.addColorStop(0.6,'rgba(170,255,255,0.55)'); g.addColorStop(1,'rgba(120,240,255,0)');
-    ctx.fillStyle=g; ctx.fillRect(0,SY-20,W,32);
-    // volumetric god-ray shafts from the surface
-    for(let i=0;i<5;i++){ const x=((i*240 - cameraX*0.1)%(W+360)+W+360)%(W+360)-180;
-      ctx.globalAlpha=0.12+0.05*Math.sin(t*0.5+i);
-      const grd=ctx.createLinearGradient(x,SY,x+120,H);
-      grd.addColorStop(0,'rgba(160,245,255,0.55)'); grd.addColorStop(1,'rgba(160,245,255,0)');
-      ctx.fillStyle=grd; ctx.beginPath(); ctx.moveTo(x,SY); ctx.lineTo(x+50,SY); ctx.lineTo(x+150,H); ctx.lineTo(x-60,H); ctx.closePath(); ctx.fill(); }
-    // big drifting bioluminescent motes
     for(let i=0;i<18;i++){ const x=((i*123 - cameraX*0.4)%(W+60)+W+60)%(W+60)-30;
       const y=SY + ((i*71 + Date.now()*0.012*(1+i%3))%(FY-SY)); const sz=6+(i%3)*4+Math.sin(t*2+i)*2;
-      ctx.globalAlpha=0.30; ctx.drawImage(i%2?gCyan:gGreen, x-sz/2, y-sz/2, sz, sz); }
+      ctx.globalAlpha=0.34; ctx.drawImage(i%2?gCyan:gGreen, x-sz/2, y-sz/2, sz, sz); }
     ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
-    vignette(0.42);
+    vignette(0.55);
     ctx.restore();
   }
 
@@ -13608,6 +13592,7 @@ function drawSwimBossWarning(){
 function drawSwimBossLyra(){
   const lv=curLV(), bc=lv.boss, boss=lv.bossObj;
   if(!boss)return; if(!boss.alive&&boss.dieTimer<=0)return;
+  if(boss.alive && !boss.active && !cutsceneActive) return;   // unseen in the dark until the fight begins
   const bx=boss.x-cameraX, by=boss.y, w=boss.w, h=boss.h, ph=boss.phase;
   const flash=boss.hitFlash>0&&Math.floor(boss.hitFlash/2)%2===0;
   const enraged=boss.phaseIndex===1;
